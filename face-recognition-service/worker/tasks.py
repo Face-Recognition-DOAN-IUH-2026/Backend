@@ -374,6 +374,35 @@ def identify_patron(self, image_bytes: str) -> dict:
         return {"status": "error", "error": str(exc)}
 
 
+def _is_patron_inside(patron_id: str) -> bool:
+    """Check if patron currently has an active entry (inside library)."""
+    try:
+        parsed = urllib.parse.urlparse(settings.postgres_url)
+        conn = psycopg.connect(
+            host=parsed.hostname, port=parsed.port or 5432,
+            dbname=parsed.path.lstrip("/"), user=parsed.username, password=parsed.password,
+        )
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT access_time FROM access_logs WHERE patron_id = %s AND access_type = 'entry' AND status = 'success' ORDER BY access_time DESC LIMIT 1",
+            (patron_id,),
+        )
+        entry = cur.fetchone()
+        if not entry:
+            cur.close(); conn.close()
+            return False
+        cur.execute(
+            "SELECT COUNT(*) FROM access_logs WHERE patron_id = %s AND access_type = 'exit' AND status = 'success' AND access_time > %s",
+            (patron_id, entry[0]),
+        )
+        count = cur.fetchone()[0]
+        cur.close(); conn.close()
+        return count == 0
+    except Exception as e:
+        logger.warning("Failed to check patron inside status for %s: %s", patron_id, e)
+        return False
+
+
 def _publish_camera_event(data: dict) -> None:
     try:
         from infra.redis_pubsub import publish as _pub
@@ -450,8 +479,8 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
             _publish_camera_event(result)
             return result
 
-        # Step 3: Determine access type
-        access_type = "entry" if "entry" in camera_id else "exit"
+        # Step 3: Determine access type based on whether patron is inside
+        access_type = "exit" if _is_patron_inside(patron_id) else "entry"
 
         # Step 4: Create access log in DB
         parsed = urllib.parse.urlparse(settings.postgres_url)
@@ -507,11 +536,62 @@ def verify_face(self, patron_id: str, image_bytes: str) -> dict:
         if hit["user_id"] != patron_id or hit["score"] < settings.face_match_threshold:
             return {"status": "error", "error": "Face does not match", "score": float(hit["score"])}
         liveness = run_liveness_analysis(img)
+        if not liveness.get("is_live", False):
+            return {"status": "error", "error": "Liveness check failed", "is_live": False}
+
+        # Lookup patron info for access log
+        parsed = urllib.parse.urlparse(settings.postgres_url)
+        conn = psycopg.connect(
+            host=parsed.hostname, port=parsed.port or 5432,
+            dbname=parsed.path.lstrip("/"), user=parsed.username, password=parsed.password,
+        )
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT full_name, student_code FROM patrons WHERE id = %s",
+            (patron_id,),
+        )
+        row = cur.fetchone()
+        full_name = row[0] if row else "Unknown"
+        student_code = row[1] if row else ""
+        cur.close()
+
+        # Determine entry/exit based on inside status
+        access_type = "exit" if _is_patron_inside(patron_id) else "entry"
+
+        # Create access log
+        import uuid as _uuid
+        log_id = str(_uuid.uuid4())
+        score = float(hit["score"])
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
+            (log_id, patron_id, access_type, "face", score, "kiosk", "success"),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        logger.info("Access %s: %s (%s) at kiosk", access_type, full_name, student_code)
+        result = {
+            "status": "granted",
+            "camera_id": "kiosk",
+            "patron_id": patron_id,
+            "full_name": full_name,
+            "student_code": student_code,
+            "score": score,
+            "access_type": access_type,
+            "is_live": True,
+        }
+        _publish_camera_event(result)
         return {
             "status": "success",
             "patron_id": patron_id,
-            "score": float(hit["score"]),
-            "is_live": liveness.get("is_live", False),
+            "full_name": full_name,
+            "student_code": student_code,
+            "score": score,
+            "access_type": access_type,
+            "is_live": True,
             "liveness_score": liveness.get("liveness_score"),
         }
     except Exception as exc:
