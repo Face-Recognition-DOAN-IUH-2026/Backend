@@ -479,8 +479,16 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
             _publish_camera_event(result)
             return result
 
-        # Step 3: Determine access type based on whether patron is inside
-        access_type = "exit" if _is_patron_inside(patron_id) else "entry"
+        # Step 3: Determine access type — camera-based, không phụ thuộc trạng thái
+        is_entry_cam = "entry" in camera_id
+        if is_entry_cam:
+            access_type = "entry"
+        else:
+            # Camera ra: chỉ tạo exit nếu đang ở trong, bỏ qua nếu không
+            if not _is_patron_inside(patron_id):
+                logger.info("Skipping exit for %s (%s) — not inside library", full_name, student_code)
+                return {"camera_id": camera_id, "status": "no_match"}
+            access_type = "exit"
 
         # Step 4: Create access log in DB
         parsed = urllib.parse.urlparse(settings.postgres_url)
