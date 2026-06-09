@@ -23,8 +23,28 @@ api-gateway/dist/
 .env.local
 .env.*.local
 
-# === Docker / Infra data ===
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# pytest
+.pytest_cache/
+.coverage
+
+# Milvus data (vector DB cache)
 milvusdata/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
 
 # === OS ===
 .DS_Store
