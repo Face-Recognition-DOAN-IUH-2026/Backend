@@ -1,50 +1,43 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
-
-# dependencies
-node_modules/
-SkillAgent/
-repomix-output.xml/
-
-# Expo
-.expo/
+# === Python ===
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+*.eggs/
 dist/
-web-build/
-expo-env.d.ts
-.env*.local
+build/
 
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
+# === Testing & Coverage ===
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Metro
-.metro-health-check*
-
-# testing
-/coverage
-
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
-.DS_Store
-*.pem
-
-# local env files
-.env*.local
-
-# typescript
+# === Node.js (api-gateway) ===
+node_modules/
+api-gateway/dist/
 *.tsbuildinfo
 
-app-example
+# === Environment ===
+.env
+.env.local
+.env.*.local
 
-# generated native folders
-/ios
-/android
+# === Docker / Infra data ===
+milvusdata/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === Generated / Agent files ===
+repomix-output.xml/
+SkillAgent/
 CLAUDE.md
+AGENTS.md
