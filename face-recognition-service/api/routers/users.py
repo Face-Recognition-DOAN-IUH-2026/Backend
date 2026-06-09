@@ -15,7 +15,9 @@ router = APIRouter(prefix="/users", tags=["users"])
 class UserResponse(BaseModel):
     id: str
     email: str
+    full_name: str | None = None
     role: str
+    has_face: bool = False
 
 
 class UserListResponse(BaseModel):
@@ -28,12 +30,34 @@ async def _get_db():
         yield session
 
 
+async def _check_has_face(user_id: str) -> bool:
+    try:
+        from infra.milvus_client import MilvusClient
+        from infra.config import settings
+        mc = MilvusClient(
+            host=settings.milvus_host,
+            port=settings.milvus_port,
+            collection_name=settings.milvus_collection,
+            dim=512,
+        )
+        emb = mc.get_embedding_by_user_id(user_id)
+        return emb is not None
+    except Exception:
+        return False
+
+
 @router.get("/me", response_model=UserResponse)
-async def get_current_user_info(current_user: dict = Depends(get_current_user)):
+async def get_current_user_info(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(_get_db),
+):
+    has_face = await _check_has_face(current_user["id"])
     return UserResponse(
         id=current_user["id"],
         email=current_user["email"],
+        full_name=current_user.get("full_name"),
         role=current_user["role"],
+        has_face=has_face,
     )
 
 
@@ -52,7 +76,7 @@ async def list_users(
     users = result.scalars().all()
 
     return UserListResponse(
-        users=[UserResponse(id=str(u.id), email=u.email, role=u.role) for u in users],
+        users=[UserResponse(id=str(u.id), email=u.email, full_name=u.full_name, role=u.role) for u in users],
         total=len(users),
     )
 

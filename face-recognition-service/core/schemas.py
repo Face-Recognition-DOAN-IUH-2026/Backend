@@ -24,6 +24,7 @@ class TokenResponse(BaseModel):
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=72)
+    full_name: str | None = None
     role: str = "user"
 
 
@@ -32,6 +33,7 @@ class UserPublic(BaseModel):
 
     id: str
     email: EmailStr
+    full_name: str | None = None
     role: str
 
 

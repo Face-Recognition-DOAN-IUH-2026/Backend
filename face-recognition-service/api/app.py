@@ -40,6 +40,11 @@ async def lifespan(app: FastAPI):
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Migration: add full_name column if missing (v0.2.0)
+        from sqlalchemy import text
+        await conn.execute(
+            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)")
+        )
 
     entry = settings.entry_cam_url
     exit_ = settings.exit_cam_url

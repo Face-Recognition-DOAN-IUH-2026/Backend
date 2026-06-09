@@ -54,7 +54,7 @@ services:
       - "19530:19530"
       - "9091:9091"
     volumes:
-      - ./milvusdata:/var/lib/milvus
+      - milvusdata:/var/lib/milvus
     command: [/milvus/bin/milvus, run, standalone]
     environment:
       ETCD_USE_EMBED: "true"
@@ -144,6 +144,7 @@ services:
 volumes:
   pgdata:
   miniodata:
+  milvusdata:
   insightface_models:
 
 networks:

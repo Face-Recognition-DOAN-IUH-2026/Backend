@@ -15,11 +15,12 @@ class PostgresUserRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def create_user(self, email: str, password_hash: str, role: str) -> str:
+    async def create_user(self, email: str, password_hash: str, role: str, full_name: str | None = None) -> str:
         user = UserModel(
             id=uuid.uuid4(),
             email=email,
             password_hash=password_hash,
+            full_name=full_name,
             role=role,
         )
         self.session.add(user)
