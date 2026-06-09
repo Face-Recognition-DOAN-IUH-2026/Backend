@@ -183,3 +183,17 @@ class StatsResponse(BaseModel):
     active_patrons: int
     today_entries: int
     today_exits: int
+
+
+# ===== Camera Schemas =====
+
+class CameraStatusResponse(BaseModel):
+    camera_id: str
+    url: str
+    running: bool
+    connected: bool
+    frames_processed: int
+    last_frame_time: Optional[str] = None
+    last_error: Optional[str] = None
+    retry_count: int
+    next_retry_in: Optional[float] = None
