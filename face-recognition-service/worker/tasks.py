@@ -350,7 +350,9 @@ def identify_patron(self, image_bytes: str) -> dict:
         conn.close()
 
         if not row:
-            return {"status": "error", "error": "Patron not found in DB"}
+            _get_milvus().delete_by_user_id(user_id=patron_id)
+            logger.warning("Orphaned embedding cleaned up for %s", patron_id)
+            return {"status": "no_match"}
 
         full_name, student_code, membership_expiry, status = row
 
@@ -423,7 +425,9 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
         conn.close()
 
         if not row:
-            result = {"camera_id": camera_id, "status": "error", "error": "Patron not found"}
+            _get_milvus().delete_by_user_id(user_id=patron_id)
+            logger.warning("Orphaned embedding cleaned up for %s from camera %s", patron_id, camera_id)
+            result = {"camera_id": camera_id, "status": "no_match"}
             _publish_camera_event(result)
             return result
 
