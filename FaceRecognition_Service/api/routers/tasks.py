@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+import json
+from celery.result import AsyncResult
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
+
+from worker.celery_app import celery_app
+
+router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+class TaskStatusResponse(BaseModel):
+    task_id: str
+    status: str
+    result: dict | None = None
+
+
+@router.get("/{task_id}", response_model=TaskStatusResponse)
+async def get_task_status(task_id: str):
+    task_result = AsyncResult(task_id, app=celery_app)
+    
+    task_status = task_result.status
+    response_result = None
+    
+    try:
+        if task_status == "SUCCESS":
+            try:
+                raw = task_result.result
+                if raw is None:
+                    response_result = None
+                elif isinstance(raw, dict):
+                    response_result = raw
+                elif isinstance(raw, str):
+                    try:
+                        response_result = json.loads(raw)
+                    except:
+                        response_result = {"message": raw}
+                else:
+                    response_result = {"result": str(raw)}
+            except Exception as e:
+                response_result = {"error": str(e), "type": "result_error"}
+        elif task_status == "FAILURE":
+            try:
+                error_info = str(task_result.result)
+                response_result = {"error": error_info, "type": "task_failure"}
+            except Exception:
+                response_result = {"error": "Task failed", "type": "task_failure"}
+    except Exception as e:
+        task_status = "ERROR"
+        response_result = {"error": str(e), "type": "unknown_error"}
+    
+    return TaskStatusResponse(
+        task_id=task_id,
+        status=task_status,
+        result=response_result,
+    )

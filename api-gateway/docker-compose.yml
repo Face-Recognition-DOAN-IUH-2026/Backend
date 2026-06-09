@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  gateway:
+    image: nginx:alpine
+    container_name: api-gateway
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - face-network
+      - frontend-network
+    restart: unless-stopped
+
+networks:
+  face-network:
+    external: true
+    name: face-network
+  frontend-network:
+    external: true
+    name: frontend-network

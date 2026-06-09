@@ -1,0 +1,88 @@
+[project]
+name = "face-recognition-platform"
+version = "0.1.0"
+description = "Microservices Face Recognition Platform (API + Celery Worker + Milvus + Postgres + Redis)"
+requires-python = ">=3.12"
+readme = "README.md"
+license = { text = "MIT" }
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["tests"]
+addopts = "-q --disable-warnings --maxfail=1 --cov=core --cov=api --cov=worker --cov-report=term-missing"
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+branch = true
+source = ["core", "api", "worker"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.12"
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.poetry]
+name = "face-recognition-platform"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+fastapi = "^0.115.0"
+uvicorn = { version = "^0.30.6", extras = ["standard"] }
+
+pydantic = "^2.8.2"
+pydantic-settings = "^2.4.0"
+email-validator = "^2.1.0"
+
+python-jose = { version = "^3.3.0" }
+passlib = { version = "^1.7.4" }
+bcrypt = "^4.2.0"
+
+celery = "^5.4.0"
+redis = "^5.0.7"
+
+sqlalchemy = "^2.0.32"
+psycopg = { version = "^3.2.3", extras = ["binary"] }
+
+pymilvus = "^2.4.0"
+
+minio = "^7.2.7"
+
+cryptography = "^43.0.0"
+
+opencv-python = "^4.10.0.84"
+
+# Optional: yolo should be installed in a future step depending on chosen model.
+
+python-multipart = "^0.0.9"
+
+httpx = "^0.27.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.2"
+pytest-asyncio = "^0.24.0"
+pytest-cov = "^5.0.0"
+ruff = "^0.5.7"
+black = "^24.8.0"
+mypy = "^1.11.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
