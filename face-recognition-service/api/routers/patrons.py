@@ -3,13 +3,21 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
+from celery import Celery
 
 from api.dependencies import get_current_user, get_db_session
 from core.schemas import PatronCreate, PatronPublic, PatronUpdate
+from infra.config import settings
 from infra.models import PatronModel
 from infra.patron_repository import PatronRepository
+
+celery_app = Celery(
+    "tasks",
+    broker=settings.celery_broker_url,
+    backend=settings.celery_result_backend,
+)
 
 router = APIRouter(prefix="/patrons", tags=["patrons"])
 
@@ -143,3 +151,28 @@ async def delete_patron(
         raise HTTPException(404, "Patron not found")
     await db.commit()
     return {"ok": True}
+
+
+@router.post("/{patron_id}/enroll-face")
+async def enroll_patron_face(
+    patron_id: uuid.UUID,
+    image: UploadFile,
+    db: AsyncSession = Depends(get_db_session),
+    _=Depends(get_current_user),
+):
+    import base64 as _b64
+
+    repo = PatronRepository(db)
+    patron = await repo.get_by_id(patron_id)
+    if not patron:
+        raise HTTPException(404, "Patron not found")
+
+    raw = await image.read()
+    img_b64 = _b64.b64encode(raw).decode("utf-8")
+
+    task = celery_app.send_task(
+        "enroll_face",
+        kwargs={"patron_id": str(patron_id), "image_bytes": img_b64},
+    )
+
+    return {"success": True, "job_id": task.id, "message": "Face enrollment in progress"}
