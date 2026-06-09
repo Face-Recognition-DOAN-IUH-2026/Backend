@@ -70,11 +70,11 @@ services:
 
   face-recognition-api:
     build:
-      context: FaceRecognition_Service
+      context: face-recognition-service
       dockerfile: Dockerfile.api
     container_name: face-recognition-api
     env_file:
-      - FaceRecognition_Service/.env
+      - face-recognition-service/.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,11 +89,11 @@ services:
 
   worker:
     build:
-      context: FaceRecognition_Service
+      context: face-recognition-service
       dockerfile: Dockerfile.worker
     container_name: face-recognition-worker
     env_file:
-      - FaceRecognition_Service/.env
+      - face-recognition-service/.env
     depends_on:
       postgres:
         condition: service_healthy

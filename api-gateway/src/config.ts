@@ -8,5 +8,6 @@ export const config = {
     faceRecognitionApi: process.env.FACE_RECOGNITION_API || 'http://face-recognition-api:8000',
     userService: process.env.USER_SERVICE || 'http://user-service:3001',
   },
+  frontendUrl: process.env.FRONTEND_URL || 'http://host.docker.internal:3000',
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['*'],
 };

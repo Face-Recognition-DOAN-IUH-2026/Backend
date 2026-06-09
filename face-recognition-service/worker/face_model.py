@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+import cv2
+import numpy as np
+
+from worker.anti_spoofing import AntiSpoofingAnalyzer
+
+_model = None
+
+
+class FaceModel:
+    def __init__(self):
+        import insightface
+        from insightface.app import FaceAnalysis
+        self.app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
+        self.app.prepare(ctx_id=0, det_size=(640, 640))
+        self._spoof_model = None
+        self._spoof_available = False
+        try:
+            from insightface.model_zoo import get_model
+            self._spoof_model = get_model("antispoofing_normal", providers=["CPUExecutionProvider"])
+            self._spoof_model.prepare(ctx_id=0)
+            self._spoof_available = True
+        except Exception:
+            self._spoof_available = False
+        self._cv_analyzer = AntiSpoofingAnalyzer()
+
+    def extract_embedding(self, img: cv2.Mat) -> list[float]:
+        faces = self.app.get(img)
+        if len(faces) == 0:
+            return [0.0] * 512
+        norm = np.linalg.norm(faces[0].embedding)
+        if norm == 0:
+            return [0.0] * 512
+        return (faces[0].embedding / norm).tolist()
+
+    def get_face_quality(self, img: cv2.Mat) -> dict:
+        faces = self.app.get(img)
+        if len(faces) == 0:
+            return {"valid": False, "error": "NO_FACE_DETECTED", "score": 0.0}
+        if len(faces) > 1:
+            return {"valid": False, "error": "MULTIPLE_FACES", "count": len(faces), "score": 0.0}
+        face = faces[0]
+        det_score = float(face.det_score)
+        if det_score < 0.5:
+            return {"valid": False, "error": "LOW_QUALITY", "score": det_score}
+        return {"valid": True, "score": det_score}
+
+    def liveness_score(self, img: cv2.Mat) -> float:
+        result = self.detailed_liveness_check(img)
+        return result["liveness_score"]
+
+    def detailed_liveness_check(self, img: cv2.Mat) -> dict:
+        faces = self.app.get(img)
+        if len(faces) == 0:
+            return {"liveness_score": 0.0, "is_live": False, "breakdown": {}, "error": "NO_FACE_DETECTED"}
+        face = faces[0]
+        insightface_score = None
+        if self._spoof_available and self._spoof_model is not None:
+            try:
+                spoof_score = self._spoof_model.predict(img, face)
+                if isinstance(spoof_score, (list, tuple, np.ndarray)):
+                    spoof_score = float(spoof_score[0]) if len(spoof_score) > 0 else 0.0
+                else:
+                    spoof_score = float(spoof_score)
+                insightface_score = 1.0 - min(max(spoof_score, 0.0), 1.0)
+            except Exception:
+                pass
+        if insightface_score is None:
+            insightface_score = float(face.det_score)
+        h, w = img.shape[:2]
+        bbox = face.bbox.astype(np.int32)
+        x1, y1, x2, y2 = max(0, bbox[0]), max(0, bbox[1]), min(w, bbox[2]), min(h, bbox[3])
+        face_roi = img[y1:y2, x1:x2]
+        if face_roi.size == 0:
+            cv_result = {}
+        else:
+            cv_result = {}
+            cv_result.update(self._cv_analyzer.analyze_lbp(face_roi))
+            cv_result.update(self._cv_analyzer.analyze_color_histogram(face_roi))
+            cv_result.update(self._cv_analyzer.analyze_noise(face_roi))
+            cv_result.update(self._cv_analyzer.analyze_fft(face_roi))
+            cv_result.update(self._cv_analyzer.analyze_multi_scale(face_roi))
+            cv_result.update(self._cv_analyzer.analyze_bounding_box(face.bbox, w, h))
+        return self._cv_analyzer.aggregate(cv_result, insightface_score=insightface_score)
+
+
+def get_model() -> FaceModel:
+    global _model
+    if _model is None:
+        _model = FaceModel()
+    return _model
+
+
+def extract_embedding(img: cv2.Mat) -> list[float]:
+    return get_model().extract_embedding(img)
+
+
+def check_liveness(img: cv2.Mat) -> dict:
+    return get_model().detailed_liveness_check(img)
+
+
+def check_face_quality(img: cv2.Mat) -> dict:
+    return get_model().get_face_quality(img)
