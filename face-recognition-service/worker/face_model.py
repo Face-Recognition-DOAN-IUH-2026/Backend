@@ -46,6 +46,32 @@ class FaceModel:
             return {"valid": False, "error": "LOW_QUALITY", "score": det_score}
         return {"valid": True, "score": det_score}
 
+    def detect_face_once(self, img: cv2.Mat) -> dict:
+        faces = self.app.get(img)
+        if len(faces) == 0:
+            return {
+                "valid": False, "error": "NO_FACE_DETECTED", "score": 0.0,
+                "embedding": [0.0] * 512, "face": None
+            }
+        if len(faces) > 1:
+            return {
+                "valid": False, "error": "MULTIPLE_FACES", "count": len(faces), "score": 0.0,
+                "embedding": [0.0] * 512, "face": None
+            }
+        face = faces[0]
+        det_score = float(face.det_score)
+        if det_score < 0.5:
+            return {
+                "valid": False, "error": "LOW_QUALITY", "score": det_score,
+                "embedding": [0.0] * 512, "face": face
+            }
+        norm = np.linalg.norm(face.embedding)
+        embedding = (face.embedding / norm).tolist() if norm > 0 else [0.0] * 512
+        return {
+            "valid": True, "score": det_score,
+            "embedding": embedding, "face": face
+        }
+
     def liveness_score(self, img: cv2.Mat) -> float:
         result = self.detailed_liveness_check(img)
         return result["liveness_score"]
@@ -54,7 +80,9 @@ class FaceModel:
         faces = self.app.get(img)
         if len(faces) == 0:
             return {"liveness_score": 0.0, "is_live": False, "breakdown": {}, "error": "NO_FACE_DETECTED"}
-        face = faces[0]
+        return self.liveness_from_face(img, faces[0])
+
+    def liveness_from_face(self, img: cv2.Mat, face) -> dict:
         insightface_score = None
         if self._spoof_available and self._spoof_model is not None:
             try:
@@ -102,3 +130,11 @@ def check_liveness(img: cv2.Mat) -> dict:
 
 def check_face_quality(img: cv2.Mat) -> dict:
     return get_model().get_face_quality(img)
+
+
+def detect_face_once(img: cv2.Mat) -> dict:
+    return get_model().detect_face_once(img)
+
+
+def liveness_from_face(img: cv2.Mat, face) -> dict:
+    return get_model().liveness_from_face(img, face)

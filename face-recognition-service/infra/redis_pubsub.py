@@ -23,8 +23,9 @@ def publish(channel: str, data: dict[str, Any]) -> None:
         r = _get_redis()
         r.publish(channel, json.dumps(data, default=str))
         r.close()
+        logger.info("Published to Redis channel %s: %s", channel, data.get("status", "unknown"))
     except Exception as e:
-        logger.warning("Redis publish failed: %s", e)
+        logger.error("Redis publish failed: %s - data=%s", e, data)
 
 
 def _subscribe_loop(channel: str, loop: asyncio.AbstractEventLoop) -> None:
@@ -38,8 +39,13 @@ def _subscribe_loop(channel: str, loop: asyncio.AbstractEventLoop) -> None:
                 continue
             try:
                 data = json.loads(msg["data"])
-                asyncio.run_coroutine_threadsafe(
+                logger.info("Redis message received on %s: %s", channel, data.get("status", "unknown"))
+                future = asyncio.run_coroutine_threadsafe(
                     sse_manager.broadcast("camera_event", data), loop
+                )
+                future.add_done_callback(
+                    lambda f: logger.info("SSE broadcast completed for status=%s", data.get("status"))
+                    if not f.exception() else logger.error("SSE broadcast failed: %s", f.exception())
                 )
             except Exception as e:
                 logger.warning("SSE broadcast error: %s", e)

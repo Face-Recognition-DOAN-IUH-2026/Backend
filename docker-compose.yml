@@ -94,6 +94,8 @@ services:
     container_name: face-recognition-worker
     env_file:
       - face-recognition-service/.env
+    volumes:
+      - insightface_models:/root/.insightface/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -142,6 +144,7 @@ services:
 volumes:
   pgdata:
   miniodata:
+  insightface_models:
 
 networks:
   face-network:

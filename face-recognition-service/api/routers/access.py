@@ -29,6 +29,25 @@ async def sse_events():
     )
 
 
+@router.post("/test-broadcast")
+async def test_broadcast(
+    status: str = "granted",
+    full_name: str = "Test User",
+    camera_id: str = "entry_gate",
+):
+    test_event = {
+        "status": status,
+        "camera_id": camera_id,
+        "patron_id": "test-id",
+        "full_name": full_name,
+        "student_code": "TEST123",
+        "score": 0.95,
+        "access_type": "entry",
+    }
+    await sse_manager.broadcast("camera_event", test_event)
+    return {"ok": True, "event": test_event}
+
+
 @router.get("/recent")
 async def get_recent_logs(db: AsyncSession = Depends(get_db_session)):
     repo = PatronRepository(db)
