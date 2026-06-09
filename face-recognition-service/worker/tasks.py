@@ -487,7 +487,9 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
             # Camera ra: chỉ tạo exit nếu đang ở trong, bỏ qua nếu không
             if not _is_patron_inside(patron_id):
                 logger.info("Skipping exit for %s (%s) — not inside library", full_name, student_code)
-                return {"camera_id": camera_id, "status": "no_match"}
+                result = {"camera_id": camera_id, "status": "no_match", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score}
+                _publish_camera_event(result)
+                return result
             access_type = "exit"
 
         # Step 4: Create access log in DB
