@@ -110,7 +110,13 @@ def enroll_task(self, user_id: str, image_b64: str) -> dict:
                 "count": quality.get("count"),
             }
         vec = extract_embedding_placeholder(img)
+        vec_sum = sum(abs(x) for x in vec)
+        if vec_sum < 0.1:
+            logger.error("Enroll: extracted embedding is near-zero for user %s, sum=%.6f", user_id, vec_sum)
+            return {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
         norm_vec = l2_normalize(vec)
+        logger.info("Enroll embedding stats: min=%.4f, max=%.4f, sum_abs=%.4f, norm=%.4f",
+                    min(vec), max(vec), vec_sum, sum(x*x for x in vec)**0.5)
         _get_milvus().upsert_embeddings(user_id=user_id, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
         _get_storage().upload_image(f"enrollments/{user_id}.jpg", encrypted)
@@ -126,11 +132,24 @@ def verify_task(self, user_id: str, image_b64: str) -> dict:
     try:
         _, img = _process_image(image_b64)
         vec = extract_embedding_placeholder(img)
+        vec_sum = sum(abs(x) for x in vec)
+        if vec_sum < 0.1:
+            logger.error("Verify: extracted embedding is near-zero, sum=%.6f", vec_sum)
+            return {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
         norm_vec = l2_normalize(vec)
+        logger.info("Verify query embedding: min=%.4f, max=%.4f, sum_abs=%.4f",
+                    min(vec), max(vec), vec_sum)
         enrolled_emb = _get_milvus().get_embedding_by_user_id(user_id)
         if enrolled_emb is None:
             return {"status": "success", "verified": False, "score": 0.0, "error": "User not enrolled"}
+        enrolled_sum = sum(abs(x) for x in enrolled_emb)
+        logger.info("Verify enrolled embedding: min=%.4f, max=%.4f, sum_abs=%.4f",
+                    min(enrolled_emb), max(enrolled_emb), enrolled_sum)
         score = float(sum(n * e for n, e in zip(norm_vec, enrolled_emb)))
+        logger.info("Verify score for user %s: %.4f (query_norm=%.4f, enrolled_norm=%.4f)",
+                    user_id, score,
+                    sum(x*x for x in vec)**0.5,
+                    sum(x*x for x in enrolled_emb)**0.5)
         return {"status": "success", "verified": score > 0.6, "score": score}
     except Exception as exc:
         logger.exception("Verify failed for %s", user_id)

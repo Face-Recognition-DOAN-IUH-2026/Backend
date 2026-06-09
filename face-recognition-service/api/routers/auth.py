@@ -35,8 +35,8 @@ async def register(body: UserCreate, db: AsyncSession = Depends(_get_db)):
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
     password_hash = pwd_context.hash(body.password)
-    user_id = await repo.create_user(body.email, password_hash, body.role)
-    return UserPublic(id=user_id, email=body.email, role=body.role)
+    user_id = await repo.create_user(body.email, password_hash, body.role, body.full_name)
+    return UserPublic(id=user_id, email=body.email, full_name=body.full_name, role=body.role)
 
 
 @router.post("/login", response_model=TokenResponse)
