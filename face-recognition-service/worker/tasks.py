@@ -15,7 +15,9 @@ from infra.minio_client import MinioStorage
 from worker.celery_app import celery_app
 from worker.tasks_pipeline import (
     check_face_quality,
+    detect_face_once,
     extract_embedding_placeholder,
+    liveness_from_face,
     resize_if_necessary,
     run_liveness_analysis,
     safe_read_image_from_bytes,
@@ -268,18 +270,17 @@ def delete_user_task(self, user_id: str) -> dict:
         raise self.retry(exc=exc)
 
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
+@celery_app.task(bind=True, name="enroll_face", max_retries=2, default_retry_delay=5)
 def enroll_face(self, patron_id: str, image_bytes: str) -> dict:
     logger.info("Enrolling face for patron %s", patron_id)
     try:
         raw_data = base64.b64decode(image_bytes)
         img = safe_read_image_from_bytes(raw_data)
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
-        quality = check_face_quality(img)
-        if not quality.get("valid"):
-            return {"status": "error", "error": quality.get("error", "No face detected")}
-        vec = extract_embedding_placeholder(img)
-        norm_vec = l2_normalize(vec)
+        face_result = detect_face_once(img)
+        if not face_result.get("valid"):
+            return {"status": "error", "error": face_result.get("error", "No face detected")}
+        norm_vec = l2_normalize(face_result["embedding"])
         _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
         _get_storage().upload_image(f"patrons/{patron_id}.jpg", encrypted)
@@ -291,27 +292,27 @@ def enroll_face(self, patron_id: str, image_bytes: str) -> dict:
             dbname=parsed.path.lstrip("/"), user=parsed.username, password=parsed.password,
         )
         cur = conn.cursor()
-        # Insert or update face record
+        # Insert or update face record with milvus_id
         cur.execute(
             "SELECT id FROM patron_faces WHERE patron_id = %s AND is_active = true",
             (patron_id,),
         )
         exists = cur.fetchone()
+        import uuid as _uuid
         if exists:
             cur.execute(
-                "UPDATE patron_faces SET updated_at = NOW() WHERE id = %s",
-                (exists[0],),
+                "UPDATE patron_faces SET milvus_id = %s, updated_at = NOW() WHERE id = %s",
+                (patron_id, exists[0]),
             )
         else:
-            import uuid as _uuid
             cur.execute(
-                "INSERT INTO patron_faces (id, patron_id, is_active) VALUES (%s, %s, true)",
-                (str(_uuid.uuid4()), patron_id),
+                "INSERT INTO patron_faces (id, patron_id, milvus_id, is_active) VALUES (%s, %s, %s, true)",
+                (str(_uuid.uuid4()), patron_id, patron_id),
             )
         conn.commit()
         cur.close()
         conn.close()
-        return {"status": "success", "patron_id": patron_id, "quality_score": quality.get("score")}
+        return {"status": "success", "patron_id": patron_id, "quality_score": face_result.get("score")}
     except Exception as exc:
         logger.exception("Enroll face failed for %s", patron_id)
         raise self.retry(exc=exc)
@@ -375,11 +376,12 @@ def _publish_camera_event(data: dict) -> None:
     try:
         from infra.redis_pubsub import publish as _pub
         _pub("camera:events", data)
-    except Exception:
-        pass
+        logger.info("Camera event published: status=%s, camera_id=%s", data.get("status"), data.get("camera_id"))
+    except Exception as e:
+        logger.error("Failed to publish camera event: %s - data=%s", e, data)
 
 
-@celery_app.task(bind=True, max_retries=1, default_retry_delay=5)
+@celery_app.task(bind=True, name="process_camera_frame", max_retries=1, default_retry_delay=5)
 def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
     logger.info("Processing camera frame from %s", camera_id)
     try:
@@ -387,9 +389,15 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
         img = safe_read_image_from_bytes(raw)
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
 
-        # Step 1: Identify
-        vec = extract_embedding_placeholder(img)
-        norm_vec = l2_normalize(vec)
+        # Step 1: Detect face once - get embedding and face data
+        face_result = detect_face_once(img)
+        if not face_result.get("valid") or face_result.get("face") is None:
+            result = {"camera_id": camera_id, "status": "no_match"}
+            _publish_camera_event(result)
+            return result
+
+        face = face_result["face"]
+        norm_vec = l2_normalize(face_result["embedding"])
         results = _get_milvus().search(embedding=norm_vec, top_k=1)
         if not results or results[0]["score"] < settings.face_match_threshold:
             result = {"camera_id": camera_id, "status": "no_match"}
@@ -427,8 +435,8 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
             _publish_camera_event(result)
             return result
 
-        # Step 2: Liveness
-        liveness = run_liveness_analysis(img)
+        # Step 2: Liveness (reuse face detection from step 1)
+        liveness = liveness_from_face(img, face)
         if not liveness.get("is_live", False):
             result = {
                 "camera_id": camera_id, "status": "spoof",
@@ -474,10 +482,12 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
         return result
     except Exception as exc:
         logger.exception("Camera frame processing failed")
-        return {"camera_id": camera_id, "status": "error", "error": str(exc)}
+        result = {"camera_id": camera_id, "status": "error", "error": str(exc)}
+        _publish_camera_event(result)
+        return result
 
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
+@celery_app.task(bind=True, name="verify_face", max_retries=2, default_retry_delay=5)
 def verify_face(self, patron_id: str, image_bytes: str) -> dict:
     logger.info("Verifying face for patron %s", patron_id)
     try:

@@ -96,6 +96,8 @@ services:
       dockerfile: Dockerfile.worker
     env_file:
       - .env
+    volumes:
+      - insightface_models:/root/.insightface/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -112,6 +114,7 @@ volumes:
   pgdata:
   miniodata:
   milvusdata:
+  insightface_models:
 
 networks:
   face-network:

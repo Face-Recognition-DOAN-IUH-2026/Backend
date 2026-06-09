@@ -130,7 +130,7 @@ async def kiosk_enter(
         return KioskResult(success=False, message="Membership has expired")
 
     face = await repo.get_active_face(patron.id)
-    if not face or not face.milvus_id:
+    if not face:
         return KioskResult(success=False, message="Patron has no enrolled face")
 
     import base64 as _b64

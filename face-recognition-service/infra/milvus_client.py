@@ -23,11 +23,14 @@ class MilvusClient:
 
         connections.connect(alias="default", host=self.host, port=self.port)
         self.collection = self._get_or_create_collection()
-        self._ensure_collection_loaded()
+        self._collection_loaded = True
 
     def _ensure_collection_loaded(self) -> None:
+        if self._collection_loaded:
+            return
         try:
             self.collection.load()
+            self._collection_loaded = True
         except Exception:
             pass
 
@@ -58,22 +61,15 @@ class MilvusClient:
         return collection
 
     def upsert_embeddings(self, *, user_id: str, embedding: list[float]) -> None:
-        self.collection.insert([[user_id], [embedding]])
+        self.collection.upsert([[user_id], [embedding]])
         self.collection.flush()
-        try:
-            self.collection.load()
-        except Exception:
-            pass
+        self._collection_loaded = False
 
     def search(self, *, embedding: list[float], top_k: int = 1) -> list[dict[str, Any]]:
-        collection = self.collection
-        try:
-            collection.load()
-        except Exception:
-            pass
+        self._ensure_collection_loaded()
         search_params = {"metric_type": self.metric_type, "params": {"nprobe": 16}}
 
-        res = collection.search(
+        res = self.collection.search(
             data=[embedding],
             anns_field="embedding",
             param=search_params,
@@ -87,10 +83,7 @@ class MilvusClient:
         return hits
 
     def get_embedding_by_user_id(self, user_id: str) -> list[float] | None:
-        try:
-            self.collection.load()
-        except Exception:
-            pass
+        self._ensure_collection_loaded()
         results = self.collection.query(
             expr=f"user_id == '{user_id}'",
             output_fields=["embedding"],
