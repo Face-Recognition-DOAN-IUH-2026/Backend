@@ -80,6 +80,42 @@ def _get_user_info(user_id: str) -> dict | None:
         return None
 
 
+def _get_patron_id_by_user_id(user_id: str) -> str | None:
+    try:
+        parsed = urllib.parse.urlparse(settings.postgres_url)
+        conn = psycopg.connect(
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            dbname=parsed.path.lstrip("/"),
+            user=parsed.username,
+            password=parsed.password,
+        )
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT u.email FROM users u WHERE u.id = %s",
+            (user_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return None
+        email = row[0]
+        cur.execute(
+            "SELECT id::text FROM patrons WHERE email = %s LIMIT 1",
+            (email,),
+        )
+        patron_row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if patron_row:
+            return patron_row[0]
+        return None
+    except Exception as exc:
+        logger.warning("Failed to get patron_id for user_id %s: %s", user_id, exc)
+        return None
+
+
 def _decode_image(image_b64: str) -> bytes:
     return base64.b64decode(image_b64)
 
@@ -100,6 +136,10 @@ def _process_image(image_b64: str):
 def enroll_task(self, user_id: str, image_b64: str) -> dict:
     logger.info("Enrolling user %s", user_id)
     try:
+        patron_id = _get_patron_id_by_user_id(user_id)
+        if not patron_id:
+            logger.error("Enroll: no patron found for user_id %s", user_id)
+            return {"status": "error", "error": "PATRON_NOT_FOUND", "score": 0.0}
         raw_data, img = _process_image(image_b64)
         quality = check_face_quality(img)
         if not quality.get("valid"):
@@ -112,15 +152,15 @@ def enroll_task(self, user_id: str, image_b64: str) -> dict:
         vec = extract_embedding_placeholder(img)
         vec_sum = sum(abs(x) for x in vec)
         if vec_sum < 0.1:
-            logger.error("Enroll: extracted embedding is near-zero for user %s, sum=%.6f", user_id, vec_sum)
+            logger.error("Enroll: extracted embedding is near-zero for patron_id %s, sum=%.6f", patron_id, vec_sum)
             return {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
         norm_vec = l2_normalize(vec)
         logger.info("Enroll embedding stats: min=%.4f, max=%.4f, sum_abs=%.4f, norm=%.4f",
                     min(vec), max(vec), vec_sum, sum(x*x for x in vec)**0.5)
-        _get_milvus().upsert_embeddings(user_id=user_id, embedding=norm_vec)
+        _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
-        _get_storage().upload_image(f"enrollments/{user_id}.jpg", encrypted)
-        return {"status": "success", "user_id": user_id, "quality_score": quality.get("score")}
+        _get_storage().upload_image(f"enrollments/{patron_id}.jpg", encrypted)
+        return {"status": "success", "patron_id": patron_id, "user_id": user_id, "quality_score": quality.get("score")}
     except Exception as exc:
         logger.exception("Enroll failed for %s", user_id)
         raise self.retry(exc=exc)
@@ -130,6 +170,10 @@ def enroll_task(self, user_id: str, image_b64: str) -> dict:
 def verify_task(self, user_id: str, image_b64: str) -> dict:
     logger.info("Verifying user %s", user_id)
     try:
+        patron_id = _get_patron_id_by_user_id(user_id)
+        if not patron_id:
+            logger.error("Verify: no patron found for user_id %s", user_id)
+            return {"status": "error", "error": "PATRON_NOT_FOUND", "score": 0.0}
         _, img = _process_image(image_b64)
         vec = extract_embedding_placeholder(img)
         vec_sum = sum(abs(x) for x in vec)
@@ -139,15 +183,15 @@ def verify_task(self, user_id: str, image_b64: str) -> dict:
         norm_vec = l2_normalize(vec)
         logger.info("Verify query embedding: min=%.4f, max=%.4f, sum_abs=%.4f",
                     min(vec), max(vec), vec_sum)
-        enrolled_emb = _get_milvus().get_embedding_by_user_id(user_id)
+        enrolled_emb = _get_milvus().get_embedding_by_user_id(patron_id)
         if enrolled_emb is None:
-            return {"status": "success", "verified": False, "score": 0.0, "error": "User not enrolled"}
+            return {"status": "success", "verified": False, "score": 0.0, "error": "Face not enrolled"}
         enrolled_sum = sum(abs(x) for x in enrolled_emb)
         logger.info("Verify enrolled embedding: min=%.4f, max=%.4f, sum_abs=%.4f",
                     min(enrolled_emb), max(enrolled_emb), enrolled_sum)
         score = float(sum(n * e for n, e in zip(norm_vec, enrolled_emb)))
-        logger.info("Verify score for user %s: %.4f (query_norm=%.4f, enrolled_norm=%.4f)",
-                    user_id, score,
+        logger.info("Verify score for patron_id %s (user_id %s): %.4f (query_norm=%.4f, enrolled_norm=%.4f)",
+                    patron_id, user_id, score,
                     sum(x*x for x in vec)**0.5,
                     sum(x*x for x in enrolled_emb)**0.5)
         return {"status": "success", "verified": score > 0.6, "score": score}
