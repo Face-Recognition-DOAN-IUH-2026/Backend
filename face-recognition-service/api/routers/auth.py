@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import base64
+import uuid as _uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
@@ -19,6 +19,7 @@ from infra.config import settings
 from infra.database import async_session_factory
 from infra.user_repository import PostgresUserRepository, pwd_context
 from worker.celery_app import celery_app
+from worker.tasks import _upload_temp_frame
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -112,6 +113,7 @@ async def face_login(
     email: str = Form(...),
     file: UploadFile = File(...),
 ):
-    image_b64 = base64.b64encode(file.file.read()).decode("ascii")
-    task = celery_app.send_task("worker.tasks.face_login_task", kwargs={"email": email, "image_b64": image_b64})
+    raw = await file.read()
+    object_key = _upload_temp_frame(raw, str(_uuid.uuid4()))
+    task = celery_app.send_task("worker.tasks.face_login_task", kwargs={"email": email, "object_key": object_key})
     return {"job_id": task.id}

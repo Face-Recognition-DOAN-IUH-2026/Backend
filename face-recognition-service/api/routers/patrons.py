@@ -12,6 +12,7 @@ from core.schemas import PatronCreate, PatronPublic, PatronUpdate
 from infra.config import settings
 from infra.models import PatronModel
 from infra.patron_repository import PatronRepository
+from worker.tasks import _upload_temp_frame
 
 celery_app = Celery(
     "tasks",
@@ -160,19 +161,17 @@ async def enroll_patron_face(
     db: AsyncSession = Depends(get_db_session),
     _=Depends(get_current_user),
 ):
-    import base64 as _b64
-
     repo = PatronRepository(db)
     patron = await repo.get_by_id(patron_id)
     if not patron:
         raise HTTPException(404, "Patron not found")
 
     raw = await image.read()
-    img_b64 = _b64.b64encode(raw).decode("utf-8")
+    object_key = _upload_temp_frame(raw, str(uuid.uuid4()))
 
     task = celery_app.send_task(
         "enroll_face",
-        kwargs={"patron_id": str(patron_id), "image_bytes": img_b64},
+        kwargs={"patron_id": str(patron_id), "object_key": object_key},
     )
 
     result = task.get(timeout=60)
