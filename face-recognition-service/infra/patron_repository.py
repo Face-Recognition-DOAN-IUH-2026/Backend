@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from typing import List, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import Date, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infra.models import AccessLogModel, PatronFaceModel, PatronModel
@@ -203,6 +203,37 @@ class PatronRepository:
         q = q.order_by(AccessLogModel.access_time.desc()).offset(skip).limit(limit)
         result = await self.db.execute(q)
         return list(result.scalars().all()), total
+
+    async def get_access_frequency(
+        self,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+    ) -> list[dict]:
+        q = select(
+            cast(AccessLogModel.access_time, Date).label("date"),
+            AccessLogModel.access_type,
+            func.count(AccessLogModel.id).label("count"),
+        ).where(AccessLogModel.status == "success")
+
+        if date_from:
+            q = q.where(AccessLogModel.access_time >= date_from)
+        if date_to:
+            q = q.where(AccessLogModel.access_time <= date_to)
+
+        q = q.group_by(cast(AccessLogModel.access_time, Date), AccessLogModel.access_type)
+        q = q.order_by(cast(AccessLogModel.access_time, Date))
+
+        result = await self.db.execute(q)
+        rows = result.all()
+
+        daily: dict[str, dict] = {}
+        for row in rows:
+            date_str = str(row.date)
+            if date_str not in daily:
+                daily[date_str] = {"date": date_str, "entry": 0, "exit": 0}
+            daily[date_str][row.access_type] = row.count
+
+        return sorted(daily.values(), key=lambda x: x["date"])
 
     async def get_latest_entry(self, patron_id: uuid.UUID) -> Optional[AccessLogModel]:
         result = await self.db.execute(

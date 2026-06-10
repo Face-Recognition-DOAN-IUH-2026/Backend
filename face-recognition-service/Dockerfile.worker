@@ -20,6 +20,9 @@ RUN pip install --no-cache-dir insightface onnxruntime
 # Pre-download buffalo_l model and bake it into the image layer (not BuildKit cache)
 RUN python -c "import insightface; from insightface.app import FaceAnalysis; app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640)); print('buffalo_l model cached')"
 
+# Pre-download MobileNet SSD model for person detection (fail silently, will retry at runtime)
+RUN python -c "import urllib.request,os; os.makedirs('/app/models',exist_ok=True); urllib.request.urlretrieve('https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/mobilenet_iter_73000.caffemodel', '/app/models/MobileNetSSD_deploy.caffemodel'); print('MobileNet SSD caffemodel pre-downloaded')" 2>&1 || echo "MobileNet SSD caffemodel download failed (will retry at runtime)"
+
 COPY . .
 
 CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=1", "--include=worker.tasks"]

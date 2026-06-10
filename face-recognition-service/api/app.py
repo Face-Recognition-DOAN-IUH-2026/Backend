@@ -50,19 +50,22 @@ async def lifespan(app: FastAPI):
     exit_ = settings.exit_cam_url
     _sse_thread = None
     if entry or exit_:
-        try:
-            from worker.stream_service import stream_service
-            cb = _camera_callback_factory()
-            if entry:
-                stream_service.register_camera("entry_gate", entry)
-                stream_service.set_callback("entry_gate", cb)
-            if exit_:
-                stream_service.register_camera("exit_gate", exit_)
-                stream_service.set_callback("exit_gate", cb)
-            stream_service.start_all()
-        except Exception as e:
-            import logging
-            logging.getLogger("uvicorn").error("Camera startup error: %s", e, exc_info=True)
+        import threading as _t
+        def _start_cameras():
+            try:
+                from worker.stream_service import stream_service
+                cb = _camera_callback_factory()
+                if entry:
+                    stream_service.register_camera(settings.entry_cam_id, entry)
+                    stream_service.set_callback(settings.entry_cam_id, cb)
+                if exit_:
+                    stream_service.register_camera(settings.exit_cam_id, exit_)
+                    stream_service.set_callback(settings.exit_cam_id, cb)
+                stream_service.start_all()
+            except Exception as e:
+                import logging
+                logging.getLogger("uvicorn").error("Camera startup error: %s", e, exc_info=True)
+        _t.Thread(target=_start_cameras, daemon=True).start()
 
     try:
         import asyncio

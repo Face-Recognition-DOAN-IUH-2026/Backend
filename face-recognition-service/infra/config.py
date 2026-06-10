@@ -40,11 +40,15 @@ class Settings(BaseSettings):
 
     data_encryption_key: str
 
+    entry_cam_id: str = "entry_gate"
+    exit_cam_id: str = "exit_gate"
     entry_cam_url: str = ""
     exit_cam_url: str = ""
     relay_api_url: str = ""
     face_match_threshold: float = 0.6
     access_cooldown_seconds: int = 10
+    max_entry_hours: int = 24
+    enable_person_detection: bool = True
 
 
 settings = Settings()  # type: ignore
