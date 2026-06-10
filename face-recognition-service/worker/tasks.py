@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import base64
 import logging
 import threading
 import urllib.parse
 import uuid as _uuid
 
+import numpy as np
 import psycopg
 from jose import jwt
 
@@ -187,14 +187,15 @@ def enroll_task(self, user_id: str, object_key: str) -> dict:
                 "liveness_score": liveness.get("liveness_score"),
             }
         vec = extract_embedding_placeholder(img)
-        vec_sum = sum(abs(x) for x in vec)
+        vec_arr = np.array(vec, dtype=np.float32)
+        vec_sum = float(np.sum(np.abs(vec_arr)))
         if vec_sum < 0.1:
             _delete_temp_frame(object_key)
             logger.error("Enroll: extracted embedding is near-zero for patron_id %s, sum=%.6f", patron_id, vec_sum)
             return {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
         norm_vec = l2_normalize(vec)
         logger.info("Enroll embedding stats: min=%.4f, max=%.4f, sum_abs=%.4f, norm=%.4f",
-                    min(vec), max(vec), vec_sum, sum(x*x for x in vec)**0.5)
+                    float(np.min(vec_arr)), float(np.max(vec_arr)), vec_sum, float(np.linalg.norm(vec_arr)))
         _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
         _get_storage().upload_image(f"enrollments/{patron_id}.jpg", encrypted)
@@ -212,26 +213,29 @@ def verify_task(self, user_id: str, object_key: str) -> dict:
         patron_id = _get_patron_id_by_user_id(user_id) or user_id
         _, img = _process_from_minio(object_key)
         vec = extract_embedding_placeholder(img)
-        vec_sum = sum(abs(x) for x in vec)
+        vec_arr = np.array(vec, dtype=np.float32)
+        vec_sum = float(np.sum(np.abs(vec_arr)))
         if vec_sum < 0.1:
             _delete_temp_frame(object_key)
             logger.error("Verify: extracted embedding is near-zero, sum=%.6f", vec_sum)
             return {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
         norm_vec = l2_normalize(vec)
+        norm_vec_arr = np.array(norm_vec, dtype=np.float32)
         logger.info("Verify query embedding: min=%.4f, max=%.4f, sum_abs=%.4f",
-                    min(vec), max(vec), vec_sum)
+                    float(np.min(vec_arr)), float(np.max(vec_arr)), vec_sum)
         enrolled_emb = _get_milvus().get_embedding_by_user_id(patron_id)
         if enrolled_emb is None:
             _delete_temp_frame(object_key)
             return {"status": "success", "verified": False, "score": 0.0, "error": "Face not enrolled"}
-        enrolled_sum = sum(abs(x) for x in enrolled_emb)
+        enrolled_arr = np.array(enrolled_emb, dtype=np.float32)
+        enrolled_sum = float(np.sum(np.abs(enrolled_arr)))
         logger.info("Verify enrolled embedding: min=%.4f, max=%.4f, sum_abs=%.4f",
-                    min(enrolled_emb), max(enrolled_emb), enrolled_sum)
-        score = float(sum(n * e for n, e in zip(norm_vec, enrolled_emb)))
+                    float(np.min(enrolled_arr)), float(np.max(enrolled_arr)), enrolled_sum)
+        score = float(np.dot(norm_vec_arr, enrolled_arr))
         logger.info("Verify score for patron_id %s (user_id %s): %.4f (query_norm=%.4f, enrolled_norm=%.4f)",
                     patron_id, user_id, score,
-                    sum(x*x for x in vec)**0.5,
-                    sum(x*x for x in enrolled_emb)**0.5)
+                    float(np.linalg.norm(vec_arr)),
+                    float(np.linalg.norm(enrolled_arr)))
         _delete_temp_frame(object_key)
         return {"status": "success", "verified": score > 0.6, "score": score}
     except Exception as exc:
@@ -289,11 +293,12 @@ def face_login_task(self, email: str, object_key: str) -> dict:
         _, img = _process_from_minio(object_key)
         vec = extract_embedding_placeholder(img)
         norm_vec = l2_normalize(vec)
+        norm_vec_arr = np.array(norm_vec, dtype=np.float32)
         enrolled_emb = _get_milvus().get_embedding_by_user_id(user_info["id"])
         if enrolled_emb is None:
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face not enrolled. Please enroll first."}
-        score = float(sum(n * e for n, e in zip(norm_vec, enrolled_emb)))
+        score = float(np.dot(norm_vec_arr, np.array(enrolled_emb, dtype=np.float32)))
         if score < 0.6:
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face does not match", "score": score}
