@@ -136,10 +136,7 @@ def _process_image(image_b64: str):
 def enroll_task(self, user_id: str, image_b64: str) -> dict:
     logger.info("Enrolling user %s", user_id)
     try:
-        patron_id = _get_patron_id_by_user_id(user_id)
-        if not patron_id:
-            logger.error("Enroll: no patron found for user_id %s", user_id)
-            return {"status": "error", "error": "PATRON_NOT_FOUND", "score": 0.0}
+        patron_id = _get_patron_id_by_user_id(user_id) or user_id
         raw_data, img = _process_image(image_b64)
         quality = check_face_quality(img)
         if not quality.get("valid"):
@@ -148,6 +145,14 @@ def enroll_task(self, user_id: str, image_b64: str) -> dict:
                 "error": quality.get("error"),
                 "score": quality.get("score"),
                 "count": quality.get("count"),
+            }
+        liveness = run_liveness_analysis(img)
+        if not liveness.get("is_live", False):
+            logger.warning("Enroll: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
+            return {
+                "status": "error",
+                "error": "LIVENESS_FAILED",
+                "liveness_score": liveness.get("liveness_score"),
             }
         vec = extract_embedding_placeholder(img)
         vec_sum = sum(abs(x) for x in vec)
@@ -170,10 +175,7 @@ def enroll_task(self, user_id: str, image_b64: str) -> dict:
 def verify_task(self, user_id: str, image_b64: str) -> dict:
     logger.info("Verifying user %s", user_id)
     try:
-        patron_id = _get_patron_id_by_user_id(user_id)
-        if not patron_id:
-            logger.error("Verify: no patron found for user_id %s", user_id)
-            return {"status": "error", "error": "PATRON_NOT_FOUND", "score": 0.0}
+        patron_id = _get_patron_id_by_user_id(user_id) or user_id
         _, img = _process_image(image_b64)
         vec = extract_embedding_placeholder(img)
         vec_sum = sum(abs(x) for x in vec)
@@ -343,6 +345,14 @@ def enroll_face(self, patron_id: str, image_bytes: str) -> dict:
         face_result = detect_face_once(img)
         if not face_result.get("valid"):
             return {"status": "error", "error": face_result.get("error", "No face detected")}
+        liveness = liveness_from_face(img, face_result["face"])
+        if not liveness.get("is_live", False):
+            logger.warning("Enroll face: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
+            return {
+                "status": "error",
+                "error": "LIVENESS_FAILED",
+                "liveness_score": liveness.get("liveness_score"),
+            }
         norm_vec = l2_normalize(face_result["embedding"])
         _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
@@ -438,7 +448,9 @@ def identify_patron(self, image_bytes: str) -> dict:
 
 
 def _is_patron_inside(patron_id: str) -> bool:
-    """Check if patron currently has an active entry (inside library)."""
+    """Check if patron currently has an active entry (inside library).
+    Auto-expires after max_entry_hours to prevent stuck 'inside' status.
+    """
     try:
         parsed = urllib.parse.urlparse(settings.postgres_url)
         conn = psycopg.connect(
@@ -447,8 +459,8 @@ def _is_patron_inside(patron_id: str) -> bool:
         )
         cur = conn.cursor()
         cur.execute(
-            "SELECT access_time FROM access_logs WHERE patron_id = %s AND access_type = 'entry' AND status = 'success' ORDER BY access_time DESC LIMIT 1",
-            (patron_id,),
+            "SELECT access_time FROM access_logs WHERE patron_id = %s AND access_type = 'entry' AND status = 'success' AND access_time > NOW() - INTERVAL '%s hours' ORDER BY access_time DESC LIMIT 1",
+            (patron_id, settings.max_entry_hours),
         )
         entry = cur.fetchone()
         if not entry:
@@ -468,11 +480,40 @@ def _is_patron_inside(patron_id: str) -> bool:
 
 def _publish_camera_event(data: dict) -> None:
     try:
+        camera_id = data.get("camera_id", "unknown")
+        status_val = data.get("status", "unknown")
+        throttle_key = f"cam_throttle:{camera_id}:{status_val}"
+
+        r = _get_redis_throttle()
+        if r is None:
+            from infra.redis_pubsub import publish as _pub
+            _pub("camera:events", data)
+            return
+
+        try:
+            import redis as _redis
+            throttle_set = r.set(throttle_key, "1", nx=True, ex=1)
+            if not throttle_set:
+                logger.debug("Throttled event %s for camera %s", status_val, camera_id)
+                return
+        finally:
+            r.close()
+
         from infra.redis_pubsub import publish as _pub
         _pub("camera:events", data)
-        logger.info("Camera event published: status=%s, camera_id=%s", data.get("status"), data.get("camera_id"))
+        logger.info("Camera event published: status=%s, camera_id=%s", status_val, camera_id)
     except Exception as e:
         logger.error("Failed to publish camera event: %s - data=%s", e, data)
+
+
+def _get_redis_throttle():
+    try:
+        from infra.config import settings
+        import redis as _redis
+        return _redis.Redis.from_url(settings.celery_broker_url)
+    except Exception as e:
+        logger.warning("Redis throttle unavailable: %s", e)
+        return None
 
 
 @celery_app.task(bind=True, name="process_camera_frame", max_retries=1, default_retry_delay=5)
@@ -482,6 +523,18 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
         raw = base64.b64decode(image_bytes)
         img = safe_read_image_from_bytes(raw)
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
+
+        # Step 0: Person presence check — filter out non-human objects (mannequins, dolls)
+        if settings.enable_person_detection:
+            try:
+                from worker.human_detector import has_person_in_frame
+                if not has_person_in_frame(img):
+                    logger.info("No person detected in frame from %s — skipping", camera_id)
+                    result = {"camera_id": camera_id, "status": "no_match"}
+                    _publish_camera_event(result)
+                    return result
+            except Exception as pe:
+                logger.warning("Person detection failed (will proceed anyway): %s", pe)
 
         # Step 1: Detect face once - get embedding and face data
         face_result = detect_face_once(img)
@@ -542,26 +595,46 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
             _publish_camera_event(result)
             return result
 
-        # Step 3: Determine access type — camera-based, không phụ thuộc trạng thái
-        is_entry_cam = "entry" in camera_id
-        if is_entry_cam:
+        # Step 3: Determine access type — exact camera ID match
+        if camera_id == settings.entry_cam_id:
             access_type = "entry"
-        else:
-            # Camera ra: chỉ tạo exit nếu đang ở trong, bỏ qua nếu không
-            if not _is_patron_inside(patron_id):
-                logger.info("Skipping exit for %s (%s) — not inside library", full_name, student_code)
-                result = {"camera_id": camera_id, "status": "no_match", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score}
+            if _is_patron_inside(patron_id):
+                logger.info("Wrong direction at entry for %s (%s) — already inside", full_name, student_code)
+                result = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type}
                 _publish_camera_event(result)
                 return result
+        elif camera_id == settings.exit_cam_id:
             access_type = "exit"
+            if not _is_patron_inside(patron_id):
+                logger.info("Wrong direction at exit for %s (%s) — not inside library", full_name, student_code)
+                result = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type}
+                _publish_camera_event(result)
+                return result
+        else:
+            logger.warning("Unknown camera_id: %s — skipping frame", camera_id)
+            result = {"camera_id": camera_id, "status": "no_match"}
+            _publish_camera_event(result)
+            return result
 
-        # Step 4: Create access log in DB
+        # Step 4: Create access log in DB (with duplicate check)
         parsed = urllib.parse.urlparse(settings.postgres_url)
         conn = psycopg.connect(
             host=parsed.hostname, port=parsed.port or 5432,
             dbname=parsed.path.lstrip("/"), user=parsed.username, password=parsed.password,
         )
         cur = conn.cursor()
+        # Check most recent access_log of same type
+        cur.execute(
+            "SELECT EXTRACT(EPOCH FROM (NOW() - access_time)) FROM access_logs WHERE patron_id = %s AND access_type = %s AND status = 'success' ORDER BY access_time DESC LIMIT 1",
+            (patron_id, access_type),
+        )
+        row = cur.fetchone()
+        if row and row[0] < settings.access_cooldown_seconds:
+            cur.close(); conn.close()
+            logger.info("Skipping duplicate %s for %s (%s) — last %s was %.0fs ago", access_type, full_name, student_code, access_type, row[0])
+            result = {"camera_id": camera_id, "status": "no_match", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score}
+            _publish_camera_event(result)
+            return result
         import uuid as _uuid
         log_id = str(_uuid.uuid4())
         cur.execute(

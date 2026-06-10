@@ -153,6 +153,18 @@ async def get_active(
     return {"items": result, "total": len(result)}
 
 
+@router.get("/frequency")
+async def get_frequency(
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    db: AsyncSession = Depends(get_db_session),
+    _=Depends(get_current_user),
+):
+    repo = PatronRepository(db)
+    daily = await repo.get_access_frequency(date_from=date_from, date_to=date_to)
+    return {"daily": daily}
+
+
 @router.get("/stats")
 async def get_stats(
     db: AsyncSession = Depends(get_db_session),

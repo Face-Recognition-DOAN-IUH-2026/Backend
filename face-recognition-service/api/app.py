@@ -50,19 +50,22 @@ async def lifespan(app: FastAPI):
     exit_ = settings.exit_cam_url
     _sse_thread = None
     if entry or exit_:
-        try:
-            from worker.stream_service import stream_service
-            cb = _camera_callback_factory()
-            if entry:
-                stream_service.register_camera("entry_gate", entry)
-                stream_service.set_callback("entry_gate", cb)
-            if exit_:
-                stream_service.register_camera("exit_gate", exit_)
-                stream_service.set_callback("exit_gate", cb)
-            stream_service.start_all()
-        except Exception as e:
-            import logging
-            logging.getLogger("uvicorn").error("Camera startup error: %s", e, exc_info=True)
+        import threading as _t
+        def _start_cameras():
+            try:
+                from worker.stream_service import stream_service
+                cb = _camera_callback_factory()
+                if entry:
+                    stream_service.register_camera(settings.entry_cam_id, entry)
+                    stream_service.set_callback(settings.entry_cam_id, cb)
+                if exit_:
+                    stream_service.register_camera(settings.exit_cam_id, exit_)
+                    stream_service.set_callback(settings.exit_cam_id, cb)
+                stream_service.start_all()
+            except Exception as e:
+                import logging
+                logging.getLogger("uvicorn").error("Camera startup error: %s", e, exc_info=True)
+        _t.Thread(target=_start_cameras, daemon=True).start()
 
     try:
         import asyncio
@@ -113,5 +116,34 @@ def create_app() -> FastAPI:
     @app.get("/healthz")
     async def healthz() -> dict:
         return {"ok": True}
+
+    @app.get("/debug/face-collections")
+    async def debug_face_collections():
+        from infra.milvus_client import MilvusClient
+        from infra.database import async_session_factory
+        from infra.models import PatronFaceModel
+        from sqlalchemy import select, func as sa_func
+        m = MilvusClient(
+            host=settings.milvus_host,
+            port=settings.milvus_port,
+            collection_name=settings.milvus_collection,
+            dim=512,
+        )
+        results = m.collection.query(expr="", output_fields=["user_id"], limit=1000)
+        milvus_ids = {r["user_id"] for r in results}
+        async with async_session_factory() as db:
+            rs = await db.execute(select(PatronFaceModel))
+            faces = rs.scalars().all()
+        pg_ids = {str(f.patron_id) for f in faces if f.is_active}
+        missing = pg_ids - milvus_ids
+        orphan = milvus_ids - pg_ids
+        return {
+            "milvus_count": len(milvus_ids),
+            "patron_faces_count": len(pg_ids),
+            "milvus_ids": sorted(milvus_ids),
+            "pg_ids": sorted(pg_ids),
+            "missing_in_milvus": sorted(missing),
+            "orphan_in_milvus": sorted(orphan),
+        }
 
     return app

@@ -175,4 +175,16 @@ async def enroll_patron_face(
         kwargs={"patron_id": str(patron_id), "image_bytes": img_b64},
     )
 
-    return {"success": True, "job_id": task.id, "message": "Face enrollment in progress"}
+    result = task.get(timeout=60)
+    if result.get("status") == "error":
+        error_msg = result.get("error", "Unknown error")
+        error_detail = {
+            "LIVENESS_FAILED": "Ảnh không phải khuôn mặt thật, vui lòng chụp ảnh trực tiếp",
+            "NO_FACE_DETECTED": "Không tìm thấy khuôn mặt trong ảnh, vui lòng thử lại",
+            "MULTIPLE_FACES": "Có nhiều hơn 1 khuôn mặt trong ảnh, vui lòng chụp lại",
+            "LOW_QUALITY": "Ảnh quá mờ hoặc thiếu sáng, vui lòng chụp lại với điều kiện ánh sáng tốt hơn",
+            "FACE_DETECTION_FAILED": "Không thể trích xuất khuôn mặt, vui lòng thử lại",
+        }.get(error_msg, error_msg)
+        raise HTTPException(400, error_detail)
+
+    return {"success": True, "message": "Face enrolled successfully", "patron_id": str(patron_id)}

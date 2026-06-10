@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: face_recognition
       POSTGRES_USER: postgres
@@ -17,6 +18,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -27,6 +29,7 @@ services:
 
   minio:
     image: minio/minio:latest
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     volumes:
       - miniodata:/data
@@ -43,6 +46,7 @@ services:
 
   milvus:
     image: milvusdb/milvus:v2.4.0
+    restart: unless-stopped
     volumes:
       - milvusdata:/var/lib/milvus
     command: [/milvus/bin/milvus, run, standalone]
@@ -63,8 +67,9 @@ services:
       context: face-recognition-service
       dockerfile: Dockerfile.api
     container_name: face-recognition-api
+    restart: unless-stopped
     env_file:
-      - face-recognition-service/.env
+      - ./.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,9 +86,12 @@ services:
     build:
       context: face-recognition-service
       dockerfile: Dockerfile.worker
-    container_name: face-recognition-worker
+    restart: unless-stopped
+    shm_size: "2gb"
+    deploy:
+      replicas: 3
     env_file:
-      - face-recognition-service/.env
+      - ./.env
     volumes:
       - insightface_models:/root/.insightface/models
     depends_on:
@@ -103,9 +111,11 @@ services:
       context: user-service
       dockerfile: Dockerfile
     container_name: user-service
+    restart: unless-stopped
     env_file:
-      - user-service/.env
+      - ./.env
     environment:
+      PORT: 3001
       DB_HOST: postgres
     depends_on:
       postgres:
@@ -121,7 +131,9 @@ services:
     ports:
       - "80:80"
     env_file:
-      - api-gateway/.env
+      - ./.env
+    environment:
+      PORT: 80
     depends_on:
       - face-recognition-api
       - user-service

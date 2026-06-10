@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.schemas import (
@@ -26,6 +28,14 @@ async def _get_db() -> AsyncSession:
         yield session
 
 
+async def _hash_password(password: str) -> str:
+    return await run_in_threadpool(pwd_context.hash, password)
+
+
+async def _verify_password(plain_password: str, hashed_password: str) -> bool:
+    return await run_in_threadpool(pwd_context.verify, plain_password, hashed_password)
+
+
 @router.post("/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
 async def register(body: UserCreate, db: AsyncSession = Depends(_get_db)):
     repo = PostgresUserRepository(db)
@@ -34,7 +44,7 @@ async def register(body: UserCreate, db: AsyncSession = Depends(_get_db)):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
         )
-    password_hash = pwd_context.hash(body.password)
+    password_hash = await _hash_password(body.password)
     user_id = await repo.create_user(body.email, password_hash, body.role, body.full_name)
     return UserPublic(id=user_id, email=body.email, full_name=body.full_name, role=body.role)
 
@@ -43,7 +53,7 @@ async def register(body: UserCreate, db: AsyncSession = Depends(_get_db)):
 async def login(body: LoginRequest, db: AsyncSession = Depends(_get_db)):
     repo = PostgresUserRepository(db)
     user = await repo.get_user_by_email(body.email)
-    if not user or not pwd_context.verify(body.password, user.password_hash):
+    if not user or not await _verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         )
