@@ -13,20 +13,21 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 
 
 def _camera_callback_factory():
-    """Create a callback that sends camera frames to Celery worker."""
+    """Create a callback that uploads camera frames to MinIO and sends task to Celery."""
     import logging
     _logger = logging.getLogger("uvicorn")
     from celery import Celery as _Celery
     _worker = _Celery("face_recognition", broker=settings.celery_broker_url, backend=settings.celery_result_backend)
+    from worker.tasks import _upload_temp_frame
 
     def _on_frame(camera_id: str, frame):
-        import cv2, base64
-        _logger.info("Camera %s received frame, queuing Celery task...", camera_id)
+        import cv2, uuid as _uuid
+        _logger.info("Camera %s received frame, uploading to MinIO...", camera_id)
         try:
             _, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
-            b64 = base64.b64encode(buf).decode("utf-8")
-            _worker.send_task("process_camera_frame", kwargs={"camera_id": camera_id, "image_bytes": b64})
-            _logger.info("Camera %s task queued successfully", camera_id)
+            object_key = _upload_temp_frame(buf.tobytes(), str(_uuid.uuid4()))
+            _worker.send_task("process_camera_frame", kwargs={"camera_id": camera_id, "object_key": object_key})
+            _logger.info("Camera %s task queued successfully (key=%s)", camera_id, object_key)
         except Exception as e:
             _logger.error("Camera %s failed to queue Celery task: %s", camera_id, e)
 
