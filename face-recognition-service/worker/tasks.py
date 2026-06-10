@@ -146,6 +146,14 @@ def enroll_task(self, user_id: str, image_b64: str) -> dict:
                 "score": quality.get("score"),
                 "count": quality.get("count"),
             }
+        liveness = run_liveness_analysis(img)
+        if not liveness.get("is_live", False):
+            logger.warning("Enroll: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
+            return {
+                "status": "error",
+                "error": "LIVENESS_FAILED",
+                "liveness_score": liveness.get("liveness_score"),
+            }
         vec = extract_embedding_placeholder(img)
         vec_sum = sum(abs(x) for x in vec)
         if vec_sum < 0.1:
@@ -337,6 +345,14 @@ def enroll_face(self, patron_id: str, image_bytes: str) -> dict:
         face_result = detect_face_once(img)
         if not face_result.get("valid"):
             return {"status": "error", "error": face_result.get("error", "No face detected")}
+        liveness = liveness_from_face(img, face_result["face"])
+        if not liveness.get("is_live", False):
+            logger.warning("Enroll face: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
+            return {
+                "status": "error",
+                "error": "LIVENESS_FAILED",
+                "liveness_score": liveness.get("liveness_score"),
+            }
         norm_vec = l2_normalize(face_result["embedding"])
         _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
@@ -464,11 +480,40 @@ def _is_patron_inside(patron_id: str) -> bool:
 
 def _publish_camera_event(data: dict) -> None:
     try:
+        camera_id = data.get("camera_id", "unknown")
+        status_val = data.get("status", "unknown")
+        throttle_key = f"cam_throttle:{camera_id}:{status_val}"
+
+        r = _get_redis_throttle()
+        if r is None:
+            from infra.redis_pubsub import publish as _pub
+            _pub("camera:events", data)
+            return
+
+        try:
+            import redis as _redis
+            throttle_set = r.set(throttle_key, "1", nx=True, ex=1)
+            if not throttle_set:
+                logger.debug("Throttled event %s for camera %s", status_val, camera_id)
+                return
+        finally:
+            r.close()
+
         from infra.redis_pubsub import publish as _pub
         _pub("camera:events", data)
-        logger.info("Camera event published: status=%s, camera_id=%s", data.get("status"), data.get("camera_id"))
+        logger.info("Camera event published: status=%s, camera_id=%s", status_val, camera_id)
     except Exception as e:
         logger.error("Failed to publish camera event: %s - data=%s", e, data)
+
+
+def _get_redis_throttle():
+    try:
+        from infra.config import settings
+        import redis as _redis
+        return _redis.Redis.from_url(settings.celery_broker_url)
+    except Exception as e:
+        logger.warning("Redis throttle unavailable: %s", e)
+        return None
 
 
 @celery_app.task(bind=True, name="process_camera_frame", max_retries=1, default_retry_delay=5)

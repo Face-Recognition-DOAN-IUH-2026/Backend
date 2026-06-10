@@ -117,4 +117,33 @@ def create_app() -> FastAPI:
     async def healthz() -> dict:
         return {"ok": True}
 
+    @app.get("/debug/face-collections")
+    async def debug_face_collections():
+        from infra.milvus_client import MilvusClient
+        from infra.database import async_session_factory
+        from infra.models import PatronFaceModel
+        from sqlalchemy import select, func as sa_func
+        m = MilvusClient(
+            host=settings.milvus_host,
+            port=settings.milvus_port,
+            collection_name=settings.milvus_collection,
+            dim=512,
+        )
+        results = m.collection.query(expr="", output_fields=["user_id"], limit=1000)
+        milvus_ids = {r["user_id"] for r in results}
+        async with async_session_factory() as db:
+            rs = await db.execute(select(PatronFaceModel))
+            faces = rs.scalars().all()
+        pg_ids = {str(f.patron_id) for f in faces if f.is_active}
+        missing = pg_ids - milvus_ids
+        orphan = milvus_ids - pg_ids
+        return {
+            "milvus_count": len(milvus_ids),
+            "patron_faces_count": len(pg_ids),
+            "milvus_ids": sorted(milvus_ids),
+            "pg_ids": sorted(pg_ids),
+            "missing_in_milvus": sorted(missing),
+            "orphan_in_milvus": sorted(orphan),
+        }
+
     return app

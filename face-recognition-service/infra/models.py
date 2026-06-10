@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 
 from infra.database import Base
@@ -62,6 +62,9 @@ class PatronFaceModel(Base):
 
 class AccessLogModel(Base):
     __tablename__ = "access_logs"
+    __table_args__ = (
+        Index('idx_patron_access_time', 'patron_id', 'access_time'),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     patron_id = Column(UUID(as_uuid=True), ForeignKey("patrons.id"), nullable=True)
