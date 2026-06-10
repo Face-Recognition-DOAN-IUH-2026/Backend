@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import base64
 import logging
+import threading
 import urllib.parse
+import uuid as _uuid
 
 import psycopg
 from jose import jwt
@@ -27,6 +29,54 @@ logger = logging.getLogger(__name__)
 
 _milvus: MilvusClient | None = None
 _storage: MinioStorage | None = None
+_pg_connection_cache: dict[int, psycopg.Connection] = {}
+_pg_lock = threading.Lock()
+
+# =============================================================================
+# THREAD-LOCAL CONNECTION POOL - Reuse connections per thread
+# =============================================================================
+def _get_pg_connection() -> psycopg.Connection:
+    """Get or create a thread-local PostgreSQL connection (autocommit mode)."""
+    thread_id = threading.current_thread().ident
+    if thread_id not in _pg_connection_cache or _pg_connection_cache[thread_id].closed:
+        parsed = urllib.parse.urlparse(settings.postgres_url)
+        conn = psycopg.connect(
+            host=parsed.hostname,
+            port=parsed.port or 5432,
+            dbname=parsed.path.lstrip("/"),
+            user=parsed.username,
+            password=parsed.password,
+            autocommit=True,
+        )
+        _pg_connection_cache[thread_id] = conn
+        logger.debug("Created new PG connection for thread %s", thread_id)
+    return _pg_connection_cache[thread_id]
+
+# =============================================================================
+# TEMP FRAME STORAGE - Upload to MinIO, pass key instead of base64 via Redis
+# =============================================================================
+def _upload_temp_frame(frame_bytes: bytes, task_id: str | None = None) -> str:
+    """Upload frame bytes to MinIO temp bucket, return object key."""
+    if task_id is None:
+        task_id = str(_uuid.uuid4())
+    object_key = f"temp_frames/{task_id}.jpg"
+    _get_storage().upload_image(object_key, frame_bytes)
+    logger.debug("Uploaded temp frame to MinIO: %s", object_key)
+    return object_key
+
+
+def _get_temp_frame(object_key: str) -> bytes:
+    """Download temp frame from MinIO."""
+    return _get_storage().get_image(object_key)
+
+
+def _delete_temp_frame(object_key: str) -> None:
+    """Delete temp frame from MinIO after processing."""
+    try:
+        _get_storage().delete_image(object_key)
+        logger.debug("Deleted temp frame: %s", object_key)
+    except Exception:
+        logger.warning("Failed to delete temp frame: %s", object_key)
 
 
 def _get_milvus() -> MilvusClient:
@@ -50,14 +100,7 @@ def _get_storage() -> MinioStorage:
 
 def _get_user_info(user_id: str) -> dict | None:
     try:
-        parsed = urllib.parse.urlparse(settings.postgres_url)
-        conn = psycopg.connect(
-            host=parsed.hostname,
-            port=parsed.port or 5432,
-            dbname=parsed.path.lstrip("/"),
-            user=parsed.username,
-            password=parsed.password,
-        )
+        conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
             "SELECT id::text, email, full_name, role, created_at FROM users WHERE id = %s",
@@ -65,7 +108,6 @@ def _get_user_info(user_id: str) -> dict | None:
         )
         row = cur.fetchone()
         cur.close()
-        conn.close()
         if row:
             return {
                 "id": row[0],
@@ -82,14 +124,7 @@ def _get_user_info(user_id: str) -> dict | None:
 
 def _get_patron_id_by_user_id(user_id: str) -> str | None:
     try:
-        parsed = urllib.parse.urlparse(settings.postgres_url)
-        conn = psycopg.connect(
-            host=parsed.hostname,
-            port=parsed.port or 5432,
-            dbname=parsed.path.lstrip("/"),
-            user=parsed.username,
-            password=parsed.password,
-        )
+        conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
             "SELECT u.email FROM users u WHERE u.id = %s",
@@ -98,7 +133,6 @@ def _get_patron_id_by_user_id(user_id: str) -> str | None:
         row = cur.fetchone()
         if not row:
             cur.close()
-            conn.close()
             return None
         email = row[0]
         cur.execute(
@@ -107,7 +141,6 @@ def _get_patron_id_by_user_id(user_id: str) -> str | None:
         )
         patron_row = cur.fetchone()
         cur.close()
-        conn.close()
         if patron_row:
             return patron_row[0]
         return None
@@ -233,14 +266,7 @@ def face_login_task(self, email: str, image_b64: str) -> dict:
     logger.info("Face login for %s", email)
     try:
         user_info = None
-        parsed = urllib.parse.urlparse(settings.postgres_url)
-        conn = psycopg.connect(
-            host=parsed.hostname,
-            port=parsed.port or 5432,
-            dbname=parsed.path.lstrip("/"),
-            user=parsed.username,
-            password=parsed.password,
-        )
+        conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
             "SELECT id::text, email, role FROM users WHERE email = %s",
@@ -248,7 +274,6 @@ def face_login_task(self, email: str, image_b64: str) -> dict:
         )
         row = cur.fetchone()
         cur.close()
-        conn.close()
         if row:
             user_info = {"id": row[0], "email": row[1], "role": row[2]}
         if not user_info:
@@ -359,11 +384,7 @@ def enroll_face(self, patron_id: str, image_bytes: str) -> dict:
         _get_storage().upload_image(f"patrons/{patron_id}.jpg", encrypted)
 
         # Update PatronFaceModel in Postgres
-        parsed = urllib.parse.urlparse(settings.postgres_url)
-        conn = psycopg.connect(
-            host=parsed.hostname, port=parsed.port or 5432,
-            dbname=parsed.path.lstrip("/"), user=parsed.username, password=parsed.password,
-        )
+        conn = _get_pg_connection()
         cur = conn.cursor()
         # Insert or update face record with milvus_id
         cur.execute(
@@ -371,7 +392,6 @@ def enroll_face(self, patron_id: str, image_bytes: str) -> dict:
             (patron_id,),
         )
         exists = cur.fetchone()
-        import uuid as _uuid
         if exists:
             cur.execute(
                 "UPDATE patron_faces SET milvus_id = %s, updated_at = NOW() WHERE id = %s",
@@ -384,7 +404,6 @@ def enroll_face(self, patron_id: str, image_bytes: str) -> dict:
             )
         conn.commit()
         cur.close()
-        conn.close()
         return {"status": "success", "patron_id": patron_id, "quality_score": face_result.get("score")}
     except Exception as exc:
         logger.exception("Enroll face failed for %s", patron_id)
@@ -408,11 +427,7 @@ def identify_patron(self, image_bytes: str) -> dict:
         score = float(hit["score"])
 
         # Lookup patron info from Postgres
-        parsed = urllib.parse.urlparse(settings.postgres_url)
-        conn = psycopg.connect(
-            host=parsed.hostname, port=parsed.port or 5432,
-            dbname=parsed.path.lstrip("/"), user=parsed.username, password=parsed.password,
-        )
+        conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
             "SELECT full_name, student_code, membership_expiry, status FROM patrons WHERE id = %s",
@@ -420,7 +435,6 @@ def identify_patron(self, image_bytes: str) -> dict:
         )
         row = cur.fetchone()
         cur.close()
-        conn.close()
 
         if not row:
             _get_milvus().delete_by_user_id(user_id=patron_id)
@@ -452,11 +466,7 @@ def _is_patron_inside(patron_id: str) -> bool:
     Auto-expires after max_entry_hours to prevent stuck 'inside' status.
     """
     try:
-        parsed = urllib.parse.urlparse(settings.postgres_url)
-        conn = psycopg.connect(
-            host=parsed.hostname, port=parsed.port or 5432,
-            dbname=parsed.path.lstrip("/"), user=parsed.username, password=parsed.password,
-        )
+        conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
             "SELECT access_time FROM access_logs WHERE patron_id = %s AND access_type = 'entry' AND status = 'success' AND access_time > NOW() - INTERVAL '%s hours' ORDER BY access_time DESC LIMIT 1",
@@ -464,14 +474,14 @@ def _is_patron_inside(patron_id: str) -> bool:
         )
         entry = cur.fetchone()
         if not entry:
-            cur.close(); conn.close()
+            cur.close()
             return False
         cur.execute(
             "SELECT COUNT(*) FROM access_logs WHERE patron_id = %s AND access_type = 'exit' AND status = 'success' AND access_time > %s",
             (patron_id, entry[0]),
         )
         count = cur.fetchone()[0]
-        cur.close(); conn.close()
+        cur.close()
         return count == 0
     except Exception as e:
         logger.warning("Failed to check patron inside status for %s: %s", patron_id, e)
@@ -555,11 +565,7 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
         patron_id = hit["user_id"]
         score = float(hit["score"])
 
-        parsed = urllib.parse.urlparse(settings.postgres_url)
-        conn = psycopg.connect(
-            host=parsed.hostname, port=parsed.port or 5432,
-            dbname=parsed.path.lstrip("/"), user=parsed.username, password=parsed.password,
-        )
+        conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
             "SELECT full_name, student_code, membership_expiry, status FROM patrons WHERE id = %s",
@@ -567,7 +573,6 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
         )
         row = cur.fetchone()
         cur.close()
-        conn.close()
 
         if not row:
             _get_milvus().delete_by_user_id(user_id=patron_id)
@@ -617,11 +622,7 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
             return result
 
         # Step 4: Create access log in DB (with duplicate check)
-        parsed = urllib.parse.urlparse(settings.postgres_url)
-        conn = psycopg.connect(
-            host=parsed.hostname, port=parsed.port or 5432,
-            dbname=parsed.path.lstrip("/"), user=parsed.username, password=parsed.password,
-        )
+        conn = _get_pg_connection()
         cur = conn.cursor()
         # Check most recent access_log of same type
         cur.execute(
@@ -630,12 +631,11 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
         )
         row = cur.fetchone()
         if row and row[0] < settings.access_cooldown_seconds:
-            cur.close(); conn.close()
+            cur.close()
             logger.info("Skipping duplicate %s for %s (%s) — last %s was %.0fs ago", access_type, full_name, student_code, access_type, row[0])
             result = {"camera_id": camera_id, "status": "no_match", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score}
             _publish_camera_event(result)
             return result
-        import uuid as _uuid
         log_id = str(_uuid.uuid4())
         cur.execute(
             """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
@@ -644,7 +644,6 @@ def process_camera_frame(self, camera_id: str, image_bytes: str) -> dict:
         )
         conn.commit()
         cur.close()
-        conn.close()
 
         logger.info("Access %s: %s (%s) at %s", access_type, full_name, student_code, camera_id)
         result = {
@@ -686,11 +685,7 @@ def verify_face(self, patron_id: str, image_bytes: str) -> dict:
             return {"status": "error", "error": "Liveness check failed", "is_live": False}
 
         # Lookup patron info for access log
-        parsed = urllib.parse.urlparse(settings.postgres_url)
-        conn = psycopg.connect(
-            host=parsed.hostname, port=parsed.port or 5432,
-            dbname=parsed.path.lstrip("/"), user=parsed.username, password=parsed.password,
-        )
+        conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
             "SELECT full_name, student_code FROM patrons WHERE id = %s",
@@ -705,7 +700,6 @@ def verify_face(self, patron_id: str, image_bytes: str) -> dict:
         access_type = "exit" if _is_patron_inside(patron_id) else "entry"
 
         # Create access log
-        import uuid as _uuid
         log_id = str(_uuid.uuid4())
         score = float(hit["score"])
         cur = conn.cursor()
@@ -716,7 +710,6 @@ def verify_face(self, patron_id: str, image_bytes: str) -> dict:
         )
         conn.commit()
         cur.close()
-        conn.close()
 
         logger.info("Access %s: %s (%s) at kiosk", access_type, full_name, student_code)
         result = {
