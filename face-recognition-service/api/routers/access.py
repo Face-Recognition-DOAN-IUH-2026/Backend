@@ -189,7 +189,7 @@ async def get_stats(
 ):
     repo = PatronRepository(db)
     today = date.today()
-    logs_today = await repo.get_access_logs(skip=0, limit=10000)
+    logs_today, _ = await repo.get_access_logs(skip=0, limit=10000)
     entries = sum(1 for l in logs_today if l.access_type == "entry" and l.access_time.date() == today)
     exits = sum(1 for l in logs_today if l.access_type == "exit" and l.access_time.date() == today)
     return StatsResponse(

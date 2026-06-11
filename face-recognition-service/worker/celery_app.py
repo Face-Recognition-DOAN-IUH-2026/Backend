@@ -16,7 +16,7 @@ celery_app.conf.update(
     result_serializer="json",
     accept_content=["json"],
     timezone="UTC",
-    task_soft_time_limit=120,
-    task_time_limit=180,
+    task_soft_time_limit=300,
+    task_time_limit=360,
     worker_max_tasks_per_child=1000,
 )

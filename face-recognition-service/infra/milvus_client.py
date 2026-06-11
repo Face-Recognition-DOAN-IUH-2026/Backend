@@ -39,7 +39,8 @@ class MilvusClient:
                 collection = self._create_collection()
                 collection.load()
                 return collection
-            collection.load()
+            if not collection.is_loaded:
+                collection.load()
             return collection
 
         collection = self._create_collection()
