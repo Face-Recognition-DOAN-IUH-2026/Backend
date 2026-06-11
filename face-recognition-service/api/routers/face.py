@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import uuid as _uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 
 from api.dependencies import get_current_user, require_role
 from core.schemas import (
@@ -12,7 +14,9 @@ from core.schemas import (
     VerificationResult,
 )
 from infra.cooldown import CooldownService
+from infra.redis_cache import redis_client
 from worker.tasks import (
+    _upload_temp_frame,
     delete_user_task,
     enroll_task,
     identify_task,
@@ -24,8 +28,11 @@ router = APIRouter(prefix="/face", tags=["face"])
 cooldown = CooldownService()
 
 
-def _b64(file: UploadFile) -> str:
-    return base64.b64encode(file.file.read()).decode("ascii")
+async def _store_temp_frame(raw: bytes) -> str:
+    """Upload to MinIO and also store in Redis for fast worker access."""
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+    redis_client.setex(f"temp_frame:{object_key}", 120, raw)
+    return object_key
 
 
 @router.post("/enroll", response_model=EnrollmentResult, status_code=status.HTTP_202_ACCEPTED)
@@ -42,8 +49,9 @@ async def enroll(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
         )
-    image_b64 = _b64(file)
-    task = enroll_task.delay(user_id=current_user["id"], image_b64=image_b64)
+    raw = await file.read()
+    object_key = await _store_temp_frame(raw)
+    task = enroll_task.delay(user_id=current_user["id"], object_key=object_key)
     return EnrollmentResult(job_id=task.id)
 
 
@@ -62,8 +70,9 @@ async def verify(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
         )
-    image_b64 = _b64(file)
-    task = verify_task.delay(user_id=target_user_id, image_b64=image_b64)
+    raw = await file.read()
+    object_key = await _store_temp_frame(raw)
+    task = verify_task.delay(user_id=target_user_id, object_key=object_key)
     return VerificationResult(job_id=task.id)
 
 
@@ -81,8 +90,9 @@ async def identify(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
         )
-    image_b64 = _b64(file)
-    task = identify_task.delay(image_b64=image_b64)
+    raw = await file.read()
+    object_key = await _store_temp_frame(raw)
+    task = identify_task.delay(object_key=object_key)
     return IdentificationResult(job_id=task.id)
 
 
@@ -100,8 +110,9 @@ async def liveness(
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
         )
-    image_b64 = _b64(file)
-    task = liveness_task.delay(image_b64=image_b64)
+    raw = await file.read()
+    object_key = await _store_temp_frame(raw)
+    task = liveness_task.delay(object_key=object_key)
     return LivenessResult(job_id=task.id)
 
 

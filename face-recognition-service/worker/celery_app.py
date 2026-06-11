@@ -18,4 +18,5 @@ celery_app.conf.update(
     timezone="UTC",
     task_soft_time_limit=120,
     task_time_limit=180,
+    worker_max_tasks_per_child=1000,
 )

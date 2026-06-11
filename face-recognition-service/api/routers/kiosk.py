@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import uuid as _uuid
 from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
-from celery import Celery
+from celery import Celery as _Celery
 
 from api.dependencies import get_db_session
 from core.schemas import KioskEnrollRequest, KioskEnterRequest, KioskResult, PatronPublic
@@ -13,14 +15,11 @@ from infra.config import settings
 from infra.models import PatronModel
 from infra.patron_repository import PatronRepository
 from infra.sse_manager import sse_manager
+from worker.celery_app import celery_app as _celery_app
+from worker.tasks import _upload_temp_frame
 
 router = APIRouter(prefix="/kiosk", tags=["kiosk"])
-
-celery_app = Celery(
-    "tasks",
-    broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend,
-)
+celery_app = _celery_app
 
 
 async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> PatronPublic:
@@ -85,9 +84,8 @@ async def kiosk_enroll(
     if await repo.get_by_card_number(card_number):
         raise HTTPException(409, "Card number already exists")
 
-    import base64 as _b64
     raw = await image.read()
-    img_b64 = _b64.b64encode(raw).decode("utf-8")
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
 
     patron = await repo.create_patron(
         full_name=full_name,
@@ -103,7 +101,7 @@ async def kiosk_enroll(
 
     task = celery_app.send_task(
         "enroll_face",
-        kwargs={"patron_id": str(patron.id), "image_bytes": img_b64},
+        kwargs={"patron_id": str(patron.id), "object_key": object_key},
     )
 
     return KioskResult(
@@ -133,13 +131,12 @@ async def kiosk_enter(
     if not face:
         return KioskResult(success=False, message="Patron has no enrolled face")
 
-    import base64 as _b64
     raw = await image.read()
-    img_b64 = _b64.b64encode(raw).decode("utf-8")
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
 
     task = celery_app.send_task(
         "verify_face",
-        kwargs={"patron_id": str(patron.id), "image_bytes": img_b64},
+        kwargs={"patron_id": str(patron.id), "object_key": object_key},
     )
 
     return KioskResult(

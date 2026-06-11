@@ -13,11 +13,13 @@ class SSEEvent(BaseModel):
 
 
 class SSEManager:
-    def __init__(self):
+    def __init__(self, queue_max: int = 100, keepalive_seconds: float = 30.0):
         self._clients: Set[asyncio.Queue] = set()
+        self._queue_max = queue_max
+        self._keepalive_seconds = keepalive_seconds
 
     def register(self) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=self._queue_max)
         self._clients.add(queue)
         return queue
 
@@ -26,14 +28,24 @@ class SSEManager:
 
     async def broadcast(self, event: str, data: Dict[str, Any]) -> None:
         payload = SSEEvent(event=event, data=data)
+
         dead: list[asyncio.Queue] = []
-        for q in self._clients:
+        # Avoid awaiting on each client; push using non-blocking semantics.
+        for q in list(self._clients):
             try:
-                await q.put(payload)
+                if q.full():
+                    # Drop oldest message to keep latency bounded.
+                    try:
+                        _ = q.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                q.put_nowait(payload)
             except Exception:
                 dead.append(q)
+
         for q in dead:
             self._clients.discard(q)
+
 
     async def event_generator(self):
         queue = self.register()

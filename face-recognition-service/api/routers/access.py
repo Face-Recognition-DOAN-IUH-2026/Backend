@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user, get_db_session
 from core.schemas import AccessLogPublic, ActivePatron, StatsResponse
 from infra.patron_repository import PatronRepository
 from infra.sse_manager import sse_manager
+
 
 router = APIRouter(prefix="/access", tags=["access"])
 
@@ -52,28 +54,42 @@ async def test_broadcast(
 async def get_recent_logs(db: AsyncSession = Depends(get_db_session)):
     repo = PatronRepository(db)
     logs, _ = await repo.get_access_logs(limit=20)
+
+    patron_ids = [log.patron_id for log in logs if log.patron_id]
+    unique_ids = list({str(pid) for pid in patron_ids})
+    patron_map: dict[str, Any] = {}
+
+    if unique_ids:
+        from infra.models import PatronModel
+
+        patrons = await db.execute(
+            select(PatronModel).where(
+                PatronModel.id.in_([uuid.UUID(pid) for pid in unique_ids])
+            )
+        )
+        patron_map = {str(p.id): p for p in patrons.scalars().all()}
+
     items = []
     for log in logs:
-        patron_name = None
-        student_code = None
-        if log.patron_id:
-            p = await repo.get_by_id(log.patron_id)
-            if p:
-                patron_name = p.full_name
-                student_code = p.student_code
-        items.append(AccessLogPublic(
-            id=str(log.id),
-            patron_id=str(log.patron_id) if log.patron_id else None,
-            patron_name=patron_name,
-            student_code=student_code,
-            access_type=log.access_type,
-            verify_method=log.verify_method,
-            confidence=log.confidence,
-            camera_id=log.camera_id,
-            access_time=log.access_time,
-            status=log.status,
-        ))
+        p = patron_map.get(str(log.patron_id)) if log.patron_id else None
+        items.append(
+            AccessLogPublic(
+                id=str(log.id),
+                patron_id=str(log.patron_id) if log.patron_id else None,
+                patron_name=p.full_name if p else None,
+                student_code=p.student_code if p else None,
+                access_type=log.access_type,
+                verify_method=log.verify_method,
+                confidence=log.confidence,
+                camera_id=log.camera_id,
+                access_time=log.access_time,
+                status=log.status,
+            )
+        )
+
     return {"items": items}
+
+
 
 
 @router.get("/logs")
@@ -93,6 +109,7 @@ async def get_logs(
     repo = PatronRepository(db)
     logs, total = await repo.get_access_logs(
         patron_id=patron_id,
+
         camera_id=camera_id,
         status=status,
         access_type=access_type,

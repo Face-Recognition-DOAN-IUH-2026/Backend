@@ -13,28 +13,51 @@ logger = logging.getLogger(__name__)
 
 CHANNEL = "camera:events"
 
+_running = True
+
+_redis_client = None
+_redis_lock = threading.Lock()
+
 
 def _get_redis():
-    import redis as _redis
-    return _redis.Redis.from_url(settings.celery_broker_url)
+    """Reuse a single Redis client per process to avoid socket churn."""
+    global _redis_client
+    if _redis_client is None:
+        with _redis_lock:
+            if _redis_client is None:
+                import redis as _redis
+
+                _redis_client = _redis.Redis.from_url(
+                    settings.celery_broker_url,
+                    decode_responses=True,
+                    socket_keepalive=True,
+                    socket_timeout=5,
+                    retry_on_timeout=True,
+                )
+    return _redis_client
+
 
 def publish(channel: str, data: dict[str, Any]) -> None:
     try:
         r = _get_redis()
         r.publish(channel, json.dumps(data, default=str))
-        r.close()
-        logger.info("Published to Redis channel %s: %s", channel, data.get("status", "unknown"))
     except Exception as e:
         logger.error("Redis publish failed: %s - data=%s", e, data)
 
 
+
 def _subscribe_loop(channel: str, loop: asyncio.AbstractEventLoop) -> None:
+    global _running
+    pubsub = None
+    r = None
     try:
         r = _get_redis()
         pubsub = r.pubsub()
         pubsub.subscribe(channel)
         logger.info("Redis subscribed to %s", channel)
         for msg in pubsub.listen():
+            if not _running:
+                break
             if msg["type"] != "message":
                 continue
             try:
@@ -51,9 +74,22 @@ def _subscribe_loop(channel: str, loop: asyncio.AbstractEventLoop) -> None:
                 logger.warning("SSE broadcast error: %s", e)
     except Exception as e:
         logger.warning("Redis subscribe error: %s", e)
+    finally:
+        if pubsub:
+            try:
+                pubsub.unsubscribe()
+                pubsub.close()
+            except Exception:
+                pass
+        _running = False
 
 
-def start_sse_bridge(loop: asyncio.AbstractEventLoop) -> threading.Thread:
+def stop_sse_bridge() -> None:
+    global _running
+    _running = False
+
+
+def start_sse_bridge(loop: asyncio.AbstractEventLoop) -> tuple[threading.Thread, callable]:
     t = threading.Thread(target=_subscribe_loop, args=(CHANNEL, loop), daemon=True)
     t.start()
-    return t
+    return t, stop_sse_bridge

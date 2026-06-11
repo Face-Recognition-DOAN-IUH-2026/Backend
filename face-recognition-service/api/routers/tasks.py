@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from celery.result import AsyncResult
 from fastapi import APIRouter, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from worker.celery_app import celery_app
@@ -16,13 +17,11 @@ class TaskStatusResponse(BaseModel):
     result: dict | None = None
 
 
-@router.get("/{task_id}", response_model=TaskStatusResponse)
-async def get_task_status(task_id: str):
+def _get_task_result_sync(task_id: str) -> dict:
     task_result = AsyncResult(task_id, app=celery_app)
-    
     task_status = task_result.status
     response_result = None
-    
+
     try:
         if task_status == "SUCCESS":
             try:
@@ -49,9 +48,21 @@ async def get_task_status(task_id: str):
     except Exception as e:
         task_status = "ERROR"
         response_result = {"error": str(e), "type": "unknown_error"}
-    
-    return TaskStatusResponse(
-        task_id=task_id,
-        status=task_status,
-        result=response_result,
-    )
+
+    return {
+        "task_id": task_id,
+        "status": task_status,
+        "result": response_result,
+    }
+
+
+@router.get("/{task_id}", response_model=TaskStatusResponse)
+async def get_task_status(task_id: str):
+    try:
+        result = await run_in_threadpool(_get_task_result_sync, task_id)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid task ID: {str(e)}"
+        )
+    return TaskStatusResponse(**result)

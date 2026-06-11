@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir poetry && \
     poetry install --only main --no-root --no-interaction --no-ansi
 
 # Install insightface + onnxruntime via pip (faster than poetry, avoids dependency resolution timeout)
-RUN pip install --no-cache-dir insightface onnxruntime
+RUN pip install --no-cache-dir insightface onnxruntime gevent
 
 # Pre-download buffalo_l model and bake it into the image layer (not BuildKit cache)
 RUN python -c "import insightface; from insightface.app import FaceAnalysis; app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640)); print('buffalo_l model cached')"
@@ -25,4 +25,4 @@ RUN python -c "import urllib.request,os; os.makedirs('/app/models',exist_ok=True
 
 COPY . .
 
-CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=1", "--include=worker.tasks"]
+CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=2", "--include=worker.tasks"]
