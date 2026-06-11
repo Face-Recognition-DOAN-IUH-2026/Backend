@@ -46,6 +46,27 @@ async def lifespan(app: FastAPI):
         await conn.execute(
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)")
         )
+        # Migration: add current_status tracking columns (v0.3.0)
+        await conn.execute(
+            text("ALTER TABLE patrons ADD COLUMN IF NOT EXISTS current_status VARCHAR(10) NOT NULL DEFAULT 'outside'")
+        )
+        await conn.execute(
+            text("ALTER TABLE patrons ADD COLUMN IF NOT EXISTS last_entry_at TIMESTAMP")
+        )
+        await conn.execute(
+            text("ALTER TABLE patrons ADD COLUMN IF NOT EXISTS last_entry_camera VARCHAR(50)")
+        )
+        # Migration: multi-angle face enrollment (v0.4.0)
+        await conn.execute(
+            text("ALTER TABLE patron_faces DROP CONSTRAINT IF EXISTS patron_faces_patron_id_key")
+        )
+        await conn.execute(
+            text("ALTER TABLE patron_faces ADD COLUMN IF NOT EXISTS angle VARCHAR(20) NOT NULL DEFAULT 'frontal'")
+        )
+        # Migration: add class_name column (v0.5.0)
+        await conn.execute(
+            text("ALTER TABLE patrons ADD COLUMN IF NOT EXISTS class_name VARCHAR(100)")
+        )
 
     entry = settings.entry_cam_url
     exit_ = settings.exit_cam_url

@@ -75,16 +75,14 @@ class LivenessResult(BaseModel):
 class PatronCreate(BaseModel):
     full_name: str
     student_code: str
-    card_number: str
+    class_name: Optional[str] = None
     membership_expiry: date
-    identity_number: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
     issue_date: Optional[date] = None
 
 
 class PatronUpdate(BaseModel):
     full_name: Optional[str] = None
+    class_name: Optional[str] = None
     identity_number: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -98,6 +96,7 @@ class PatronPublic(BaseModel):
     id: str
     full_name: str
     student_code: str
+    class_name: Optional[str] = None
     identity_number: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None

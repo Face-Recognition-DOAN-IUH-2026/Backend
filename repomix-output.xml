@@ -45,7 +45,6 @@ api-gateway/.dockerignore
 api-gateway/.env.example
 api-gateway/docker-compose.yml
 api-gateway/Dockerfile
-api-gateway/nginx.conf
 api-gateway/package.json
 api-gateway/src/config.ts
 api-gateway/src/index.ts
@@ -53,124 +52,6 @@ api-gateway/src/proxy.ts
 api-gateway/tsconfig.json
 docker-compose.yml
 face-recognition-service/.env.example
-face-recognition-service/.git/COMMIT_EDITMSG
-face-recognition-service/.git/config
-face-recognition-service/.git/description
-face-recognition-service/.git/HEAD
-face-recognition-service/.git/hooks/applypatch-msg.sample
-face-recognition-service/.git/hooks/commit-msg.sample
-face-recognition-service/.git/hooks/fsmonitor-watchman.sample
-face-recognition-service/.git/hooks/post-update.sample
-face-recognition-service/.git/hooks/pre-applypatch.sample
-face-recognition-service/.git/hooks/pre-commit.sample
-face-recognition-service/.git/hooks/pre-merge-commit.sample
-face-recognition-service/.git/hooks/pre-push.sample
-face-recognition-service/.git/hooks/pre-rebase.sample
-face-recognition-service/.git/hooks/pre-receive.sample
-face-recognition-service/.git/hooks/prepare-commit-msg.sample
-face-recognition-service/.git/hooks/push-to-checkout.sample
-face-recognition-service/.git/hooks/sendemail-validate.sample
-face-recognition-service/.git/hooks/update.sample
-face-recognition-service/.git/index
-face-recognition-service/.git/info/exclude
-face-recognition-service/.git/logs/HEAD
-face-recognition-service/.git/logs/refs/heads/master
-face-recognition-service/.git/objects/01/b87a56ba0fb3044dce828fc29c78ef957aab82
-face-recognition-service/.git/objects/0c/a077e24f0b55df652e4a26fafd1ec457a57a33
-face-recognition-service/.git/objects/0c/b206af1dcd79d481261a1219d3bd3b1cc048a8
-face-recognition-service/.git/objects/0d/4e5cc8f50947a1f719f4862eff37c30c698f4d
-face-recognition-service/.git/objects/0d/8b0d87054768606d7e0c8a674b720bd0bc87d5
-face-recognition-service/.git/objects/0d/dd977c4dd5f9dd8a33a8a560683776bc170c64
-face-recognition-service/.git/objects/0e/23bf87e33184dbbe28a03f60ade42494f0450b
-face-recognition-service/.git/objects/10/01ef7d13ec6d785916f33f21352eb703cb662b
-face-recognition-service/.git/objects/15/0de2c34614de7976558ca86d0bfd037c681add
-face-recognition-service/.git/objects/16/f9c6c2cc92adae5c7c722b8fa62e5bf7605dff
-face-recognition-service/.git/objects/1b/238644c1afd8ca51f8bab8bdd691095ba98a43
-face-recognition-service/.git/objects/1b/68669139422aa45c8d5b2811a4285e64b34d91
-face-recognition-service/.git/objects/1d/7fdcbfddbee6a82fc0601d018ad1adce04ef2a
-face-recognition-service/.git/objects/1f/7c2dd12c8ef5b037efe3f6a81e8b04f80c16a1
-face-recognition-service/.git/objects/1f/c31d3d467c761834f47113c3d8344f912c8bfa
-face-recognition-service/.git/objects/21/275a7c72e9462050b7f79a656c61d48e746a59
-face-recognition-service/.git/objects/21/3168d2eadf7e771d3e73692daf7ba096d1b5f9
-face-recognition-service/.git/objects/21/60adbc1db8893a88dff0e16aa2635c9171bc05
-face-recognition-service/.git/objects/21/ac56d9b4f957aa85d1a2b6eeb9fea1008c1cac
-face-recognition-service/.git/objects/25/0c2cd9ee8d83382ad8ac07c4ffae2423cf0200
-face-recognition-service/.git/objects/25/3e5012dd6a17666fd7ae16cfa14a6860280ff7
-face-recognition-service/.git/objects/29/c48875880ebb29753e526d29b02689cd98c1d9
-face-recognition-service/.git/objects/2c/4980e530ad6f5957e2bb59d417312b49362292
-face-recognition-service/.git/objects/2f/95e6099761583e8a1d7ac3868afde36cd533fc
-face-recognition-service/.git/objects/2f/bc1d80e82d0dd290da7b0371c00e0d1ad6cc49
-face-recognition-service/.git/objects/34/30c873a52c1259efc14c905c50caa94f06efe9
-face-recognition-service/.git/objects/35/b9509d50ce4a5d920d0f909e5d51bdf6c63239
-face-recognition-service/.git/objects/38/0ada7a0c09743707cf7fde62b3e46b6abb1fa3
-face-recognition-service/.git/objects/39/aa17835641cb4a4ae2d46e7462d5f4b8a499b6
-face-recognition-service/.git/objects/3a/fe77f8776e8bdede7868645473234149d199ba
-face-recognition-service/.git/objects/41/9ac7c5fcc5a32ab8237f56201519989d60532e
-face-recognition-service/.git/objects/4b/618ef6df748ae8986c3ac85b9a023adccbf526
-face-recognition-service/.git/objects/4e/701d71d5470ee53e9c0cf3888277b78c470e93
-face-recognition-service/.git/objects/4f/319412af4ec84431e8d304f962d4f92c1a082c
-face-recognition-service/.git/objects/4f/d927d94addb2e86d7c74a46b0826681a2565d1
-face-recognition-service/.git/objects/52/67c2d8969ed199e234acfd07a1d7723194e497
-face-recognition-service/.git/objects/58/6703d7d4b04a748a922051e115a121b1b278e2
-face-recognition-service/.git/objects/59/adc70952986c3babee38ebd689cb2f32fc3e24
-face-recognition-service/.git/objects/5e/bcd2cf68598f2acc76b5252626ccab8f346935
-face-recognition-service/.git/objects/66/732e8c1fdb0d5f7521fc04a762c256811ce2a6
-face-recognition-service/.git/objects/67/00376e86c8af6235cac87923fa2e51628268ff
-face-recognition-service/.git/objects/67/b9b9dba31aa0e0bda2d7697fa4492cc7a9124b
-face-recognition-service/.git/objects/69/0a16af2f655aec598b60796a18b4a6fe2b2b3f
-face-recognition-service/.git/objects/6d/3e6e69a13d5b39a73f0fee50d3c0b5b64a1940
-face-recognition-service/.git/objects/71/f24247f56bc41d32d44af4071f6de7c4830a26
-face-recognition-service/.git/objects/75/016e93d109b71e8293ecd906e1bbc955aea790
-face-recognition-service/.git/objects/75/9ce86505b001f474c6ff766581a91cea5d5404
-face-recognition-service/.git/objects/77/62be6bed3acc5476576f891968545fe4be879d
-face-recognition-service/.git/objects/7a/53a2036085eed9dab31dd13f647ec8578a115c
-face-recognition-service/.git/objects/7c/2f8030682e3da58c49451ba03e03b133d022e8
-face-recognition-service/.git/objects/7e/1b1d953ac479f48852a91d4a57bf388e6870cc
-face-recognition-service/.git/objects/7e/b074db2d017536198e6ffdcc650d90e8e3faa6
-face-recognition-service/.git/objects/82/66b91fab8a8c43dbcab5493fcc885ac509c763
-face-recognition-service/.git/objects/82/a075922c4cdd88bdd90e55ecd1436bbe374ba3
-face-recognition-service/.git/objects/85/5366b26f71b1f6e03cad961df9b0543abeccc6
-face-recognition-service/.git/objects/88/021a94bca5c22753a23664d388d4922b2186bb
-face-recognition-service/.git/objects/89/a904051129f22678710ca62f59658e7827ee28
-face-recognition-service/.git/objects/8c/6621c94c6284bca72e5afd31e96b689d2e4764
-face-recognition-service/.git/objects/8d/7bcc628458557113bcecef862488cb50dec27b
-face-recognition-service/.git/objects/93/f05364d6713d139a0504a1bc7bb5d9b65325d6
-face-recognition-service/.git/objects/95/f3b8952e4bf401d370bca88d633dda8c2aead2
-face-recognition-service/.git/objects/97/470fcb1395bb603e1f99e7b150e2291ada2946
-face-recognition-service/.git/objects/a1/cc810bf71a50872aa846b1db7558d840ed8b37
-face-recognition-service/.git/objects/a4/2263ea6ae4ca1228cbcb6559ef84457dc14546
-face-recognition-service/.git/objects/b2/99cc70f781ed3d1b2dc0d6d4036fb4de790254
-face-recognition-service/.git/objects/b9/a0b7ee8a72fe496df5e4adb3d56cdfb72ac18b
-face-recognition-service/.git/objects/bb/37d59d0666bcb95994a9b4d5d4232586d3330c
-face-recognition-service/.git/objects/be/fdee9d01a8b8de5cb726f46e1b8d52f9d2af28
-face-recognition-service/.git/objects/c0/e508ae96e7543523d5533870fd0623bab77766
-face-recognition-service/.git/objects/c2/133fa6d6f70f6e7f6b9424a818f24101359b93
-face-recognition-service/.git/objects/c7/bd67b19cd9656f90ea74416d7e2aa0abbd6e03
-face-recognition-service/.git/objects/c8/85b68e10100c30d704275b2f6a202f7ee97f39
-face-recognition-service/.git/objects/c9/39cbee2e7e30ae1f19084ca6c8711a3ea02e34
-face-recognition-service/.git/objects/ca/ae788dd4fb53d3a65c67868602577057199837
-face-recognition-service/.git/objects/cb/f7c65ec760b6c8577cb1274c23ebff0ce053b3
-face-recognition-service/.git/objects/cd/e17adab5e2032bb6aabc7e4271068b0afcb8ba
-face-recognition-service/.git/objects/d1/685fec2447676c69c5defaa2cb6bd011aa564b
-face-recognition-service/.git/objects/d4/36bd68d6649ae3edc2151e023374089c224b1f
-face-recognition-service/.git/objects/d4/6b44f82a5a503ac9898a218dcc03895644d38c
-face-recognition-service/.git/objects/dd/4e8c2b7ebd498b4710516dd1fbb5a5dde44cd9
-face-recognition-service/.git/objects/e0/2abfc9b0e17c18f0c365f044cc760d3b961f4a
-face-recognition-service/.git/objects/e5/9da730eaf68100d45ed6bae46d7ee2f9bca82b
-face-recognition-service/.git/objects/e9/30e18f418152bc5432753e1196ca9aea1e982c
-face-recognition-service/.git/objects/ea/699bbd924352bcde5dd718ba17ae36509610f1
-face-recognition-service/.git/objects/eb/88cfc3054af2065b74ff129267b6978dcc3bd1
-face-recognition-service/.git/objects/ec/c777ccf8b21caf5e0187d1147d5b9ef4f68cf5
-face-recognition-service/.git/objects/ed/68fe82c71a1d73d0105192f83fbf618ba3e845
-face-recognition-service/.git/objects/ed/c5fa338bb4e658cbe30fe2c45cf8739c12305e
-face-recognition-service/.git/objects/ed/e4f9d4f021e532e7218e1853b80a3f1b52fb59
-face-recognition-service/.git/objects/ef/f590e79f03bb71263c8ee7fab24d80886fafe5
-face-recognition-service/.git/objects/f5/39b68ad2106cea9a9fc1310dddb4a043ef38c9
-face-recognition-service/.git/objects/f6/9c4988fae941dfa053afef99bdbe112fe73dba
-face-recognition-service/.git/objects/fb/1e43524ee1bf89ac55a1390f2ee42e3f32308a
-face-recognition-service/.git/objects/fc/5b1cee06712552f5dd489ba3ee670eaba0f269
-face-recognition-service/.git/objects/fe/4f92dbb3b791e459c40469f7e6e4c6f76a43aa
-face-recognition-service/.git/refs/heads/master
 face-recognition-service/api/__init__.py
 face-recognition-service/api/app.py
 face-recognition-service/api/dependencies.py
@@ -206,6 +87,7 @@ face-recognition-service/models/MobileNetSSD_deploy.caffemodel
 face-recognition-service/models/MobileNetSSD_deploy.prototxt
 face-recognition-service/pyproject.toml
 face-recognition-service/README.md
+face-recognition-service/scripts/migration_v0.3.0.sql
 face-recognition-service/scripts/recover_milvus.py
 face-recognition-service/tests/conftest.py
 face-recognition-service/tests/test_auth.py
@@ -238,957 +120,112 @@ user-service/tsconfig.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="face-recognition-service/.git/COMMIT_EDITMSG">
-backup: current state with all 4 fixes (multi-embedding, quality filter, consensus, adaptive threshold)
-</file>
-
-<file path="face-recognition-service/.git/config">
-[core]
-	repositoryformatversion = 0
-	filemode = false
-	bare = false
-	logallrefupdates = true
-	symlinks = false
-	ignorecase = true
-</file>
-
-<file path="face-recognition-service/.git/description">
-Unnamed repository; edit this file 'description' to name the repository.
-</file>
-
-<file path="face-recognition-service/.git/HEAD">
-ref: refs/heads/master
-</file>
-
-<file path="face-recognition-service/.git/hooks/applypatch-msg.sample">
-#!/bin/sh
-#
-# An example hook script to check the commit log message taken by
-# applypatch from an e-mail message.
-#
-# The hook should exit with non-zero status after issuing an
-# appropriate message if it wants to stop the commit.  The hook is
-# allowed to edit the commit message file.
-#
-# To enable this hook, rename this file to "applypatch-msg".
-
-. git-sh-setup
-commitmsg="$(git rev-parse --git-path hooks/commit-msg)"
-test -x "$commitmsg" && exec "$commitmsg" ${1+"$@"}
-:
-</file>
-
-<file path="face-recognition-service/.git/hooks/commit-msg.sample">
-#!/bin/sh
-#
-# An example hook script to check the commit log message.
-# Called by "git commit" with one argument, the name of the file
-# that has the commit message.  The hook should exit with non-zero
-# status after issuing an appropriate message if it wants to stop the
-# commit.  The hook is allowed to edit the commit message file.
-#
-# To enable this hook, rename this file to "commit-msg".
-
-# Uncomment the below to add a Signed-off-by line to the message.
-# Doing this in a hook is a bad idea in general, but the prepare-commit-msg
-# hook is more suited to it.
-#
-# SOB=$(git var GIT_AUTHOR_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
-# grep -qs "^$SOB" "$1" || echo "$SOB" >> "$1"
-
-# This example catches duplicate Signed-off-by lines.
-
-test "" = "$(grep '^Signed-off-by: ' "$1" |
-	 sort | uniq -c | sed -e '/^[ 	]*1[ 	]/d')" || {
-	echo >&2 Duplicate Signed-off-by lines.
-	exit 1
-}
-</file>
-
-<file path="face-recognition-service/.git/hooks/fsmonitor-watchman.sample">
-#!/usr/bin/perl
-
-use strict;
-use warnings;
-use IPC::Open2;
-
-# An example hook script to integrate Watchman
-# (https://facebook.github.io/watchman/) with git to speed up detecting
-# new and modified files.
-#
-# The hook is passed a version (currently 2) and last update token
-# formatted as a string and outputs to stdout a new update token and
-# all files that have been modified since the update token. Paths must
-# be relative to the root of the working tree and separated by a single NUL.
-#
-# To enable this hook, rename this file to "query-watchman" and set
-# 'git config core.fsmonitor .git/hooks/query-watchman'
-#
-my ($version, $last_update_token) = @ARGV;
-
-# Uncomment for debugging
-# print STDERR "$0 $version $last_update_token\n";
-
-# Check the hook interface version
-if ($version ne 2) {
-	die "Unsupported query-fsmonitor hook version '$version'.\n" .
-	    "Falling back to scanning...\n";
-}
-
-my $git_work_tree = get_working_dir();
-
-my $retry = 1;
-
-my $json_pkg;
-eval {
-	require JSON::XS;
-	$json_pkg = "JSON::XS";
-	1;
-} or do {
-	require JSON::PP;
-	$json_pkg = "JSON::PP";
-};
-
-launch_watchman();
-
-sub launch_watchman {
-	my $o = watchman_query();
-	if (is_work_tree_watched($o)) {
-		output_result($o->{clock}, @{$o->{files}});
-	}
-}
-
-sub output_result {
-	my ($clockid, @files) = @_;
-
-	# Uncomment for debugging watchman output
-	# open (my $fh, ">", ".git/watchman-output.out");
-	# binmode $fh, ":utf8";
-	# print $fh "$clockid\n@files\n";
-	# close $fh;
-
-	binmode STDOUT, ":utf8";
-	print $clockid;
-	print "\0";
-	local $, = "\0";
-	print @files;
-}
-
-sub watchman_clock {
-	my $response = qx/watchman clock "$git_work_tree"/;
-	die "Failed to get clock id on '$git_work_tree'.\n" .
-		"Falling back to scanning...\n" if $? != 0;
-
-	return $json_pkg->new->utf8->decode($response);
-}
-
-sub watchman_query {
-	my $pid = open2(\*CHLD_OUT, \*CHLD_IN, 'watchman -j --no-pretty')
-	or die "open2() failed: $!\n" .
-	"Falling back to scanning...\n";
-
-	# In the query expression below we're asking for names of files that
-	# changed since $last_update_token but not from the .git folder.
-	#
-	# To accomplish this, we're using the "since" generator to use the
-	# recency index to select candidate nodes and "fields" to limit the
-	# output to file names only. Then we're using the "expression" term to
-	# further constrain the results.
-	my $last_update_line = "";
-	if (substr($last_update_token, 0, 1) eq "c") {
-		$last_update_token = "\"$last_update_token\"";
-		$last_update_line = qq[\n"since": $last_update_token,];
-	}
-	my $query = <<"	END";
-		["query", "$git_work_tree", {$last_update_line
-			"fields": ["name"],
-			"expression": ["not", ["dirname", ".git"]]
-		}]
-	END
-
-	# Uncomment for debugging the watchman query
-	# open (my $fh, ">", ".git/watchman-query.json");
-	# print $fh $query;
-	# close $fh;
-
-	print CHLD_IN $query;
-	close CHLD_IN;
-	my $response = do {local $/; <CHLD_OUT>};
-
-	# Uncomment for debugging the watch response
-	# open ($fh, ">", ".git/watchman-response.json");
-	# print $fh $response;
-	# close $fh;
-
-	die "Watchman: command returned no output.\n" .
-	"Falling back to scanning...\n" if $response eq "";
-	die "Watchman: command returned invalid output: $response\n" .
-	"Falling back to scanning...\n" unless $response =~ /^\{/;
-
-	return $json_pkg->new->utf8->decode($response);
-}
-
-sub is_work_tree_watched {
-	my ($output) = @_;
-	my $error = $output->{error};
-	if ($retry > 0 and $error and $error =~ m/unable to resolve root .* directory (.*) is not watched/) {
-		$retry--;
-		my $response = qx/watchman watch "$git_work_tree"/;
-		die "Failed to make watchman watch '$git_work_tree'.\n" .
-		    "Falling back to scanning...\n" if $? != 0;
-		$output = $json_pkg->new->utf8->decode($response);
-		$error = $output->{error};
-		die "Watchman: $error.\n" .
-		"Falling back to scanning...\n" if $error;
-
-		# Uncomment for debugging watchman output
-		# open (my $fh, ">", ".git/watchman-output.out");
-		# close $fh;
-
-		# Watchman will always return all files on the first query so
-		# return the fast "everything is dirty" flag to git and do the
-		# Watchman query just to get it over with now so we won't pay
-		# the cost in git to look up each individual file.
-		my $o = watchman_clock();
-		$error = $output->{error};
-
-		die "Watchman: $error.\n" .
-		"Falling back to scanning...\n" if $error;
-
-		output_result($o->{clock}, ("/"));
-		$last_update_token = $o->{clock};
-
-		eval { launch_watchman() };
-		return 0;
-	}
-
-	die "Watchman: $error.\n" .
-	"Falling back to scanning...\n" if $error;
-
-	return 1;
-}
-
-sub get_working_dir {
-	my $working_dir;
-	if ($^O =~ 'msys' || $^O =~ 'cygwin') {
-		$working_dir = Win32::GetCwd();
-		$working_dir =~ tr/\\/\//;
-	} else {
-		require Cwd;
-		$working_dir = Cwd::cwd();
-	}
-
-	return $working_dir;
-}
-</file>
-
-<file path="face-recognition-service/.git/hooks/post-update.sample">
-#!/bin/sh
-#
-# An example hook script to prepare a packed repository for use over
-# dumb transports.
-#
-# To enable this hook, rename this file to "post-update".
-
-exec git update-server-info
-</file>
-
-<file path="face-recognition-service/.git/hooks/pre-applypatch.sample">
-#!/bin/sh
-#
-# An example hook script to verify what is about to be committed
-# by applypatch from an e-mail message.
-#
-# The hook should exit with non-zero status after issuing an
-# appropriate message if it wants to stop the commit.
-#
-# To enable this hook, rename this file to "pre-applypatch".
-
-. git-sh-setup
-precommit="$(git rev-parse --git-path hooks/pre-commit)"
-test -x "$precommit" && exec "$precommit" ${1+"$@"}
-:
-</file>
-
-<file path="face-recognition-service/.git/hooks/pre-commit.sample">
-#!/bin/sh
-#
-# An example hook script to verify what is about to be committed.
-# Called by "git commit" with no arguments.  The hook should
-# exit with non-zero status after issuing an appropriate message if
-# it wants to stop the commit.
-#
-# To enable this hook, rename this file to "pre-commit".
-
-if git rev-parse --verify HEAD >/dev/null 2>&1
-then
-	against=HEAD
-else
-	# Initial commit: diff against an empty tree object
-	against=$(git hash-object -t tree /dev/null)
-fi
-
-# If you want to allow non-ASCII filenames set this variable to true.
-allownonascii=$(git config --type=bool hooks.allownonascii)
-
-# Redirect output to stderr.
-exec 1>&2
-
-# Cross platform projects tend to avoid non-ASCII filenames; prevent
-# them from being added to the repository. We exploit the fact that the
-# printable range starts at the space character and ends with tilde.
-if [ "$allownonascii" != "true" ] &&
-	# Note that the use of brackets around a tr range is ok here, (it's
-	# even required, for portability to Solaris 10's /usr/bin/tr), since
-	# the square bracket bytes happen to fall in the designated range.
-	test $(git diff-index --cached --name-only --diff-filter=A -z $against |
-	  LC_ALL=C tr -d '[ -~]\0' | wc -c) != 0
-then
-	cat <<\EOF
-Error: Attempt to add a non-ASCII file name.
-
-This can cause problems if you want to work with people on other platforms.
-
-To be portable it is advisable to rename the file.
-
-If you know what you are doing you can disable this check using:
-
-  git config hooks.allownonascii true
-EOF
-	exit 1
-fi
-
-# If there are whitespace errors, print the offending file names and fail.
-exec git diff-index --check --cached $against --
-</file>
-
-<file path="face-recognition-service/.git/hooks/pre-merge-commit.sample">
-#!/bin/sh
-#
-# An example hook script to verify what is about to be committed.
-# Called by "git merge" with no arguments.  The hook should
-# exit with non-zero status after issuing an appropriate message to
-# stderr if it wants to stop the merge commit.
-#
-# To enable this hook, rename this file to "pre-merge-commit".
-
-. git-sh-setup
-test -x "$GIT_DIR/hooks/pre-commit" &&
-        exec "$GIT_DIR/hooks/pre-commit"
-:
-</file>
-
-<file path="face-recognition-service/.git/hooks/pre-push.sample">
-#!/bin/sh
-
-# An example hook script to verify what is about to be pushed.  Called by "git
-# push" after it has checked the remote status, but before anything has been
-# pushed.  If this script exits with a non-zero status nothing will be pushed.
-#
-# This hook is called with the following parameters:
-#
-# $1 -- Name of the remote to which the push is being done
-# $2 -- URL to which the push is being done
-#
-# If pushing without using a named remote those arguments will be equal.
-#
-# Information about the commits which are being pushed is supplied as lines to
-# the standard input in the form:
-#
-#   <local ref> <local oid> <remote ref> <remote oid>
-#
-# This sample shows how to prevent push of commits where the log message starts
-# with "WIP" (work in progress).
-
-remote="$1"
-url="$2"
-
-zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
-
-while read local_ref local_oid remote_ref remote_oid
-do
-	if test "$local_oid" = "$zero"
-	then
-		# Handle delete
-		:
-	else
-		if test "$remote_oid" = "$zero"
-		then
-			# New branch, examine all commits
-			range="$local_oid"
-		else
-			# Update to existing branch, examine new commits
-			range="$remote_oid..$local_oid"
-		fi
-
-		# Check for WIP commit
-		commit=$(git rev-list -n 1 --grep '^WIP' "$range")
-		if test -n "$commit"
-		then
-			echo >&2 "Found WIP commit in $local_ref, not pushing"
-			exit 1
-		fi
-	fi
-done
-
-exit 0
-</file>
-
-<file path="face-recognition-service/.git/hooks/pre-rebase.sample">
-#!/bin/sh
-#
-# Copyright (c) 2006, 2008 Junio C Hamano
-#
-# The "pre-rebase" hook is run just before "git rebase" starts doing
-# its job, and can prevent the command from running by exiting with
-# non-zero status.
-#
-# The hook is called with the following parameters:
-#
-# $1 -- the upstream the series was forked from.
-# $2 -- the branch being rebased (or empty when rebasing the current branch).
-#
-# This sample shows how to prevent topic branches that are already
-# merged to 'next' branch from getting rebased, because allowing it
-# would result in rebasing already published history.
-
-publish=next
-basebranch="$1"
-if test "$#" = 2
-then
-	topic="refs/heads/$2"
-else
-	topic=`git symbolic-ref HEAD` ||
-	exit 0 ;# we do not interrupt rebasing detached HEAD
-fi
-
-case "$topic" in
-refs/heads/??/*)
-	;;
-*)
-	exit 0 ;# we do not interrupt others.
-	;;
-esac
-
-# Now we are dealing with a topic branch being rebased
-# on top of master.  Is it OK to rebase it?
-
-# Does the topic really exist?
-git show-ref -q "$topic" || {
-	echo >&2 "No such branch $topic"
-	exit 1
-}
-
-# Is topic fully merged to master?
-not_in_master=`git rev-list --pretty=oneline ^master "$topic"`
-if test -z "$not_in_master"
-then
-	echo >&2 "$topic is fully merged to master; better remove it."
-	exit 1 ;# we could allow it, but there is no point.
-fi
-
-# Is topic ever merged to next?  If so you should not be rebasing it.
-only_next_1=`git rev-list ^master "^$topic" ${publish} | sort`
-only_next_2=`git rev-list ^master           ${publish} | sort`
-if test "$only_next_1" = "$only_next_2"
-then
-	not_in_topic=`git rev-list "^$topic" master`
-	if test -z "$not_in_topic"
-	then
-		echo >&2 "$topic is already up to date with master"
-		exit 1 ;# we could allow it, but there is no point.
-	else
-		exit 0
-	fi
-else
-	not_in_next=`git rev-list --pretty=oneline ^${publish} "$topic"`
-	/usr/bin/perl -e '
-		my $topic = $ARGV[0];
-		my $msg = "* $topic has commits already merged to public branch:\n";
-		my (%not_in_next) = map {
-			/^([0-9a-f]+) /;
-			($1 => 1);
-		} split(/\n/, $ARGV[1]);
-		for my $elem (map {
-				/^([0-9a-f]+) (.*)$/;
-				[$1 => $2];
-			} split(/\n/, $ARGV[2])) {
-			if (!exists $not_in_next{$elem->[0]}) {
-				if ($msg) {
-					print STDERR $msg;
-					undef $msg;
-				}
-				print STDERR " $elem->[1]\n";
-			}
-		}
-	' "$topic" "$not_in_next" "$not_in_master"
-	exit 1
-fi
-
-<<\DOC_END
-
-This sample hook safeguards topic branches that have been
-published from being rewound.
-
-The workflow assumed here is:
-
- * Once a topic branch forks from "master", "master" is never
-   merged into it again (either directly or indirectly).
-
- * Once a topic branch is fully cooked and merged into "master",
-   it is deleted.  If you need to build on top of it to correct
-   earlier mistakes, a new topic branch is created by forking at
-   the tip of the "master".  This is not strictly necessary, but
-   it makes it easier to keep your history simple.
-
- * Whenever you need to test or publish your changes to topic
-   branches, merge them into "next" branch.
-
-The script, being an example, hardcodes the publish branch name
-to be "next", but it is trivial to make it configurable via
-$GIT_DIR/config mechanism.
-
-With this workflow, you would want to know:
-
-(1) ... if a topic branch has ever been merged to "next".  Young
-    topic branches can have stupid mistakes you would rather
-    clean up before publishing, and things that have not been
-    merged into other branches can be easily rebased without
-    affecting other people.  But once it is published, you would
-    not want to rewind it.
-
-(2) ... if a topic branch has been fully merged to "master".
-    Then you can delete it.  More importantly, you should not
-    build on top of it -- other people may already want to
-    change things related to the topic as patches against your
-    "master", so if you need further changes, it is better to
-    fork the topic (perhaps with the same name) afresh from the
-    tip of "master".
-
-Let's look at this example:
-
-		   o---o---o---o---o---o---o---o---o---o "next"
-		  /       /           /           /
-		 /   a---a---b A     /           /
-		/   /               /           /
-	       /   /   c---c---c---c B         /
-	      /   /   /             \         /
-	     /   /   /   b---b C     \       /
-	    /   /   /   /             \     /
-    ---o---o---o---o---o---o---o---o---o---o---o "master"
-
-
-A, B and C are topic branches.
-
- * A has one fix since it was merged up to "next".
-
- * B has finished.  It has been fully merged up to "master" and "next",
-   and is ready to be deleted.
-
- * C has not merged to "next" at all.
-
-We would want to allow C to be rebased, refuse A, and encourage
-B to be deleted.
-
-To compute (1):
-
-	git rev-list ^master ^topic next
-	git rev-list ^master        next
-
-	if these match, topic has not merged in next at all.
-
-To compute (2):
-
-	git rev-list master..topic
-
-	if this is empty, it is fully merged to "master".
-
-DOC_END
-</file>
-
-<file path="face-recognition-service/.git/hooks/pre-receive.sample">
-#!/bin/sh
-#
-# An example hook script to make use of push options.
-# The example simply echoes all push options that start with 'echoback='
-# and rejects all pushes when the "reject" push option is used.
-#
-# To enable this hook, rename this file to "pre-receive".
-
-if test -n "$GIT_PUSH_OPTION_COUNT"
-then
-	i=0
-	while test "$i" -lt "$GIT_PUSH_OPTION_COUNT"
-	do
-		eval "value=\$GIT_PUSH_OPTION_$i"
-		case "$value" in
-		echoback=*)
-			echo "echo from the pre-receive-hook: ${value#*=}" >&2
-			;;
-		reject)
-			exit 1
-		esac
-		i=$((i + 1))
-	done
-fi
-</file>
-
-<file path="face-recognition-service/.git/hooks/prepare-commit-msg.sample">
-#!/bin/sh
-#
-# An example hook script to prepare the commit log message.
-# Called by "git commit" with the name of the file that has the
-# commit message, followed by the description of the commit
-# message's source.  The hook's purpose is to edit the commit
-# message file.  If the hook fails with a non-zero status,
-# the commit is aborted.
-#
-# To enable this hook, rename this file to "prepare-commit-msg".
-
-# This hook includes three examples. The first one removes the
-# "# Please enter the commit message..." help message.
-#
-# The second includes the output of "git diff --name-status -r"
-# into the message, just before the "git status" output.  It is
-# commented because it doesn't cope with --amend or with squashed
-# commits.
-#
-# The third example adds a Signed-off-by line to the message, that can
-# still be edited.  This is rarely a good idea.
-
-COMMIT_MSG_FILE=$1
-COMMIT_SOURCE=$2
-SHA1=$3
-
-/usr/bin/perl -i.bak -ne 'print unless(m/^. Please enter the commit message/..m/^#$/)' "$COMMIT_MSG_FILE"
-
-# case "$COMMIT_SOURCE,$SHA1" in
-#  ,|template,)
-#    /usr/bin/perl -i.bak -pe '
-#       print "\n" . `git diff --cached --name-status -r`
-# 	 if /^#/ && $first++ == 0' "$COMMIT_MSG_FILE" ;;
-#  *) ;;
-# esac
-
-# SOB=$(git var GIT_COMMITTER_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
-# git interpret-trailers --in-place --trailer "$SOB" "$COMMIT_MSG_FILE"
-# if test -z "$COMMIT_SOURCE"
-# then
-#   /usr/bin/perl -i.bak -pe 'print "\n" if !$first_line++' "$COMMIT_MSG_FILE"
-# fi
-</file>
-
-<file path="face-recognition-service/.git/hooks/push-to-checkout.sample">
-#!/bin/sh
-
-# An example hook script to update a checked-out tree on a git push.
-#
-# This hook is invoked by git-receive-pack(1) when it reacts to git
-# push and updates reference(s) in its repository, and when the push
-# tries to update the branch that is currently checked out and the
-# receive.denyCurrentBranch configuration variable is set to
-# updateInstead.
-#
-# By default, such a push is refused if the working tree and the index
-# of the remote repository has any difference from the currently
-# checked out commit; when both the working tree and the index match
-# the current commit, they are updated to match the newly pushed tip
-# of the branch. This hook is to be used to override the default
-# behaviour; however the code below reimplements the default behaviour
-# as a starting point for convenient modification.
-#
-# The hook receives the commit with which the tip of the current
-# branch is going to be updated:
-commit=$1
-
-# It can exit with a non-zero status to refuse the push (when it does
-# so, it must not modify the index or the working tree).
-die () {
-	echo >&2 "$*"
-	exit 1
-}
-
-# Or it can make any necessary changes to the working tree and to the
-# index to bring them to the desired state when the tip of the current
-# branch is updated to the new commit, and exit with a zero status.
-#
-# For example, the hook can simply run git read-tree -u -m HEAD "$1"
-# in order to emulate git fetch that is run in the reverse direction
-# with git push, as the two-tree form of git read-tree -u -m is
-# essentially the same as git switch or git checkout that switches
-# branches while keeping the local changes in the working tree that do
-# not interfere with the difference between the branches.
-
-# The below is a more-or-less exact translation to shell of the C code
-# for the default behaviour for git's push-to-checkout hook defined in
-# the push_to_deploy() function in builtin/receive-pack.c.
-#
-# Note that the hook will be executed from the repository directory,
-# not from the working tree, so if you want to perform operations on
-# the working tree, you will have to adapt your code accordingly, e.g.
-# by adding "cd .." or using relative paths.
-
-if ! git update-index -q --ignore-submodules --refresh
-then
-	die "Up-to-date check failed"
-fi
-
-if ! git diff-files --quiet --ignore-submodules --
-then
-	die "Working directory has unstaged changes"
-fi
-
-# This is a rough translation of:
-#
-#   head_has_history() ? "HEAD" : EMPTY_TREE_SHA1_HEX
-if git cat-file -e HEAD 2>/dev/null
-then
-	head=HEAD
-else
-	head=$(git hash-object -t tree --stdin </dev/null)
-fi
-
-if ! git diff-index --quiet --cached --ignore-submodules $head --
-then
-	die "Working directory has staged changes"
-fi
-
-if ! git read-tree -u -m "$commit"
-then
-	die "Could not update working tree to new HEAD"
-fi
-</file>
-
-<file path="face-recognition-service/.git/hooks/sendemail-validate.sample">
-#!/bin/sh
-
-# An example hook script to validate a patch (and/or patch series) before
-# sending it via email.
-#
-# The hook should exit with non-zero status after issuing an appropriate
-# message if it wants to prevent the email(s) from being sent.
-#
-# To enable this hook, rename this file to "sendemail-validate".
-#
-# By default, it will only check that the patch(es) can be applied on top of
-# the default upstream branch without conflicts in a secondary worktree. After
-# validation (successful or not) of the last patch of a series, the worktree
-# will be deleted.
-#
-# The following config variables can be set to change the default remote and
-# remote ref that are used to apply the patches against:
-#
-#   sendemail.validateRemote (default: origin)
-#   sendemail.validateRemoteRef (default: HEAD)
-#
-# Replace the TODO placeholders with appropriate checks according to your
-# needs.
-
-validate_cover_letter () {
-	file="$1"
-	# TODO: Replace with appropriate checks (e.g. spell checking).
-	true
-}
-
-validate_patch () {
-	file="$1"
-	# Ensure that the patch applies without conflicts.
-	git am -3 "$file" || return
-	# TODO: Replace with appropriate checks for this patch
-	# (e.g. checkpatch.pl).
-	true
-}
-
-validate_series () {
-	# TODO: Replace with appropriate checks for the whole series
-	# (e.g. quick build, coding style checks, etc.).
-	true
-}
-
-# main -------------------------------------------------------------------------
-
-if test "$GIT_SENDEMAIL_FILE_COUNTER" = 1
-then
-	remote=$(git config --default origin --get sendemail.validateRemote) &&
-	ref=$(git config --default HEAD --get sendemail.validateRemoteRef) &&
-	worktree=$(mktemp --tmpdir -d sendemail-validate.XXXXXXX) &&
-	git worktree add -fd --checkout "$worktree" "refs/remotes/$remote/$ref" &&
-	git config --replace-all sendemail.validateWorktree "$worktree"
-else
-	worktree=$(git config --get sendemail.validateWorktree)
-fi || {
-	echo "sendemail-validate: error: failed to prepare worktree" >&2
-	exit 1
-}
-
-unset GIT_DIR GIT_WORK_TREE
-cd "$worktree" &&
-
-if grep -q "^diff --git " "$1"
-then
-	validate_patch "$1"
-else
-	validate_cover_letter "$1"
-fi &&
-
-if test "$GIT_SENDEMAIL_FILE_COUNTER" = "$GIT_SENDEMAIL_FILE_TOTAL"
-then
-	git config --unset-all sendemail.validateWorktree &&
-	trap 'git worktree remove -ff "$worktree"' EXIT &&
-	validate_series
-fi
-</file>
-
-<file path="face-recognition-service/.git/hooks/update.sample">
-#!/bin/sh
-#
-# An example hook script to block unannotated tags from entering.
-# Called by "git receive-pack" with arguments: refname sha1-old sha1-new
-#
-# To enable this hook, rename this file to "update".
-#
-# Config
-# ------
-# hooks.allowunannotated
-#   This boolean sets whether unannotated tags will be allowed into the
-#   repository.  By default they won't be.
-# hooks.allowdeletetag
-#   This boolean sets whether deleting tags will be allowed in the
-#   repository.  By default they won't be.
-# hooks.allowmodifytag
-#   This boolean sets whether a tag may be modified after creation. By default
-#   it won't be.
-# hooks.allowdeletebranch
-#   This boolean sets whether deleting branches will be allowed in the
-#   repository.  By default they won't be.
-# hooks.denycreatebranch
-#   This boolean sets whether remotely creating branches will be denied
-#   in the repository.  By default this is allowed.
-#
-
-# --- Command line
-refname="$1"
-oldrev="$2"
-newrev="$3"
-
-# --- Safety check
-if [ -z "$GIT_DIR" ]; then
-	echo "Don't run this script from the command line." >&2
-	echo " (if you want, you could supply GIT_DIR then run" >&2
-	echo "  $0 <ref> <oldrev> <newrev>)" >&2
-	exit 1
-fi
-
-if [ -z "$refname" -o -z "$oldrev" -o -z "$newrev" ]; then
-	echo "usage: $0 <ref> <oldrev> <newrev>" >&2
-	exit 1
-fi
-
-# --- Config
-allowunannotated=$(git config --type=bool hooks.allowunannotated)
-allowdeletebranch=$(git config --type=bool hooks.allowdeletebranch)
-denycreatebranch=$(git config --type=bool hooks.denycreatebranch)
-allowdeletetag=$(git config --type=bool hooks.allowdeletetag)
-allowmodifytag=$(git config --type=bool hooks.allowmodifytag)
-
-# check for no description
-projectdesc=$(sed -e '1q' "$GIT_DIR/description")
-case "$projectdesc" in
-"Unnamed repository"* | "")
-	echo "*** Project description file hasn't been set" >&2
-	exit 1
-	;;
-esac
-
-# --- Check types
-# if $newrev is 0000...0000, it's a commit to delete a ref.
-zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
-if [ "$newrev" = "$zero" ]; then
-	newrev_type=delete
-else
-	newrev_type=$(git cat-file -t $newrev)
-fi
-
-case "$refname","$newrev_type" in
-	refs/tags/*,commit)
-		# un-annotated tag
-		short_refname=${refname##refs/tags/}
-		if [ "$allowunannotated" != "true" ]; then
-			echo "*** The un-annotated tag, $short_refname, is not allowed in this repository" >&2
-			echo "*** Use 'git tag [ -a | -s ]' for tags you want to propagate." >&2
-			exit 1
-		fi
-		;;
-	refs/tags/*,delete)
-		# delete tag
-		if [ "$allowdeletetag" != "true" ]; then
-			echo "*** Deleting a tag is not allowed in this repository" >&2
-			exit 1
-		fi
-		;;
-	refs/tags/*,tag)
-		# annotated tag
-		if [ "$allowmodifytag" != "true" ] && git rev-parse $refname > /dev/null 2>&1
-		then
-			echo "*** Tag '$refname' already exists." >&2
-			echo "*** Modifying a tag is not allowed in this repository." >&2
-			exit 1
-		fi
-		;;
-	refs/heads/*,commit)
-		# branch
-		if [ "$oldrev" = "$zero" -a "$denycreatebranch" = "true" ]; then
-			echo "*** Creating a branch is not allowed in this repository" >&2
-			exit 1
-		fi
-		;;
-	refs/heads/*,delete)
-		# delete branch
-		if [ "$allowdeletebranch" != "true" ]; then
-			echo "*** Deleting a branch is not allowed in this repository" >&2
-			exit 1
-		fi
-		;;
-	refs/remotes/*,commit)
-		# tracking branch
-		;;
-	refs/remotes/*,delete)
-		# delete tracking branch
-		if [ "$allowdeletebranch" != "true" ]; then
-			echo "*** Deleting a tracking branch is not allowed in this repository" >&2
-			exit 1
-		fi
-		;;
-	*)
-		# Anything else (is there anything else?)
-		echo "*** Update hook: unknown type of update to ref $refname of type $newrev_type" >&2
-		exit 1
-		;;
-esac
-
-# --- Finished
-exit 0
-</file>
-
-<file path="face-recognition-service/.git/info/exclude">
-# git ls-files --others --exclude-from=.git/info/exclude
-# Lines that start with '#' are comments.
-# For a project mostly in C, the following would be a good set of
-# exclude patterns (uncomment them if you want to use them):
-# *.[oa]
-# *~
-</file>
-
-<file path="face-recognition-service/.git/logs/HEAD">
-0000000000000000000000000000000000000000 4f319412af4ec84431e8d304f962d4f92c1a082c MaiHuynhDuongTuanKiet-22664321 <maihuynhduongtuankiet7924@gmail.com> 1781152858 +0700	commit (initial): backup: current state with all 4 fixes (multi-embedding, quality filter, consensus, adaptive threshold)
-</file>
-
-<file path="face-recognition-service/.git/logs/refs/heads/master">
-0000000000000000000000000000000000000000 4f319412af4ec84431e8d304f962d4f92c1a082c MaiHuynhDuongTuanKiet-22664321 <maihuynhduongtuankiet7924@gmail.com> 1781152858 +0700	commit (initial): backup: current state with all 4 fixes (multi-embedding, quality filter, consensus, adaptive threshold)
-</file>
-
-<file path="face-recognition-service/.git/refs/heads/master">
-4f319412af4ec84431e8d304f962d4f92c1a082c
+<file path="face-recognition-service/scripts/migration_v0.3.0.sql">
+-- =============================================================================
+-- Migration v0.3.0: Add current_status tracking + access_logs partitioning
+-- =============================================================================
+
+-- Step 1: Add current_status columns to patrons table
+ALTER TABLE patrons
+  ADD COLUMN IF NOT EXISTS current_status VARCHAR(10) NOT NULL DEFAULT 'outside',
+  ADD COLUMN IF NOT EXISTS last_entry_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS last_entry_camera VARCHAR(50);
+
+-- Create index for fast active-patron queries
+CREATE INDEX IF NOT EXISTS idx_patrons_current_status ON patrons (current_status, status)
+  WHERE current_status = 'inside' AND status = 'active';
+
+-- Step 2: Backfill current_status for patrons currently inside
+-- This is a one-time reconciliation based on access_logs
+UPDATE patrons p
+SET current_status = 'inside',
+    last_entry_at = sub.latest_entry,
+    last_entry_camera = sub.entry_camera
+FROM (
+    SELECT
+        al.patron_id,
+        MAX(al.access_time) AS latest_entry,
+        (SELECT al2.camera_id FROM access_logs al2
+         WHERE al2.patron_id = al.patron_id
+           AND al2.access_type = 'entry'
+           AND al2.status = 'success'
+         ORDER BY al2.access_time DESC LIMIT 1) AS entry_camera
+    FROM access_logs al
+    WHERE al.access_type = 'entry'
+      AND al.status = 'success'
+      AND al.access_time > NOW() - INTERVAL '24 hours'
+    GROUP BY al.patron_id
+    HAVING MAX(al.access_time) > COALESCE(
+        (SELECT MAX(al3.access_time) FROM access_logs al3
+         WHERE al3.patron_id = al.patron_id
+           AND al3.access_type = 'exit'
+           AND al3.status = 'success'),
+        '1970-01-01'
+    )
+) sub
+WHERE p.id = sub.patron_id;
+
+-- Step 3: Create partitioned access_logs table (for new deployments)
+-- For existing deployments, use pg_partman or manual partitioning
+
+-- Option A: Using PostgreSQL native partitioning (requires new table)
+-- CREATE TABLE access_logs_new (
+--   id UUID NOT NULL,
+--   patron_id UUID,
+--   access_type VARCHAR(10) NOT NULL,
+--   verify_method VARCHAR(20) NOT NULL,
+--   confidence FLOAT,
+--   camera_id VARCHAR(50) NOT NULL,
+--   image_url TEXT,
+--   access_time TIMESTAMP NOT NULL DEFAULT NOW(),
+--   status VARCHAR(20) NOT NULL,
+--   PRIMARY KEY (id, access_time)
+-- ) PARTITION BY RANGE (access_time);
+
+-- CREATE TABLE access_logs_2026_01 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
+-- CREATE TABLE access_logs_2026_02 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
+-- CREATE TABLE access_logs_2026_03 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-03-01') TO ('2026-04-01');
+-- CREATE TABLE access_logs_2026_04 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-04-01') TO ('2026-05-01');
+-- CREATE TABLE access_logs_2026_05 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
+-- CREATE TABLE access_logs_2026_06 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
+-- CREATE TABLE access_logs_2026_07 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
+-- CREATE TABLE access_logs_2026_08 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
+-- CREATE TABLE access_logs_2026_09 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-09-01') TO ('2026-10-01');
+-- CREATE TABLE access_logs_2026_10 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
+-- CREATE TABLE access_logs_2026_11 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');
+-- CREATE TABLE access_logs_2026_12 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-12-01') TO ('2027-01-01');
+-- CREATE TABLE access_logs_future PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2027-01-01') TO ('9999-12-31');
+
+-- Create local indexes on each partition
+-- CREATE INDEX idx_access_logs_patron_id ON access_logs_new (patron_id, access_time DESC);
+
+-- Option B: Auto-create partitions monthly via pg_partman
+-- CREATE EXTENSION IF NOT EXISTS pg_partman;
+-- SELECT partman.create_parent(
+--   p_parent_table := 'public.access_logs',
+--   p_control := 'access_time',
+--   p_type := 'native',
+--   p_interval := '1 month',
+--   p_premake := 3
+-- );
+
+-- Step 4: Add index for time-range queries (useful even without partitioning)
+CREATE INDEX IF NOT EXISTS idx_access_logs_access_time ON access_logs (access_time DESC);
+CREATE INDEX IF NOT EXISTS idx_access_logs_type_time ON access_logs (access_type, access_time DESC)
+  WHERE status = 'success';
 </file>
 
 <file path="api-gateway/.dockerignore">
@@ -1229,21 +266,6 @@ networks:
   frontend-network:
     external: true
     name: frontend-network
-</file>
-
-<file path="api-gateway/Dockerfile">
-FROM node:20-alpine
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm install --only=production
-
-COPY dist ./dist
-
-EXPOSE 80
-
-CMD ["node", "dist/index.js"]
 </file>
 
 <file path="api-gateway/package.json">
@@ -4981,145 +4003,6 @@ final jobId = jsonDecode(body)['job_id'];
 ```
 </file>
 
-<file path="face-recognition-service/scripts/recover_milvus.py">
-from __future__ import annotations
-
-import argparse
-import logging
-import os
-import sys
-import uuid
-
-import numpy as np
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-logger = logging.getLogger("recover_milvus")
-
-from sqlalchemy import create_engine, select, text
-from sqlalchemy.orm import Session
-
-from infra.config import settings
-from infra.milvus_client import MilvusClient
-from infra.minio_client import MinioStorage
-from infra.crypto import decrypt_data
-
-from core.embedding import l2_normalize
-
-ENGINE = create_engine(settings.postgres_url)
-
-
-def get_all_patron_faces():
-    with Session(ENGINE) as session:
-        rs = session.execute(
-            text("SELECT patron_id, milvus_id FROM patron_faces WHERE is_active = true")
-        )
-        return [{"patron_id": str(r[0]), "milvus_id": str(r[1]) if r[1] else None} for r in rs]
-
-
-def get_milvus_ids(client: MilvusClient) -> set[str]:
-    results = client.collection.query(expr="", output_fields=["user_id"], limit=10000)
-    return {r["user_id"] for r in results}
-
-
-def get_embedding_from_milvus(client: MilvusClient, user_id: str) -> list[float] | None:
-    return client.get_embedding_by_user_id(user_id)
-
-
-def re_enroll_patron(patron_id: str, client: MilvusClient, storage: MinioStorage) -> bool:
-    raw = None
-    for prefix in ("patrons", "enrollments"):
-        try:
-            raw = storage.get_image(f"{prefix}/{patron_id}.jpg")
-            logger.info("Found image at %s/%s.jpg", prefix, patron_id)
-            break
-        except Exception:
-            continue
-    if raw is None:
-        logger.warning("No image found for patron %s in MinIO, skipping", patron_id)
-        return False
-    decrypted = raw
-    try:
-        decrypted = decrypt_data(raw)
-    except Exception:
-        logger.info("Decryption failed for %s, trying raw bytes", patron_id)
-    from worker.tasks_pipeline import extract_embedding_placeholder, safe_read_image_from_bytes
-    try:
-        img = safe_read_image_from_bytes(decrypted)
-    except Exception:
-        if decrypted is not raw:
-            try:
-                img = safe_read_image_from_bytes(raw)
-            except Exception:
-                logger.warning("Cannot decode image for patron %s (both encrypted and raw)", patron_id)
-                return False
-        else:
-            logger.warning("Cannot decode image for patron %s", patron_id)
-            return False
-    if img is None:
-        logger.warning("Failed to decode image for patron %s", patron_id)
-        return False
-    vec = extract_embedding_placeholder(img)
-    vec_sum = float(np.sum(np.abs(np.array(vec, dtype=np.float32))))
-    if vec_sum < 0.1:
-        logger.warning("Near-zero embedding for patron %s (sum=%.4f), skipping", patron_id, vec_sum)
-        return False
-    norm_vec = l2_normalize(vec)
-    client.upsert_embeddings(user_id=patron_id, embedding=norm_vec)
-    logger.info("Recovered embedding for patron %s", patron_id)
-    return True
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Recover missing Milvus embeddings from MinIO image backups")
-    parser.add_argument("--dry-run", action="store_true", help="Only report missing embeddings, do not recover")
-    args = parser.parse_args()
-
-    client = MilvusClient(
-        host=settings.milvus_host,
-        port=settings.milvus_port,
-        collection_name=settings.milvus_collection,
-        dim=512,
-    )
-    storage = MinioStorage()
-
-    faces = get_all_patron_faces()
-    milvus_ids = get_milvus_ids(client)
-
-    logger.info("Patron faces in DB: %d", len(faces))
-    logger.info("Embeddings in Milvus: %d", len(milvus_ids))
-
-    missing = [f for f in faces if f["patron_id"] not in milvus_ids]
-    orphan = milvus_ids - {f["patron_id"] for f in faces}
-
-    if orphan:
-        logger.warning("Orphan embeddings (in Milvus, no patron_face record): %s", sorted(orphan))
-
-    if not missing:
-        logger.info("All patron faces are synced to Milvus. Nothing to recover.")
-        return
-
-    logger.info("Missing embeddings (%d): %s", len(missing), [f["patron_id"] for f in missing])
-
-    if args.dry_run:
-        logger.info("Dry-run mode. Use --no-dry-run to recover.")
-        return
-
-    recovered = 0
-    for face in missing:
-        pid = face["patron_id"]
-        logger.info("Recovering %s...", pid)
-        if re_enroll_patron(pid, client, storage):
-            recovered += 1
-
-    logger.info("Recovered %d / %d missing embeddings", recovered, len(missing))
-
-
-if __name__ == "__main__":
-    main()
-</file>
-
 <file path="face-recognition-service/tests/conftest.py">
 from __future__ import annotations
 
@@ -5835,127 +4718,6 @@ def has_person_in_frame(img: np.ndarray, min_area: float = MIN_PERSON_AREA) -> b
 - ✅ Đúng: `process.env.REALTIME_SERVICE_URL || 'http://realtime-service:8080'`
 </file>
 
-<file path="README.md">
-# Face Recognition Platform - Backend
-
-Microservices backend for face recognition, built with FastAPI, Celery, Milvus, and PostgreSQL.
-
-## Architecture
-
-```
-Backend/
-├── api-gateway/
-│   └── nginx.conf          # API Gateway (Nginx) - routes /api/* to FastAPI
-├── FaceRecognition_Service/
-│   ├── api/                # FastAPI application
-│   ├── core/               # Domain models & interfaces
-│   ├── infra/              # Implementations (DB, Milvus, MinIO, Redis)
-│   ├── worker/             # Celery background tasks
-│   └── tests/
-├── docker-compose.yml       # Root compose - starts ALL backend services
-└── .env.example
-```
-
-## Services
-
-| Service | Container Name | Port | Description |
-|---------|----------------|------|-------------|
-| postgres | postgres | 5432 | PostgreSQL database |
-| redis | redis | 6379 | Redis (Celery broker) |
-| minio | minio | 9000/9001 | Object storage |
-| milvus | milvus | 19530/9091 | Vector database |
-| face-recognition-api | face-recognition-api | 8000 | FastAPI application |
-| worker | face-recognition-worker | - | Celery worker |
-| gateway | api-gateway | 80 | Nginx API Gateway |
-
-## Quick Start
-
-1. Copy `.env.example` to `FaceRecognition_Service/.env`:
-```bash
-cp FaceRecognition_Service/.env.example FaceRecognition_Service/.env
-```
-
-2. Start all services:
-```bash
-docker compose up -d
-```
-
-3. Access:
-- API Gateway: http://localhost
-- API Docs: http://localhost/docs
-- MinIO Console: http://localhost:9001
-
-## API Endpoints
-
-All API calls go through the gateway at `http://localhost/api/`
-
-### Auth
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/auth/register` | Register new user |
-| POST | `/auth/login` | Login, returns JWT tokens |
-| POST | `/auth/refresh` | Refresh access token |
-
-### Face Recognition
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/face/enroll` | Enroll face (multipart) |
-| POST | `/face/verify` | Verify face against user |
-| POST | `/face/identify` | Identify unknown face |
-| POST | `/face/liveness` | Passive liveness check |
-| DELETE | `/face/{user_id}` | Delete face data (admin) |
-
-### Tasks
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/tasks/{task_id}` | Poll Celery task status |
-
-### Users (Admin)
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/users` | List all users |
-| GET | `/users/me` | Current user info |
-| DELETE | `/users/{user_id}` | Delete user (admin) |
-
-## Environment Variables
-
-See `.env.example` for all required variables.
-
-Key variables:
-- `CORS_ORIGINS` - Comma-separated list of allowed origins (default: "*")
-- `JWT_*` - JWT configuration
-- `POSTGRES_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection string
-- `MILVUS_HOST` - Milvus server host
-- `MINIO_*` - MinIO configuration
-
-## Development
-
-### Run locally (without Docker)
-```bash
-cd FaceRecognition_Service
-poetry install
-poetry run uvicorn api.app:create_app --factory --reload
-```
-
-### Run tests
-```bash
-cd FaceRecognition_Service
-poetry install --with dev
-pytest tests/ -v
-```
-
-## Network
-
-All services run on the `face-network` bridge network.
-
-## Frontend Integration
-
-The frontend (in a separate repo: `Frontend_web`) connects to this backend via the API Gateway at `http://localhost/api/`.
-
-For production, update the `NEXT_PUBLIC_API_URL` environment variable in the frontend to point to the deployed gateway URL.
-</file>
-
 <file path="user-service/.dockerignore">
 node_modules
 .env
@@ -6367,6 +5129,24 @@ export const userService = new UserService();
 }
 </file>
 
+<file path="api-gateway/Dockerfile">
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+RUN npx tsc
+
+RUN npm prune --production
+
+EXPOSE 80
+
+CMD ["node", "dist/index.js"]
+</file>
+
 <file path="api-gateway/src/config.ts">
 import dotenv from 'dotenv';
 dotenv.config();
@@ -6610,10 +5390,11 @@ class Settings(BaseSettings):
     entry_cam_url: str = ""
     exit_cam_url: str = ""
     relay_api_url: str = ""
-    face_match_threshold: float = 0.6
+    face_match_threshold: float = 0.5
     access_cooldown_seconds: int = 10
     max_entry_hours: int = 24
     enable_person_detection: bool = True
+    enable_multi_angle: bool = True
 
 
 settings = Settings()  # type: ignore
@@ -6721,302 +5502,6 @@ class MinioStorage:
 
     def delete_image(self, object_name: str) -> None:
         self.client.remove_object(self.bucket, object_name)
-</file>
-
-<file path="face-recognition-service/infra/patron_repository.py">
-from __future__ import annotations
-
-import uuid
-from datetime import date, datetime
-from typing import List, Optional
-
-from sqlalchemy import Date, cast, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from infra.models import AccessLogModel, PatronFaceModel, PatronModel
-
-
-class PatronRepository:
-    def __init__(self, db: AsyncSession):
-        self.db = db
-
-    async def create_patron(
-        self,
-        full_name: str,
-        student_code: str,
-        card_number: str,
-        membership_expiry: date,
-        identity_number: Optional[str] = None,
-        email: Optional[str] = None,
-        phone: Optional[str] = None,
-        issue_date: Optional[date] = None,
-    ) -> PatronModel:
-        patron = PatronModel(
-            id=uuid.uuid4(),
-            full_name=full_name,
-            student_code=student_code,
-            card_number=card_number,
-            membership_expiry=membership_expiry,
-            identity_number=identity_number,
-            email=email,
-            phone=phone,
-            issue_date=issue_date or date.today(),
-            status="active",
-        )
-        self.db.add(patron)
-        await self.db.flush()
-        return patron
-
-    async def get_by_id(self, patron_id: uuid.UUID) -> Optional[PatronModel]:
-        result = await self.db.execute(select(PatronModel).where(PatronModel.id == patron_id))
-        return result.scalar_one_or_none()
-
-    async def get_by_student_code(self, code: str) -> Optional[PatronModel]:
-        result = await self.db.execute(select(PatronModel).where(PatronModel.student_code == code))
-        return result.scalar_one_or_none()
-
-    async def get_by_card_number(self, card: str) -> Optional[PatronModel]:
-        result = await self.db.execute(select(PatronModel).where(PatronModel.card_number == card))
-        return result.scalar_one_or_none()
-
-    async def search(
-        self,
-        query: Optional[str] = None,
-        status: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 20,
-    ) -> List[PatronModel]:
-        q = select(PatronModel)
-        if query:
-            pattern = f"%{query}%"
-            q = q.where(
-                PatronModel.full_name.ilike(pattern)
-                | PatronModel.student_code.ilike(pattern)
-                | PatronModel.card_number.ilike(pattern)
-                | PatronModel.identity_number.ilike(pattern)
-            )
-        if status:
-            q = q.where(PatronModel.status == status)
-        q = q.order_by(PatronModel.created_at.desc()).offset(skip).limit(limit)
-        result = await self.db.execute(q)
-        return list(result.scalars().all())
-
-    async def count_active(self) -> int:
-        result = await self.db.execute(
-            select(func.count(PatronModel.id)).where(PatronModel.status == "active")
-        )
-        return result.scalar() or 0
-
-    async def update_patron(self, patron_id: uuid.UUID, **kwargs) -> Optional[PatronModel]:
-        patron = await self.get_by_id(patron_id)
-        if not patron:
-            return None
-        for key, value in kwargs.items():
-            if hasattr(patron, key) and value is not None:
-                setattr(patron, key, value)
-        patron.updated_at = datetime.utcnow()
-        await self.db.flush()
-        return patron
-
-    async def delete_patron(self, patron_id: uuid.UUID) -> bool:
-        patron = await self.get_by_id(patron_id)
-        if not patron:
-            return False
-        await self.db.delete(patron)
-        await self.db.flush()
-        return True
-
-    async def get_active_face(self, patron_id: uuid.UUID) -> Optional[PatronFaceModel]:
-        result = await self.db.execute(
-            select(PatronFaceModel).where(
-                PatronFaceModel.patron_id == patron_id,
-                PatronFaceModel.is_active == True,
-            )
-        )
-        return result.scalar_one_or_none()
-
-    async def upsert_face(
-        self,
-        patron_id: uuid.UUID,
-        milvus_id: Optional[str] = None,
-        image_url: Optional[str] = None,
-    ) -> PatronFaceModel:
-        existing = await self.get_active_face(patron_id)
-        if existing:
-            existing.milvus_id = milvus_id or existing.milvus_id
-            existing.image_url = image_url or existing.image_url
-            existing.updated_at = datetime.utcnow()
-            return existing
-        face = PatronFaceModel(
-            id=uuid.uuid4(),
-            patron_id=patron_id,
-            milvus_id=milvus_id,
-            image_url=image_url,
-            is_active=True,
-        )
-        self.db.add(face)
-        await self.db.flush()
-        return face
-
-    async def create_access_log(
-        self,
-        access_type: str,
-        verify_method: str,
-        camera_id: str,
-        status: str,
-        patron_id: Optional[uuid.UUID] = None,
-        confidence: Optional[float] = None,
-        image_url: Optional[str] = None,
-    ) -> AccessLogModel:
-        log = AccessLogModel(
-            id=uuid.uuid4(),
-            patron_id=patron_id,
-            access_type=access_type,
-            verify_method=verify_method,
-            camera_id=camera_id,
-            status=status,
-            confidence=confidence,
-            image_url=image_url,
-        )
-        self.db.add(log)
-        await self.db.flush()
-        return log
-
-    async def get_access_logs(
-        self,
-        patron_id: Optional[uuid.UUID] = None,
-        camera_id: Optional[str] = None,
-        status: Optional[str] = None,
-        access_type: Optional[str] = None,
-        date_from: Optional[datetime] = None,
-        date_to: Optional[datetime] = None,
-        search: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 50,
-    ) -> tuple[list[AccessLogModel], int]:
-        q = select(AccessLogModel)
-        count_q = select(func.count(AccessLogModel.id))
-
-        if patron_id:
-            q = q.where(AccessLogModel.patron_id == patron_id)
-            count_q = count_q.where(AccessLogModel.patron_id == patron_id)
-        if camera_id:
-            q = q.where(AccessLogModel.camera_id == camera_id)
-            count_q = count_q.where(AccessLogModel.camera_id == camera_id)
-        if status:
-            q = q.where(AccessLogModel.status == status)
-            count_q = count_q.where(AccessLogModel.status == status)
-        if access_type:
-            q = q.where(AccessLogModel.access_type == access_type)
-            count_q = count_q.where(AccessLogModel.access_type == access_type)
-        if date_from:
-            q = q.where(AccessLogModel.access_time >= date_from)
-            count_q = count_q.where(AccessLogModel.access_time >= date_from)
-        if date_to:
-            q = q.where(AccessLogModel.access_time <= date_to)
-            count_q = count_q.where(AccessLogModel.access_time <= date_to)
-        if search:
-            pattern = f"%{search}%"
-            sub = select(PatronModel.id).where(
-                (PatronModel.full_name.ilike(pattern)) | (PatronModel.student_code.ilike(pattern))
-            ).subquery()
-            q = q.where(AccessLogModel.patron_id.in_(select(sub.c.id)))
-            count_q = count_q.where(AccessLogModel.patron_id.in_(select(sub.c.id)))
-
-        total_result = await self.db.execute(count_q)
-        total = total_result.scalar() or 0
-
-        q = q.order_by(AccessLogModel.access_time.desc()).offset(skip).limit(limit)
-        result = await self.db.execute(q)
-        return list(result.scalars().all()), total
-
-    async def get_access_frequency(
-        self,
-        date_from: Optional[datetime] = None,
-        date_to: Optional[datetime] = None,
-    ) -> list[dict]:
-        q = select(
-            cast(AccessLogModel.access_time, Date).label("date"),
-            AccessLogModel.access_type,
-            func.count(AccessLogModel.id).label("count"),
-        ).where(AccessLogModel.status == "success")
-
-        if date_from:
-            q = q.where(AccessLogModel.access_time >= date_from)
-        if date_to:
-            q = q.where(AccessLogModel.access_time <= date_to)
-
-        q = q.group_by(cast(AccessLogModel.access_time, Date), AccessLogModel.access_type)
-        q = q.order_by(cast(AccessLogModel.access_time, Date))
-
-        result = await self.db.execute(q)
-        rows = result.all()
-
-        daily: dict[str, dict] = {}
-        for row in rows:
-            date_str = str(row.date)
-            if date_str not in daily:
-                daily[date_str] = {"date": date_str, "entry": 0, "exit": 0}
-            daily[date_str][row.access_type] = row.count
-
-        return sorted(daily.values(), key=lambda x: x["date"])
-
-    async def get_latest_entry(self, patron_id: uuid.UUID) -> Optional[AccessLogModel]:
-        result = await self.db.execute(
-            select(AccessLogModel)
-            .where(
-                AccessLogModel.patron_id == patron_id,
-                AccessLogModel.access_type == "entry",
-                AccessLogModel.status == "success",
-            )
-            .order_by(AccessLogModel.access_time.desc())
-            .limit(1)
-        )
-        return result.scalar_one_or_none()
-
-    async def is_patron_inside(self, patron_id: uuid.UUID) -> bool:
-        latest = await self.get_latest_entry(patron_id)
-        if not latest:
-            return False
-        result = await self.db.execute(
-            select(AccessLogModel)
-            .where(
-                AccessLogModel.patron_id == patron_id,
-                AccessLogModel.access_type == "exit",
-                AccessLogModel.access_time > latest.access_time,
-            )
-            .limit(1)
-        )
-        return result.scalar_one_or_none() is None
-
-    async def get_active_patrons(self) -> List[PatronModel]:
-        sub = (
-            select(
-                AccessLogModel.patron_id,
-                func.max(AccessLogModel.access_time).label("last_time"),
-            )
-            .where(AccessLogModel.status == "success")
-            .group_by(AccessLogModel.patron_id)
-            .subquery()
-        )
-        # patrons whose latest log is an entry (no later exit)
-        active_ids_q = (
-            select(sub.c.patron_id)
-            .outerjoin(
-                AccessLogModel,
-                (AccessLogModel.patron_id == sub.c.patron_id)
-                & (AccessLogModel.access_type == "exit")
-                & (AccessLogModel.access_time > sub.c.last_time),
-            )
-            .where(AccessLogModel.id.is_(None))
-        )
-        result = await self.db.execute(active_ids_q)
-        ids = [row[0] for row in result if row[0]]
-        if not ids:
-            return []
-        patrons_q = select(PatronModel).where(PatronModel.id.in_(ids))
-        result = await self.db.execute(patrons_q)
-        return list(result.scalars().all())
 </file>
 
 <file path="face-recognition-service/infra/sse_manager.py">
@@ -7135,6 +5620,145 @@ class PostgresUserRepository:
         if user:
             await self.session.delete(user)
             await self.session.commit()
+</file>
+
+<file path="face-recognition-service/scripts/recover_milvus.py">
+from __future__ import annotations
+
+import argparse
+import logging
+import os
+import sys
+import uuid
+
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger("recover_milvus")
+
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.orm import Session
+
+from infra.config import settings
+from infra.milvus_client import MilvusClient
+from infra.minio_client import MinioStorage
+from infra.crypto import decrypt_data
+
+from core.embedding import l2_normalize
+
+ENGINE = create_engine(settings.postgres_url)
+
+
+def get_all_patron_faces():
+    with Session(ENGINE) as session:
+        rs = session.execute(
+            text("SELECT patron_id, milvus_id FROM patron_faces WHERE is_active = true")
+        )
+        return [{"patron_id": str(r[0]), "milvus_id": str(r[1]) if r[1] else None} for r in rs]
+
+
+def get_milvus_ids(client: MilvusClient) -> set[str]:
+    results = client.client.query(client.collection_name, filter="user_id != \"\"", output_fields=["user_id"], limit=10000)
+    return {r["user_id"] for r in results}
+
+
+def get_embedding_from_milvus(client: MilvusClient, user_id: str) -> list[float] | None:
+    return client.get_embedding_by_user_id(user_id)
+
+
+def re_enroll_patron(patron_id: str, client: MilvusClient, storage: MinioStorage) -> bool:
+    raw = None
+    for prefix in ("patrons", "enrollments"):
+        try:
+            raw = storage.get_image(f"{prefix}/{patron_id}.jpg")
+            logger.info("Found image at %s/%s.jpg", prefix, patron_id)
+            break
+        except Exception:
+            continue
+    if raw is None:
+        logger.warning("No image found for patron %s in MinIO, skipping", patron_id)
+        return False
+    decrypted = raw
+    try:
+        decrypted = decrypt_data(raw)
+    except Exception:
+        logger.info("Decryption failed for %s, trying raw bytes", patron_id)
+    from worker.tasks_pipeline import extract_embedding_placeholder, safe_read_image_from_bytes
+    try:
+        img = safe_read_image_from_bytes(decrypted)
+    except Exception:
+        if decrypted is not raw:
+            try:
+                img = safe_read_image_from_bytes(raw)
+            except Exception:
+                logger.warning("Cannot decode image for patron %s (both encrypted and raw)", patron_id)
+                return False
+        else:
+            logger.warning("Cannot decode image for patron %s", patron_id)
+            return False
+    if img is None:
+        logger.warning("Failed to decode image for patron %s", patron_id)
+        return False
+    vec = extract_embedding_placeholder(img)
+    vec_sum = float(np.sum(np.abs(np.array(vec, dtype=np.float32))))
+    if vec_sum < 0.1:
+        logger.warning("Near-zero embedding for patron %s (sum=%.4f), skipping", patron_id, vec_sum)
+        return False
+    norm_vec = l2_normalize(vec)
+    client.upsert_embeddings(user_id=patron_id, embedding=norm_vec)
+    logger.info("Recovered embedding for patron %s", patron_id)
+    return True
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Recover missing Milvus embeddings from MinIO image backups")
+    parser.add_argument("--dry-run", action="store_true", help="Only report missing embeddings, do not recover")
+    args = parser.parse_args()
+
+    client = MilvusClient(
+        host=settings.milvus_host,
+        port=settings.milvus_port,
+        collection_name=settings.milvus_collection,
+        dim=512,
+    )
+    storage = MinioStorage()
+
+    faces = get_all_patron_faces()
+    milvus_ids = get_milvus_ids(client)
+
+    logger.info("Patron faces in DB: %d", len(faces))
+    logger.info("Embeddings in Milvus: %d", len(milvus_ids))
+
+    missing = [f for f in faces if f["patron_id"] not in milvus_ids]
+    orphan = milvus_ids - {f["patron_id"] for f in faces}
+
+    if orphan:
+        logger.warning("Orphan embeddings (in Milvus, no patron_face record): %s", sorted(orphan))
+
+    if not missing:
+        logger.info("All patron faces are synced to Milvus. Nothing to recover.")
+        return
+
+    logger.info("Missing embeddings (%d): %s", len(missing), [f["patron_id"] for f in missing])
+
+    if args.dry_run:
+        logger.info("Dry-run mode. Use --no-dry-run to recover.")
+        return
+
+    recovered = 0
+    for face in missing:
+        pid = face["patron_id"]
+        logger.info("Recovering %s...", pid)
+        if re_enroll_patron(pid, client, storage):
+            recovered += 1
+
+    logger.info("Recovered %d / %d missing embeddings", recovered, len(missing))
+
+
+if __name__ == "__main__":
+    main()
 </file>
 
 <file path="face-recognition-service/worker/face_model.py">
@@ -7593,66 +6217,6 @@ CLAUDE.md
 AGENTS.md
 </file>
 
-<file path="api-gateway/nginx.conf">
-server {
-    listen 80;
-    server_name localhost;
-    client_max_body_size 10M;
-
-    # ──────────────────────────────────────────
-    # User Service: /users/* → Node.js User Service
-    # ──────────────────────────────────────────
-    location /users/ {
-        proxy_pass http://user-service:3001;
-
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # ──────────────────────────────────────────
-    # API Gateway: /api/* → FaceRecognition Backend
-    # ──────────────────────────────────────────
-    location /api/ {
-        rewrite ^/api/([^/].*)$ /$1 break;
-        proxy_pass http://face-recognition-api:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Content-Type $http_content_type;
-
-        proxy_read_timeout 120s;
-        proxy_send_timeout 120s;
-        proxy_buffer_size 128k;
-        proxy_buffers 4 256k;
-        proxy_busy_buffers_size 256k;
-        client_max_body_size 10M;
-    }
-
-    # ──────────────────────────────────────────
-    # Swagger/OpenAPI docs
-    # ──────────────────────────────────────────
-    location /docs {
-        proxy_pass http://face-recognition-api:8000;
-    }
-    location /openapi.json {
-        proxy_pass http://face-recognition-api:8000;
-    }
-    location /redoc {
-        proxy_pass http://face-recognition-api:8000;
-    }
-
-    # ──────────────────────────────────────────
-    # Health check
-    # ──────────────────────────────────────────
-    location /healthz {
-        proxy_pass http://face-recognition-api:8000;
-    }
-}
-</file>
-
 <file path="face-recognition-service/api/routers/face.py">
 from __future__ import annotations
 
@@ -7695,6 +6259,7 @@ async def _store_temp_frame(raw: bytes) -> str:
 async def enroll(
     file: UploadFile = File(...),
     consent_given: bool = Form(True),
+    angle: str = Form("frontal"),
     current_user: dict = Depends(get_current_user),
 ):
     if not consent_given:
@@ -7706,8 +6271,12 @@ async def enroll(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
         )
     raw = await file.read()
-    object_key = await _store_temp_frame(raw)
-    task = enroll_task.delay(user_id=current_user["id"], object_key=object_key)
+    try:
+        object_key = await _store_temp_frame(raw)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to store temp frame: {exc}")
+
+    task = enroll_task.delay(user_id=current_user["id"], object_key=object_key, angle=angle)
     return EnrollmentResult(job_id=task.id)
 
 
@@ -7968,16 +6537,14 @@ class LivenessResult(BaseModel):
 class PatronCreate(BaseModel):
     full_name: str
     student_code: str
-    card_number: str
+    class_name: Optional[str] = None
     membership_expiry: date
-    identity_number: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
     issue_date: Optional[date] = None
 
 
 class PatronUpdate(BaseModel):
     full_name: Optional[str] = None
+    class_name: Optional[str] = None
     identity_number: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -7991,6 +6558,7 @@ class PatronPublic(BaseModel):
     id: str
     full_name: str
     student_code: str
+    class_name: Optional[str] = None
     identity_number: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -8134,6 +6702,7 @@ class PatronModel(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     full_name = Column(String(255), nullable=False)
     student_code = Column(String(50), unique=True, nullable=False, index=True)
+    class_name = Column(String(100), nullable=True)
     identity_number = Column(String(50), nullable=True)
     email = Column(String(255), nullable=True)
     phone = Column(String(50), nullable=True)
@@ -8141,6 +6710,9 @@ class PatronModel(Base):
     issue_date = Column(Date, nullable=True)
     membership_expiry = Column(Date, nullable=False)
     status = Column(String(20), default="active", nullable=False)
+    current_status = Column(String(10), default="outside", nullable=False)
+    last_entry_at = Column(DateTime, nullable=True)
+    last_entry_camera = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -8149,7 +6721,8 @@ class PatronFaceModel(Base):
     __tablename__ = "patron_faces"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    patron_id = Column(UUID(as_uuid=True), ForeignKey("patrons.id"), unique=True, nullable=False)
+    patron_id = Column(UUID(as_uuid=True), ForeignKey("patrons.id"), nullable=False)
+    angle = Column(String(20), default="frontal", nullable=False)
     milvus_id = Column(String(100), nullable=True)
     image_url = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
@@ -8172,6 +6745,362 @@ class AccessLogModel(Base):
     image_url = Column(Text, nullable=True)
     access_time = Column(DateTime, default=datetime.utcnow)
     status = Column(String(20), nullable=False)
+</file>
+
+<file path="face-recognition-service/infra/patron_repository.py">
+from __future__ import annotations
+
+import uuid
+from datetime import date, datetime
+from typing import List, Optional
+
+from sqlalchemy import Date, cast, func, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from infra.models import AccessLogModel, PatronFaceModel, PatronModel
+
+
+class PatronRepository:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    def _generate_card_number(self, student_code: str) -> str:
+        return f"THV-{student_code}"
+
+    async def create_patron(
+        self,
+        full_name: str,
+        student_code: str,
+        membership_expiry: date,
+        class_name: Optional[str] = None,
+        card_number: Optional[str] = None,
+        identity_number: Optional[str] = None,
+        email: Optional[str] = None,
+        phone: Optional[str] = None,
+        issue_date: Optional[date] = None,
+    ) -> PatronModel:
+        if not card_number:
+            card_number = self._generate_card_number(student_code)
+        patron = PatronModel(
+            id=uuid.uuid4(),
+            full_name=full_name,
+            student_code=student_code,
+            class_name=class_name,
+            card_number=card_number,
+            membership_expiry=membership_expiry,
+            identity_number=identity_number,
+            email=email,
+            phone=phone,
+            issue_date=issue_date or date.today(),
+            status="active",
+            current_status="outside",
+        )
+        self.db.add(patron)
+        await self.db.flush()
+        return patron
+
+    async def get_by_id(self, patron_id: uuid.UUID) -> Optional[PatronModel]:
+        result = await self.db.execute(select(PatronModel).where(PatronModel.id == patron_id))
+        return result.scalar_one_or_none()
+
+    async def get_by_student_code(self, code: str) -> Optional[PatronModel]:
+        result = await self.db.execute(select(PatronModel).where(PatronModel.student_code == code))
+        return result.scalar_one_or_none()
+
+    async def get_by_card_number(self, card: str) -> Optional[PatronModel]:
+        result = await self.db.execute(select(PatronModel).where(PatronModel.card_number == card))
+        return result.scalar_one_or_none()
+
+    async def search(
+        self,
+        query: Optional[str] = None,
+        status: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> List[PatronModel]:
+        q = select(PatronModel)
+        if query:
+            pattern = f"%{query}%"
+            q = q.where(
+                PatronModel.full_name.ilike(pattern)
+                | PatronModel.student_code.ilike(pattern)
+                | PatronModel.card_number.ilike(pattern)
+                | PatronModel.identity_number.ilike(pattern)
+            )
+        if status:
+            q = q.where(PatronModel.status == status)
+        q = q.order_by(PatronModel.created_at.desc()).offset(skip).limit(limit)
+        result = await self.db.execute(q)
+        return list(result.scalars().all())
+
+    async def count_active(self) -> int:
+        result = await self.db.execute(
+            select(func.count(PatronModel.id)).where(PatronModel.status == "active")
+        )
+        return result.scalar() or 0
+
+    async def update_patron(self, patron_id: uuid.UUID, **kwargs) -> Optional[PatronModel]:
+        patron = await self.get_by_id(patron_id)
+        if not patron:
+            return None
+        for key, value in kwargs.items():
+            if hasattr(patron, key) and value is not None:
+                setattr(patron, key, value)
+        patron.updated_at = datetime.utcnow()
+        await self.db.flush()
+        return patron
+
+    async def delete_patron(self, patron_id: uuid.UUID) -> bool:
+        patron = await self.get_by_id(patron_id)
+        if not patron:
+            return False
+        faces = await self.db.execute(
+            select(PatronFaceModel).where(PatronFaceModel.patron_id == patron_id)
+        )
+        for f in faces.scalars().all():
+            await self.db.delete(f)
+        await self.db.execute(
+            update(AccessLogModel)
+            .where(AccessLogModel.patron_id == patron_id)
+            .values(patron_id=None)
+        )
+        await self.db.delete(patron)
+        await self.db.flush()
+        return True
+
+    async def get_active_face(self, patron_id: uuid.UUID) -> Optional[PatronFaceModel]:
+        result = await self.db.execute(
+            select(PatronFaceModel).where(
+                PatronFaceModel.patron_id == patron_id,
+                PatronFaceModel.is_active == True,
+            )
+            .order_by(PatronFaceModel.created_at.asc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_active_faces(self, patron_id: uuid.UUID) -> list[PatronFaceModel]:
+        result = await self.db.execute(
+            select(PatronFaceModel).where(
+                PatronFaceModel.patron_id == patron_id,
+                PatronFaceModel.is_active == True,
+            )
+            .order_by(PatronFaceModel.created_at.asc())
+        )
+        return list(result.scalars().all())
+
+    async def get_face_by_angle(self, patron_id: uuid.UUID, angle: str) -> Optional[PatronFaceModel]:
+        result = await self.db.execute(
+            select(PatronFaceModel).where(
+                PatronFaceModel.patron_id == patron_id,
+                PatronFaceModel.angle == angle,
+                PatronFaceModel.is_active == True,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def add_face(
+        self,
+        patron_id: uuid.UUID,
+        angle: str = "frontal",
+        milvus_id: Optional[str] = None,
+        image_url: Optional[str] = None,
+    ) -> PatronFaceModel:
+        face = PatronFaceModel(
+            id=uuid.uuid4(),
+            patron_id=patron_id,
+            angle=angle,
+            milvus_id=milvus_id,
+            image_url=image_url,
+            is_active=True,
+        )
+        self.db.add(face)
+        await self.db.flush()
+        return face
+
+    async def set_patron_current_status(
+        self,
+        patron_id: uuid.UUID,
+        status: str,
+        last_entry_at: Optional[datetime] = None,
+        last_entry_camera: Optional[str] = None,
+    ) -> None:
+        await self.db.execute(
+            update(PatronModel)
+            .where(PatronModel.id == patron_id)
+            .values(
+                current_status=status,
+                last_entry_at=last_entry_at,
+                last_entry_camera=last_entry_camera,
+                updated_at=datetime.utcnow(),
+            )
+        )
+
+    async def create_access_log(
+        self,
+        access_type: str,
+        verify_method: str,
+        camera_id: str,
+        status: str,
+        patron_id: Optional[uuid.UUID] = None,
+        confidence: Optional[float] = None,
+        image_url: Optional[str] = None,
+    ) -> AccessLogModel:
+        log = AccessLogModel(
+            id=uuid.uuid4(),
+            patron_id=patron_id,
+            access_type=access_type,
+            verify_method=verify_method,
+            camera_id=camera_id,
+            status=status,
+            confidence=confidence,
+            image_url=image_url,
+        )
+        self.db.add(log)
+        if patron_id and status == "success":
+            new_status = "inside" if access_type == "entry" else "outside"
+            await self.set_patron_current_status(
+                patron_id,
+                new_status,
+                last_entry_at=datetime.utcnow() if access_type == "entry" else None,
+                last_entry_camera=camera_id if access_type == "entry" else None,
+            )
+        await self.db.flush()
+        return log
+
+    async def get_access_logs(
+        self,
+        patron_id: Optional[uuid.UUID] = None,
+        camera_id: Optional[str] = None,
+        status: Optional[str] = None,
+        access_type: Optional[str] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        search: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[AccessLogModel], int]:
+        q = select(AccessLogModel)
+        count_q = select(func.count(AccessLogModel.id))
+
+        if patron_id:
+            q = q.where(AccessLogModel.patron_id == patron_id)
+            count_q = count_q.where(AccessLogModel.patron_id == patron_id)
+        if camera_id:
+            q = q.where(AccessLogModel.camera_id == camera_id)
+            count_q = count_q.where(AccessLogModel.camera_id == camera_id)
+        if status:
+            q = q.where(AccessLogModel.status == status)
+            count_q = count_q.where(AccessLogModel.status == status)
+        if access_type:
+            q = q.where(AccessLogModel.access_type == access_type)
+            count_q = count_q.where(AccessLogModel.access_type == access_type)
+        if date_from:
+            q = q.where(AccessLogModel.access_time >= date_from)
+            count_q = count_q.where(AccessLogModel.access_time >= date_from)
+        if date_to:
+            q = q.where(AccessLogModel.access_time <= date_to)
+            count_q = count_q.where(AccessLogModel.access_time <= date_to)
+        if search:
+            pattern = f"%{search}%"
+            sub = select(PatronModel.id).where(
+                (PatronModel.full_name.ilike(pattern)) | (PatronModel.student_code.ilike(pattern))
+            ).subquery()
+            q = q.where(AccessLogModel.patron_id.in_(select(sub.c.id)))
+            count_q = count_q.where(AccessLogModel.patron_id.in_(select(sub.c.id)))
+
+        total_result = await self.db.execute(count_q)
+        total = total_result.scalar() or 0
+
+        q = q.order_by(AccessLogModel.access_time.desc()).offset(skip).limit(limit)
+        result = await self.db.execute(q)
+        return list(result.scalars().all()), total
+
+    async def get_access_frequency(
+        self,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+    ) -> list[dict]:
+        q = select(
+            cast(AccessLogModel.access_time, Date).label("date"),
+            AccessLogModel.access_type,
+            func.count(AccessLogModel.id).label("count"),
+        ).where(AccessLogModel.status == "success")
+
+        if date_from:
+            q = q.where(AccessLogModel.access_time >= date_from)
+        if date_to:
+            q = q.where(AccessLogModel.access_time <= date_to)
+
+        q = q.group_by(cast(AccessLogModel.access_time, Date), AccessLogModel.access_type)
+        q = q.order_by(cast(AccessLogModel.access_time, Date))
+
+        result = await self.db.execute(q)
+        rows = result.all()
+
+        daily: dict[str, dict] = {}
+        for row in rows:
+            date_str = str(row.date)
+            if date_str not in daily:
+                daily[date_str] = {"date": date_str, "entry": 0, "exit": 0}
+            daily[date_str][row.access_type] = row.count
+
+        return sorted(daily.values(), key=lambda x: x["date"])
+
+    async def get_latest_entry(self, patron_id: uuid.UUID) -> Optional[AccessLogModel]:
+        result = await self.db.execute(
+            select(AccessLogModel)
+            .where(
+                AccessLogModel.patron_id == patron_id,
+                AccessLogModel.access_type == "entry",
+                AccessLogModel.status == "success",
+            )
+            .order_by(AccessLogModel.access_time.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def is_patron_inside(self, patron_id: uuid.UUID) -> bool:
+        result = await self.db.execute(
+            select(PatronModel.current_status).where(PatronModel.id == patron_id)
+        )
+        return result.scalar_one_or_none() == "inside"
+
+    async def get_active_patrons(self) -> List[PatronModel]:
+        result = await self.db.execute(
+            select(PatronModel).where(
+                PatronModel.current_status == "inside",
+                PatronModel.status == "active",
+            )
+        )
+        return list(result.scalars().all())
+
+    async def count_active_inside(self) -> int:
+        result = await self.db.execute(
+            select(func.count(PatronModel.id)).where(
+                PatronModel.current_status == "inside",
+                PatronModel.status == "active",
+            )
+        )
+        return result.scalar() or 0
+
+    async def count_today_access(self, access_type: str) -> int:
+        today = date.today()
+        result = await self.db.execute(
+            select(func.count(AccessLogModel.id)).where(
+                AccessLogModel.access_type == access_type,
+                cast(AccessLogModel.access_time, Date) == today,
+                AccessLogModel.status == "success",
+            )
+        )
+        return result.scalar() or 0
+
+    async def nullify_patron_access_logs(self, patron_id: uuid.UUID) -> None:
+        await self.db.execute(
+            update(AccessLogModel)
+            .where(AccessLogModel.patron_id == patron_id)
+            .values(patron_id=None)
+        )
 </file>
 
 <file path="face-recognition-service/infra/redis_pubsub.py">
@@ -8379,6 +7308,10 @@ app.all('/kiosk/*', (req, res) => proxyRequest(req.originalUrl, req, res, config
 app.all('/camera', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 app.all('/camera/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 
+// Camera routes - proxy to face-recognition-api (with /api prefix)
+app.all('/api/camera', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/camera/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+
 // Generic API catch-all - any remaining /api/* -> face-recognition-api
 app.all('/api/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 
@@ -8420,6 +7353,16 @@ from infra.patron_repository import PatronRepository
 from infra.sse_manager import sse_manager
 from worker.celery_app import celery_app as _celery_app
 from worker.tasks import _upload_temp_frame
+from infra.minio_client import MinioStorage as _MinioStorage
+from infra.milvus_client import MilvusClient as _MilvusClient
+
+def _get_milvus_client() -> _MilvusClient:
+    return _MilvusClient(
+        host=settings.milvus_host,
+        port=settings.milvus_port,
+        collection_name=settings.milvus_collection,
+        dim=512,
+    )
 
 router = APIRouter(prefix="/kiosk", tags=["kiosk"])
 celery_app = _celery_app
@@ -8431,6 +7374,7 @@ async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> Patr
         id=str(patron.id),
         full_name=patron.full_name,
         student_code=patron.student_code,
+        class_name=patron.class_name,
         identity_number=patron.identity_number,
         email=patron.email,
         phone=patron.phone,
@@ -8472,20 +7416,20 @@ async def kiosk_enroll(
     image: UploadFile,
     full_name: str = Form(...),
     student_code: str = Form(...),
-    card_number: str = Form(...),
+    class_name: Optional[str] = Form(None),
     membership_expiry: str = Form(...),
-    identity_number: Optional[str] = Form(None),
-    email: Optional[str] = Form(None),
-    phone: Optional[str] = Form(None),
     issue_date: Optional[str] = Form(None),
+    angle: str = Form("frontal"),
     db: AsyncSession = Depends(get_db_session),
 ):
     repo = PatronRepository(db)
 
     if await repo.get_by_student_code(student_code):
         raise HTTPException(409, "Student code already exists")
+
+    card_number = f"THV-{student_code}"
     if await repo.get_by_card_number(card_number):
-        raise HTTPException(409, "Card number already exists")
+        raise HTTPException(409, "Student code already exists")
 
     raw = await image.read()
     object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
@@ -8493,18 +7437,16 @@ async def kiosk_enroll(
     patron = await repo.create_patron(
         full_name=full_name,
         student_code=student_code,
+        class_name=class_name,
         card_number=card_number,
         membership_expiry=date.fromisoformat(membership_expiry),
-        identity_number=identity_number,
-        email=email,
-        phone=phone,
         issue_date=date.fromisoformat(issue_date) if issue_date else None,
     )
     await db.commit()
 
     task = celery_app.send_task(
         "enroll_face",
-        kwargs={"patron_id": str(patron.id), "object_key": object_key},
+        kwargs={"patron_id": str(patron.id), "object_key": object_key, "angle": angle},
     )
 
     return KioskResult(
@@ -8548,6 +7490,121 @@ async def kiosk_enter(
         patron=await _patron_to_public(patron, repo),
         job_id=task.id,
     )
+
+
+@router.post("/batch-enroll")
+async def kiosk_batch_enroll(
+    image_frontal: UploadFile,
+    image_right: UploadFile,
+    image_left: UploadFile,
+    image_down: UploadFile,
+    full_name: str = Form(...),
+    student_code: str = Form(...),
+    class_name: Optional[str] = Form(None),
+    membership_expiry: str = Form(...),
+    issue_date: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db_session),
+):
+    repo = PatronRepository(db)
+
+    if await repo.get_by_student_code(student_code):
+        raise HTTPException(409, "Student code already exists")
+
+    card_number = f"THV-{student_code}"
+    if await repo.get_by_card_number(card_number):
+        raise HTTPException(409, "Student code already exists")
+
+    # Read all 4 images
+    raws = {
+        "frontal": await image_frontal.read(),
+        "right": await image_right.read(),
+        "left": await image_left.read(),
+        "down": await image_down.read(),
+    }
+
+    # Upload all 4 to temp storage
+    keys = {}
+    for angle, raw in raws.items():
+        keys[angle] = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+
+    # Create patron in DB (commit so Celery tasks can see it)
+    patron = await repo.create_patron(
+        full_name=full_name,
+        student_code=student_code,
+        class_name=class_name,
+        card_number=card_number,
+        membership_expiry=date.fromisoformat(membership_expiry),
+        issue_date=date.fromisoformat(issue_date) if issue_date else None,
+    )
+    await db.commit()
+
+    # Enroll all 4 faces (sequential, wait per angle)
+    errors = []
+    for angle in ["frontal", "right", "left", "down"]:
+        task = celery_app.send_task(
+            "enroll_face",
+            kwargs={"patron_id": str(patron.id), "object_key": keys[angle], "angle": angle},
+        )
+        try:
+            result = await run_in_threadpool(task.get, timeout=60)
+            if result.get("status") == "error":
+                errors.append(f"{angle}: {result.get('error', 'Unknown error')}")
+                break
+        except Exception as exc:
+            errors.append(f"{angle}: {str(exc)}")
+            break
+
+    if errors:
+        # Rollback: clean up Milvus vectors already inserted
+        try:
+            _get_milvus_client().delete_by_user_id(user_id=str(patron.id))
+        except Exception:
+            pass
+        # Clean up MinIO patron images (best-effort)
+        try:
+            sto = _MinioStorage()
+            for angle in ["frontal", "right", "left", "down"]:
+                sto.delete_image(f"patrons/{patron.id}_{angle}.jpg")
+        except Exception:
+            pass
+        # Delete patron from PostgreSQL
+        await repo.delete_patron(patron.id)
+        await db.commit()
+        raise HTTPException(400, f"Đăng ký thất bại. Lỗi các góc: {'; '.join(errors)}")
+
+    return KioskResult(
+        success=True,
+        message="Đã tạo độc giả với đầy đủ 4 góc khuôn mặt.",
+        patron=await _patron_to_public(patron, repo),
+    )
+
+
+@router.post("/enroll-face/{patron_id}")
+async def kiosk_enroll_face(
+    patron_id: _uuid.UUID,
+    image: UploadFile,
+    angle: str = Form("frontal"),
+    db: AsyncSession = Depends(get_db_session),
+):
+    repo = PatronRepository(db)
+    patron = await repo.get_by_id(patron_id)
+    if not patron:
+        raise HTTPException(404, "Patron not found")
+
+    raw = await image.read()
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+
+    task = celery_app.send_task(
+        "enroll_face",
+        kwargs={"patron_id": str(patron_id), "object_key": object_key, "angle": angle},
+    )
+
+    result = await run_in_threadpool(task.get, timeout=60)
+    if result.get("status") == "error":
+        error_msg = result.get("error", "Unknown error")
+        raise HTTPException(400, error_msg)
+
+    return {"success": True, "message": f"Face enrolled at angle '{angle}'"}
 </file>
 
 <file path="face-recognition-service/docker-compose.yml">
@@ -8682,108 +7739,6 @@ networks:
     driver: bridge
 </file>
 
-<file path="face-recognition-service/infra/milvus_client.py">
-from __future__ import annotations
-
-from typing import Any
-
-from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
-
-
-class MilvusClient:
-    def __init__(
-        self,
-        *,
-        host: str,
-        port: int,
-        collection_name: str,
-        dim: int,
-        metric_type: str = "COSINE",
-    ) -> None:
-        self.host = host
-        self.port = port
-        self.collection_name = collection_name
-        self.dim = dim
-        self.metric_type = metric_type
-
-        connections.connect(alias="default", host=self.host, port=self.port)
-        self.collection = self._get_or_create_collection()
-
-    def _get_or_create_collection(self) -> Collection:
-        if utility.has_collection(self.collection_name):
-            collection = Collection(self.collection_name)
-            fields = {f.name: f for f in collection.schema.fields}
-            # Drop & recreate if collection has the new compound-PK schema
-            if "id" in fields:
-                __import__("logging").getLogger(__name__).warning(
-                    "Dropping collection '%s' with compound PK schema and recreating with user_id PK",
-                    self.collection_name,
-                )
-                collection.release()
-                utility.drop_collection(self.collection_name)
-                collection = self._create_collection()
-                collection.load()
-                return collection
-            if not collection.is_loaded:
-                collection.load()
-            return collection
-
-        collection = self._create_collection()
-        collection.load()
-        return collection
-
-    def _create_collection(self) -> Collection:
-        fields = [
-            FieldSchema(name="user_id", dtype=DataType.VARCHAR, max_length=128, is_primary=True),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=self.dim),
-        ]
-        schema = CollectionSchema(fields=fields, description="face embeddings")
-        return Collection(
-            name=self.collection_name,
-            schema=schema,
-            using="default",
-            metric_type=self.metric_type,
-        )
-
-    def upsert_embeddings(self, *, user_id: str, embedding: list[float]) -> None:
-        # Milvus uses insert/upsert depending on primary key and indexes.
-        self.collection.insert([[user_id], [embedding]])
-        self.collection.flush()
-
-    def get_embedding_by_user_id(self, user_id: str) -> list[float] | None:
-        results = self.collection.query(
-            expr=f'user_id == "{user_id}"',
-            output_fields=["embedding"],
-            limit=1,
-        )
-        if not results:
-            return None
-        return results[0].get("embedding")
-
-    def search(self, *, embedding: list[float], top_k: int = 1) -> list[dict[str, Any]]:
-        # Ensure an index exists in real deployments; for MVP use default.
-        collection = self.collection
-        search_params = {"metric_type": self.metric_type, "params": {"nprobe": 16}}
-
-        res = collection.search(
-            data=[embedding],
-            anns_field="embedding",
-            param=search_params,
-            limit=top_k,
-            output_fields=["user_id"],
-        )
-
-        hits = []
-        for r in res[0]:
-            hits.append({"user_id": r.entity.get("user_id"), "score": float(r.score)})
-        return hits
-
-    def delete_by_user_id(self, *, user_id: str) -> None:
-        collection = self.collection
-        collection.delete(f"user_id == '{user_id}'")
-        collection.flush()
-</file>
-
 <file path="face-recognition-service/worker/celery_app.py">
 from __future__ import annotations
 
@@ -8813,16 +7768,17 @@ celery_app.conf.update(
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user, get_db_session
 from core.schemas import AccessLogPublic, ActivePatron, StatsResponse
+from infra.models import PatronModel
 from infra.patron_repository import PatronRepository
 from infra.sse_manager import sse_manager
 
@@ -8862,24 +7818,24 @@ async def test_broadcast(
     return {"ok": True, "event": test_event}
 
 
+async def _resolve_patron_map(db: AsyncSession, logs: list) -> dict[str, Any]:
+    patron_ids = [log.patron_id for log in logs if log.patron_id]
+    unique_ids = list({str(pid) for pid in patron_ids})
+    if not unique_ids:
+        return {}
+    result = await db.execute(
+        select(PatronModel).where(
+            PatronModel.id.in_([uuid.UUID(pid) for pid in unique_ids])
+        )
+    )
+    return {str(p.id): p for p in result.scalars().all()}
+
+
 @router.get("/recent")
 async def get_recent_logs(db: AsyncSession = Depends(get_db_session)):
     repo = PatronRepository(db)
     logs, _ = await repo.get_access_logs(limit=20)
-
-    patron_ids = [log.patron_id for log in logs if log.patron_id]
-    unique_ids = list({str(pid) for pid in patron_ids})
-    patron_map: dict[str, Any] = {}
-
-    if unique_ids:
-        from infra.models import PatronModel
-
-        patrons = await db.execute(
-            select(PatronModel).where(
-                PatronModel.id.in_([uuid.UUID(pid) for pid in unique_ids])
-            )
-        )
-        patron_map = {str(p.id): p for p in patrons.scalars().all()}
+    patron_map = await _resolve_patron_map(db, logs)
 
     items = []
     for log in logs:
@@ -8902,8 +7858,6 @@ async def get_recent_logs(db: AsyncSession = Depends(get_db_session)):
     return {"items": items}
 
 
-
-
 @router.get("/logs")
 async def get_logs(
     patron_id: Optional[uuid.UUID] = Query(None),
@@ -8921,7 +7875,6 @@ async def get_logs(
     repo = PatronRepository(db)
     logs, total = await repo.get_access_logs(
         patron_id=patron_id,
-
         camera_id=camera_id,
         status=status,
         access_type=access_type,
@@ -8931,21 +7884,16 @@ async def get_logs(
         skip=skip,
         limit=limit,
     )
+    patron_map = await _resolve_patron_map(db, logs)
     items = []
     for log in logs:
-        patron_name = None
-        student_code = None
-        if log.patron_id:
-            p = await repo.get_by_id(log.patron_id)
-            if p:
-                patron_name = p.full_name
-                student_code = p.student_code
+        p = patron_map.get(str(log.patron_id)) if log.patron_id else None
         items.append(
             AccessLogPublic(
                 id=str(log.id),
                 patron_id=str(log.patron_id) if log.patron_id else None,
-                patron_name=patron_name,
-                student_code=student_code,
+                patron_name=p.full_name if p else None,
+                student_code=p.student_code if p else None,
                 access_type=log.access_type,
                 verify_method=log.verify_method,
                 confidence=log.confidence,
@@ -8964,19 +7912,30 @@ async def get_active(
 ):
     repo = PatronRepository(db)
     patrons = await repo.get_active_patrons()
+    face_map = {}
+    if patrons:
+        pids = [p.id for p in patrons]
+        from infra.models import PatronFaceModel
+        faces = await db.execute(
+            select(PatronFaceModel).where(
+                PatronFaceModel.patron_id.in_(pids),
+                PatronFaceModel.is_active == True,
+            )
+        )
+        face_map = {str(f.patron_id): f for f in faces.scalars().all()}
+
     result = []
     for p in patrons:
-        latest = await repo.get_latest_entry(p.id)
-        face = await repo.get_active_face(p.id)
+        face = face_map.get(str(p.id))
         result.append(
             ActivePatron(
                 id=str(p.id),
                 full_name=p.full_name,
                 student_code=p.student_code,
-                entered_at=latest.access_time if latest else datetime.utcnow(),
-                camera_id=latest.camera_id if latest else "",
+                entered_at=p.last_entry_at or datetime.utcnow(),
+                camera_id=p.last_entry_camera or "",
                 image_url=face.image_url if face else None,
-                confidence=latest.confidence if latest else None,
+                confidence=None,
             )
         )
     return {"items": result, "total": len(result)}
@@ -9000,15 +7959,11 @@ async def get_stats(
     _=Depends(get_current_user),
 ):
     repo = PatronRepository(db)
-    today = date.today()
-    logs_today, _ = await repo.get_access_logs(skip=0, limit=10000)
-    entries = sum(1 for l in logs_today if l.access_type == "entry" and l.access_time.date() == today)
-    exits = sum(1 for l in logs_today if l.access_type == "exit" and l.access_time.date() == today)
     return StatsResponse(
         total_patrons=await repo.count_active(),
-        active_patrons=len(await repo.get_active_patrons()),
-        today_entries=entries,
-        today_exits=exits,
+        active_patrons=await repo.count_active_inside(),
+        today_entries=await repo.count_today_access("entry"),
+        today_exits=await repo.count_today_access("exit"),
     )
 </file>
 
@@ -9145,12 +8100,12 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 from celery import Celery
 
-from api.dependencies import get_current_user, get_db_session
+from api.dependencies import get_current_user, get_db_session, require_role
 from core.schemas import PatronCreate, PatronPublic, PatronUpdate
 from infra.config import settings
 from infra.models import PatronModel
 from infra.patron_repository import PatronRepository
-from worker.tasks import _upload_temp_frame
+from worker.tasks import _upload_temp_frame, full_delete_patron_task
 
 celery_app = Celery(
     "tasks",
@@ -9167,6 +8122,7 @@ async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> Patr
         id=str(patron.id),
         full_name=patron.full_name,
         student_code=patron.student_code,
+        class_name=patron.class_name,
         identity_number=patron.identity_number,
         email=patron.email,
         phone=patron.phone,
@@ -9240,16 +8196,15 @@ async def create_patron(
     repo = PatronRepository(db)
     if await repo.get_by_student_code(body.student_code):
         raise HTTPException(409, "Student code already exists")
-    if await repo.get_by_card_number(body.card_number):
-        raise HTTPException(409, "Card number already exists")
+    card_number = f"THV-{body.student_code}"
+    if await repo.get_by_card_number(card_number):
+        raise HTTPException(409, "Student code already exists")
     patron = await repo.create_patron(
         full_name=body.full_name,
         student_code=body.student_code,
-        card_number=body.card_number,
+        class_name=body.class_name,
+        card_number=card_number,
         membership_expiry=body.membership_expiry,
-        identity_number=body.identity_number,
-        email=body.email,
-        phone=body.phone,
         issue_date=body.issue_date,
     )
     await db.commit()
@@ -9279,23 +8234,25 @@ async def update_patron(
     return await _patron_to_public(patron, repo)
 
 
-@router.delete("/{patron_id}")
+@router.delete("/{patron_id}", status_code=202)
 async def delete_patron(
     patron_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    _=Depends(get_current_user),
+    _=Depends(require_role("admin")),
 ):
     repo = PatronRepository(db)
-    if not await repo.delete_patron(patron_id):
+    patron = await repo.get_by_id(patron_id)
+    if not patron:
         raise HTTPException(404, "Patron not found")
-    await db.commit()
-    return {"ok": True}
+    task = full_delete_patron_task.delay(str(patron_id))
+    return {"job_id": task.id, "patron_id": str(patron_id)}
 
 
 @router.post("/{patron_id}/enroll-face")
 async def enroll_patron_face(
     patron_id: uuid.UUID,
     image: UploadFile,
+    angle: str = Form("frontal"),
     db: AsyncSession = Depends(get_db_session),
     _=Depends(get_current_user),
 ):
@@ -9309,7 +8266,7 @@ async def enroll_patron_face(
 
     task = celery_app.send_task(
         "enroll_face",
-        kwargs={"patron_id": str(patron_id), "object_key": object_key},
+        kwargs={"patron_id": str(patron_id), "object_key": object_key, "angle": angle},
     )
 
     result = await run_in_threadpool(task.get, timeout=60)
@@ -9356,6 +8313,95 @@ RUN python -c "import urllib.request,os; os.makedirs('/app/models',exist_ok=True
 COPY . .
 
 CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=2", "--include=worker.tasks"]
+</file>
+
+<file path="face-recognition-service/infra/milvus_client.py">
+from __future__ import annotations
+
+from typing import Any
+
+from pymilvus import CollectionSchema, DataType, FieldSchema, MilvusClient as _MilvusClient
+
+
+class MilvusClient:
+    def __init__(
+        self,
+        *,
+        host: str,
+        port: int,
+        collection_name: str,
+        dim: int,
+        metric_type: str = "COSINE",
+    ) -> None:
+        self.host = host
+        self.port = port
+        self.collection_name = collection_name
+        self.dim = dim
+        self.metric_type = metric_type
+
+        self.client = _MilvusClient(uri=f"http://{host}:{port}")
+        self._get_or_create_collection()
+
+    def _get_or_create_collection(self) -> None:
+        if self.client.has_collection(self.collection_name):
+            return
+        schema = CollectionSchema(
+            [
+                FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
+                FieldSchema(name="user_id", dtype=DataType.VARCHAR, max_length=128),
+                FieldSchema(name="angle", dtype=DataType.VARCHAR, max_length=50),
+                FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=self.dim),
+            ]
+        )
+        self.client.create_collection(
+            collection_name=self.collection_name,
+            schema=schema,
+        )
+        self.client.create_index(
+            collection_name=self.collection_name,
+            index_params={
+                "field_name": "embedding",
+                "metric_type": self.metric_type,
+                "index_type": "IVF_FLAT",
+                "params": {"nprobe": 16},
+            },
+        )
+
+    def insert_embedding(self, *, user_id: str, angle: str, embedding: list[float]) -> int:
+        data = [{"user_id": user_id, "angle": angle, "embedding": embedding}]
+        result = self.client.insert(self.collection_name, data)
+        return result.primary_keys[0] if result else 0
+
+    def get_embeddings_by_user_id(self, user_id: str) -> list[dict[str, Any]]:
+        results = self.client.query(
+            self.collection_name,
+            filter=f'user_id == "{user_id}"',
+            output_fields=["id", "angle", "embedding"],
+        )
+        return results or []
+
+    def search(self, *, embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
+        results = self.client.search(
+            collection_name=self.collection_name,
+            data=[embedding],
+            anns_field="embedding",
+            search_params={"metric_type": self.metric_type, "params": {"nprobe": 16}},
+            limit=top_k,
+            output_fields=["user_id", "angle"],
+        )
+        if not results:
+            return []
+        hits = []
+        for r in results[0]:
+            hits.append({
+                "user_id": r["entity"]["user_id"],
+                "angle": r["entity"].get("angle", ""),
+                "score": float(r["distance"]),
+            })
+        return hits
+
+    def delete_by_user_id(self, *, user_id: str) -> None:
+        self.client.delete(self.collection_name, f'user_id == "{user_id}"')
 </file>
 
 <file path="docker-compose.yml">
@@ -9570,6 +8616,27 @@ async def lifespan(app: FastAPI):
         await conn.execute(
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)")
         )
+        # Migration: add current_status tracking columns (v0.3.0)
+        await conn.execute(
+            text("ALTER TABLE patrons ADD COLUMN IF NOT EXISTS current_status VARCHAR(10) NOT NULL DEFAULT 'outside'")
+        )
+        await conn.execute(
+            text("ALTER TABLE patrons ADD COLUMN IF NOT EXISTS last_entry_at TIMESTAMP")
+        )
+        await conn.execute(
+            text("ALTER TABLE patrons ADD COLUMN IF NOT EXISTS last_entry_camera VARCHAR(50)")
+        )
+        # Migration: multi-angle face enrollment (v0.4.0)
+        await conn.execute(
+            text("ALTER TABLE patron_faces DROP CONSTRAINT IF EXISTS patron_faces_patron_id_key")
+        )
+        await conn.execute(
+            text("ALTER TABLE patron_faces ADD COLUMN IF NOT EXISTS angle VARCHAR(20) NOT NULL DEFAULT 'frontal'")
+        )
+        # Migration: add class_name column (v0.5.0)
+        await conn.execute(
+            text("ALTER TABLE patrons ADD COLUMN IF NOT EXISTS class_name VARCHAR(100)")
+        )
 
     entry = settings.entry_cam_url
     exit_ = settings.exit_cam_url
@@ -9658,7 +8725,7 @@ def create_app() -> FastAPI:
             collection_name=settings.milvus_collection,
             dim=512,
         )
-        results = m.collection.query(expr="", output_fields=["user_id"], limit=1000)
+        results = m.client.query(m.collection_name, filter="", output_fields=["user_id"], limit=1000)
         milvus_ids = {r["user_id"] for r in results}
         async with async_session_factory() as db:
             rs = await db.execute(select(PatronFaceModel))
@@ -9763,7 +8830,11 @@ def _upload_temp_frame(frame_bytes: bytes, task_id: str | None = None) -> str:
 
 
 def _get_temp_frame(object_key: str) -> bytes:
-    """Download temp frame from Redis cache first, then fall back to MinIO."""
+    """Download temp frame from Redis cache first, then fall back to MinIO.
+
+    Some uploads may become visible in MinIO slightly after the task starts.
+    To reduce transient `NoSuchKey` failures, we retry briefly when MinIO reports missing key.
+    """
     import time
     try:
         from infra.redis_cache import redis_client as _rc
@@ -9773,16 +8844,26 @@ def _get_temp_frame(object_key: str) -> bytes:
             return cached
     except Exception:
         pass
+
     last_error = None
-    for attempt in range(5):
+    # Retry quickly for transient propagation delays.
+    for attempt in range(8):
         try:
             return _get_storage().get_image(object_key)
         except Exception as exc:
             last_error = exc
-            if "NoSuchKey" in str(exc) and attempt < 4:
-                time.sleep(1)
+            is_missing = "NoSuchKey" in str(exc) or "not found" in str(exc).lower()
+            if is_missing and attempt < 7:
+                logger.warning(
+                    "Temp frame missing in MinIO (attempt %s/8). object_key=%s. error=%s",
+                    attempt + 1,
+                    object_key,
+                    str(exc),
+                )
+                time.sleep(0.5)
                 continue
             raise
+
     raise last_error  # type: ignore[misc]
 
 
@@ -9895,46 +8976,88 @@ def _resolve_image(object_key: str | None = None, image_data: str | None = None)
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
-def enroll_task(self, user_id: str, object_key: str | None = None, image_data: str | None = None) -> dict:
-    logger.info("Enrolling user %s", user_id)
+def enroll_task(
+    self,
+    user_id: str,
+    object_key: str | None = None,
+    image_data: str | None = None,
+    angle: str = "frontal",
+) -> dict:
+    angle = angle or "frontal"
+    logger.info("Enrolling user %s (angle=%s)", user_id, angle)
     try:
         patron_id = _get_patron_id_by_user_id(user_id) or user_id
         raw_data, img = _resolve_image(object_key, image_data)
+
         quality = check_face_quality(img)
         if not quality.get("valid"):
-            if object_key: _delete_temp_frame(object_key)
+            if object_key:
+                _delete_temp_frame(object_key)
             return {
                 "status": "error",
                 "error": quality.get("error"),
                 "score": quality.get("score"),
                 "count": quality.get("count"),
             }
-        liveness = run_liveness_analysis(img)
-        if not liveness.get("is_live", False):
-            if object_key: _delete_temp_frame(object_key)
-            logger.warning("Enroll: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
-            return {
-                "status": "error",
-                "error": "LIVENESS_FAILED",
-                "liveness_score": liveness.get("liveness_score"),
-            }
+
+        # Only run liveness for frontal to reduce friction (per existing enroll_face logic)
+        if angle == "frontal":
+            liveness = run_liveness_analysis(img)
+            if not liveness.get("is_live", False):
+                if object_key:
+                    _delete_temp_frame(object_key)
+                logger.warning(
+                    "Enroll: liveness check failed for patron_id %s (angle=%s), score=%.4f",
+                    patron_id,
+                    angle,
+                    liveness.get("liveness_score", 0),
+                )
+                return {
+                    "status": "error",
+                    "error": "LIVENESS_FAILED",
+                    "liveness_score": liveness.get("liveness_score"),
+                }
+
         vec = extract_embedding_placeholder(img)
         vec_arr = np.array(vec, dtype=np.float32)
         vec_sum = float(np.sum(np.abs(vec_arr)))
         if vec_sum < 0.1:
-            if object_key: _delete_temp_frame(object_key)
-            logger.error("Enroll: extracted embedding is near-zero for patron_id %s, sum=%.6f", patron_id, vec_sum)
+            if object_key:
+                _delete_temp_frame(object_key)
+            logger.error(
+                "Enroll: extracted embedding is near-zero for patron_id %s (angle=%s), sum=%.6f",
+                patron_id,
+                angle,
+                vec_sum,
+            )
             return {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
+
         norm_vec = l2_normalize(vec)
-        logger.info("Enroll embedding stats: min=%.4f, max=%.4f, sum_abs=%.4f, norm=%.4f",
-                    float(np.min(vec_arr)), float(np.max(vec_arr)), vec_sum, float(np.linalg.norm(vec_arr)))
+        logger.info(
+            "Enroll embedding stats (angle=%s): min=%.4f, max=%.4f, sum_abs=%.4f, norm=%.4f",
+            angle,
+            float(np.min(vec_arr)),
+            float(np.max(vec_arr)),
+            vec_sum,
+            float(np.linalg.norm(vec_arr)),
+        )
+
         _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
         _get_storage().upload_image(f"enrollments/{patron_id}.jpg", encrypted)
-        if object_key: _delete_temp_frame(object_key)
-        return {"status": "success", "patron_id": patron_id, "user_id": user_id, "quality_score": quality.get("score")}
+
+        if object_key:
+            _delete_temp_frame(object_key)
+
+        return {
+            "status": "success",
+            "patron_id": patron_id,
+            "user_id": user_id,
+            "angle": angle,
+            "quality_score": quality.get("score"),
+        }
     except Exception as exc:
-        logger.exception("Enroll failed for %s", user_id)
+        logger.exception("Enroll failed for %s (angle=%s)", user_id, angle)
         raise self.retry(exc=exc)
 
 
@@ -10099,20 +9222,56 @@ def liveness_task(self, object_key: str | None = None, image_data: str | None = 
 def delete_user_task(self, user_id: str) -> dict:
     logger.info("Deleting user %s embeddings and images", user_id)
     try:
-        _get_milvus().delete_by_user_id(user_id=user_id)
         try:
             _get_storage().delete_image(f"enrollments/{user_id}.jpg")
         except Exception:
             logger.warning("No image found for user %s, skipping", user_id)
+        _get_milvus().delete_by_user_id(user_id=user_id)
         return {"status": "success", "user_id": user_id}
     except Exception as exc:
         logger.exception("Delete failed for %s", user_id)
         raise self.retry(exc=exc)
 
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=5)
+def full_delete_patron_task(self, patron_id: str) -> dict:
+    """Delete patron from all 3 databases: MinIO → Milvus → PostgreSQL.
+    Order ensures least orphan data if a step fails and retry is needed.
+    """
+    logger.info("Fully deleting patron %s from all databases", patron_id)
+    try:
+        try:
+            _get_storage().delete_image(f"patrons/{patron_id}.jpg")
+            _get_storage().delete_image(f"enrollments/{patron_id}.jpg")
+        except Exception:
+            logger.warning("No images found for patron %s, skipping MinIO cleanup", patron_id)
+        _get_milvus().delete_by_user_id(user_id=patron_id)
+        conn = _get_pg_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE access_logs SET patron_id = NULL WHERE patron_id = %s",
+            (patron_id,),
+        )
+        cur.execute(
+            "DELETE FROM patron_faces WHERE patron_id = %s",
+            (patron_id,),
+        )
+        cur.execute(
+            "DELETE FROM patrons WHERE id = %s",
+            (patron_id,),
+        )
+        conn.commit()
+        cur.close()
+        logger.info("Full deletion completed for patron %s", patron_id)
+        return {"status": "success", "patron_id": patron_id}
+    except Exception as exc:
+        logger.exception("Full deletion failed for patron %s", patron_id)
+        raise self.retry(exc=exc)
+
 
 @celery_app.task(bind=True, name="enroll_face", max_retries=2, default_retry_delay=5)
-def enroll_face(self, patron_id: str, object_key: str) -> dict:
-    logger.info("Enrolling face for patron %s", patron_id)
+def enroll_face(self, patron_id: str, object_key: str, angle: str = "frontal") -> dict:
+    angle = angle or "frontal"
+    logger.info("Enrolling face for patron %s (angle=%s)", patron_id, angle)
     try:
         raw_data = _get_temp_frame(object_key)
         img = safe_read_image_from_bytes(raw_data)
@@ -10121,46 +9280,56 @@ def enroll_face(self, patron_id: str, object_key: str) -> dict:
         if not face_result.get("valid"):
             _delete_temp_frame(object_key)
             return {"status": "error", "error": face_result.get("error", "No face detected")}
-        liveness = liveness_from_face(img, face_result["face"])
-        if not liveness.get("is_live", False):
-            _delete_temp_frame(object_key)
-            logger.warning("Enroll face: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
-            return {
-                "status": "error",
-                "error": "LIVENESS_FAILED",
-                "liveness_score": liveness.get("liveness_score"),
-            }
-        norm_vec = l2_normalize(face_result["embedding"])
-        _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
-        encrypted = encrypt_data(raw_data)
-        _get_storage().upload_image(f"patrons/{patron_id}.jpg", encrypted)
 
-        # Update PatronFaceModel in Postgres
+        # Skip liveness for non-frontal angles to reduce user friction
+        if angle == "frontal":
+            liveness = liveness_from_face(img, face_result["face"])
+            if not liveness.get("is_live", False):
+                _delete_temp_frame(object_key)
+                logger.warning("Enroll face: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
+                return {
+                    "status": "error",
+                    "error": "LIVENESS_FAILED",
+                    "liveness_score": liveness.get("liveness_score"),
+                }
+
+        norm_vec = l2_normalize(face_result["embedding"])
+        milvus_id = str(_get_milvus().insert_embedding(user_id=patron_id, angle=angle, embedding=norm_vec))
+        encrypted = encrypt_data(raw_data)
+        image_url = f"patrons/{patron_id}_{angle}.jpg"
+        _get_storage().upload_image(image_url, encrypted)
+
+        # Insert PatronFaceModel record (append, not upsert)
         conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT id FROM patron_faces WHERE patron_id = %s AND is_active = true",
-            (patron_id,),
+            "INSERT INTO patron_faces (id, patron_id, angle, milvus_id, image_url, is_active) VALUES (%s, %s, %s, %s, %s, true)",
+            (str(_uuid.uuid4()), patron_id, angle, milvus_id, image_url),
         )
-        exists = cur.fetchone()
-        if exists:
-            cur.execute(
-                "UPDATE patron_faces SET milvus_id = %s, updated_at = NOW() WHERE id = %s",
-                (patron_id, exists[0]),
-            )
-        else:
-            cur.execute(
-                "INSERT INTO patron_faces (id, patron_id, milvus_id, is_active) VALUES (%s, %s, %s, true)",
-                (str(_uuid.uuid4()), patron_id, patron_id),
-            )
         conn.commit()
         cur.close()
         _delete_temp_frame(object_key)
-        return {"status": "success", "patron_id": patron_id, "quality_score": face_result.get("score")}
+        return {"status": "success", "patron_id": patron_id, "angle": angle, "quality_score": face_result.get("score")}
     except Exception as exc:
         _delete_temp_frame(object_key)
-        logger.exception("Enroll face failed for %s", patron_id)
+        logger.exception("Enroll face failed for %s (angle=%s)", patron_id, angle)
         raise self.retry(exc=exc)
+
+
+def _resolve_best_match(results: list[dict], threshold: float) -> dict | None:
+    from collections import Counter
+    counts: Counter[str] = Counter()
+    scores: dict[str, float] = {}
+    for r in results:
+        pid = r["user_id"]
+        counts[pid] += 1
+        scores[pid] = max(scores.get(pid, 0), r["score"])
+    best_pid = max(scores, key=lambda pid: (scores[pid], counts[pid]))
+    if scores[best_pid] >= threshold and counts[best_pid] >= 2:
+        return {"user_id": best_pid, "score": scores[best_pid], "votes": counts[best_pid]}
+    if scores.get(best_pid, 0) >= threshold:
+        return {"user_id": best_pid, "score": scores[best_pid], "votes": 1}
+    return None
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
@@ -10173,12 +9342,12 @@ def identify_patron(self, object_key: str) -> dict:
         vec = extract_embedding_placeholder(img)
         norm_vec = l2_normalize(vec)
         results = _get_milvus().search(embedding=norm_vec, top_k=3)
-        if not results or results[0]["score"] < settings.face_match_threshold:
+        best = _resolve_best_match(results, settings.face_match_threshold)
+        if not best:
             _delete_temp_frame(object_key)
             return {"status": "no_match"}
-        hit = results[0]
-        patron_id = hit["user_id"]
-        score = float(hit["score"])
+        patron_id = best["user_id"]
+        score = round(best["score"], 4)
 
         # Lookup patron info from Postgres
         conn = _get_pg_connection()
@@ -10212,6 +9381,7 @@ def identify_patron(self, object_key: str) -> dict:
             "full_name": full_name,
             "student_code": student_code,
             "score": score,
+            "votes": best["votes"],
         }
     except Exception as exc:
         _delete_temp_frame(object_key)
@@ -10221,26 +9391,19 @@ def identify_patron(self, object_key: str) -> dict:
 
 def _is_patron_inside(patron_id: str) -> bool:
     """Check if patron currently has an active entry (inside library).
+    Uses current_status column from patrons table for fast reads.
     Auto-expires after max_entry_hours to prevent stuck 'inside' status.
     """
     try:
         conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT access_time FROM access_logs WHERE patron_id = %s AND access_type = 'entry' AND status = 'success' AND access_time > NOW() - INTERVAL '%s hours' ORDER BY access_time DESC LIMIT 1",
-            (patron_id, settings.max_entry_hours),
+            "SELECT current_status = 'inside' AND last_entry_at > NOW() - INTERVAL '%s hours' FROM patrons WHERE id = %s",
+            (settings.max_entry_hours, patron_id),
         )
-        entry = cur.fetchone()
-        if not entry:
-            cur.close()
-            return False
-        cur.execute(
-            "SELECT COUNT(*) FROM access_logs WHERE patron_id = %s AND access_type = 'exit' AND status = 'success' AND access_time > %s",
-            (patron_id, entry[0]),
-        )
-        count = cur.fetchone()[0]
+        row = cur.fetchone()
         cur.close()
-        return count == 0
+        return bool(row and row[0])
     except Exception as e:
         logger.warning("Failed to check patron inside status for %s: %s", patron_id, e)
         return False
@@ -10315,15 +9478,15 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
         face = face_result["face"]
         norm_vec = l2_normalize(face_result["embedding"])
         results = _get_milvus().search(embedding=norm_vec, top_k=5)
-        if not results or results[0]["score"] < settings.face_match_threshold:
+        best = _resolve_best_match(results, settings.face_match_threshold)
+        if not best:
             result = {"camera_id": camera_id, "status": "no_match"}
             _publish_camera_event(result)
             _delete_temp_frame(object_key)
             return result
 
-        hit = results[0]
-        patron_id = hit["user_id"]
-        score = float(hit["score"])
+        patron_id = best["user_id"]
+        score = round(best["score"], 4)
 
         conn = _get_pg_connection()
         cur = conn.cursor()
@@ -10408,6 +9571,16 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
             (log_id, patron_id, access_type, "face", score, camera_id, "success"),
         )
+        if access_type == "entry":
+            cur.execute(
+                "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = %s, updated_at = NOW() WHERE id = %s",
+                (camera_id, patron_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
+                (patron_id,),
+            )
         conn.commit()
         cur.close()
 
@@ -10478,6 +9651,16 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
             (log_id, patron_id, access_type, "face", score, "kiosk", "success"),
         )
+        if access_type == "entry":
+            cur.execute(
+                "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = 'kiosk', updated_at = NOW() WHERE id = %s",
+                (patron_id,),
+            )
+        else:
+            cur.execute(
+                "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
+                (patron_id,),
+            )
         conn.commit()
         cur.close()
 

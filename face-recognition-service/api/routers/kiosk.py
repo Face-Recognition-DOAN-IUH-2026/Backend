@@ -17,6 +17,16 @@ from infra.patron_repository import PatronRepository
 from infra.sse_manager import sse_manager
 from worker.celery_app import celery_app as _celery_app
 from worker.tasks import _upload_temp_frame
+from infra.minio_client import MinioStorage as _MinioStorage
+from infra.milvus_client import MilvusClient as _MilvusClient
+
+def _get_milvus_client() -> _MilvusClient:
+    return _MilvusClient(
+        host=settings.milvus_host,
+        port=settings.milvus_port,
+        collection_name=settings.milvus_collection,
+        dim=512,
+    )
 
 router = APIRouter(prefix="/kiosk", tags=["kiosk"])
 celery_app = _celery_app
@@ -28,6 +38,7 @@ async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> Patr
         id=str(patron.id),
         full_name=patron.full_name,
         student_code=patron.student_code,
+        class_name=patron.class_name,
         identity_number=patron.identity_number,
         email=patron.email,
         phone=patron.phone,
@@ -69,20 +80,20 @@ async def kiosk_enroll(
     image: UploadFile,
     full_name: str = Form(...),
     student_code: str = Form(...),
-    card_number: str = Form(...),
+    class_name: Optional[str] = Form(None),
     membership_expiry: str = Form(...),
-    identity_number: Optional[str] = Form(None),
-    email: Optional[str] = Form(None),
-    phone: Optional[str] = Form(None),
     issue_date: Optional[str] = Form(None),
+    angle: str = Form("frontal"),
     db: AsyncSession = Depends(get_db_session),
 ):
     repo = PatronRepository(db)
 
     if await repo.get_by_student_code(student_code):
         raise HTTPException(409, "Student code already exists")
+
+    card_number = f"THV-{student_code}"
     if await repo.get_by_card_number(card_number):
-        raise HTTPException(409, "Card number already exists")
+        raise HTTPException(409, "Student code already exists")
 
     raw = await image.read()
     object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
@@ -90,18 +101,16 @@ async def kiosk_enroll(
     patron = await repo.create_patron(
         full_name=full_name,
         student_code=student_code,
+        class_name=class_name,
         card_number=card_number,
         membership_expiry=date.fromisoformat(membership_expiry),
-        identity_number=identity_number,
-        email=email,
-        phone=phone,
         issue_date=date.fromisoformat(issue_date) if issue_date else None,
     )
     await db.commit()
 
     task = celery_app.send_task(
         "enroll_face",
-        kwargs={"patron_id": str(patron.id), "object_key": object_key},
+        kwargs={"patron_id": str(patron.id), "object_key": object_key, "angle": angle},
     )
 
     return KioskResult(
@@ -145,3 +154,118 @@ async def kiosk_enter(
         patron=await _patron_to_public(patron, repo),
         job_id=task.id,
     )
+
+
+@router.post("/batch-enroll")
+async def kiosk_batch_enroll(
+    image_frontal: UploadFile,
+    image_right: UploadFile,
+    image_left: UploadFile,
+    image_down: UploadFile,
+    full_name: str = Form(...),
+    student_code: str = Form(...),
+    class_name: Optional[str] = Form(None),
+    membership_expiry: str = Form(...),
+    issue_date: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db_session),
+):
+    repo = PatronRepository(db)
+
+    if await repo.get_by_student_code(student_code):
+        raise HTTPException(409, "Student code already exists")
+
+    card_number = f"THV-{student_code}"
+    if await repo.get_by_card_number(card_number):
+        raise HTTPException(409, "Student code already exists")
+
+    # Read all 4 images
+    raws = {
+        "frontal": await image_frontal.read(),
+        "right": await image_right.read(),
+        "left": await image_left.read(),
+        "down": await image_down.read(),
+    }
+
+    # Upload all 4 to temp storage
+    keys = {}
+    for angle, raw in raws.items():
+        keys[angle] = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+
+    # Create patron in DB (commit so Celery tasks can see it)
+    patron = await repo.create_patron(
+        full_name=full_name,
+        student_code=student_code,
+        class_name=class_name,
+        card_number=card_number,
+        membership_expiry=date.fromisoformat(membership_expiry),
+        issue_date=date.fromisoformat(issue_date) if issue_date else None,
+    )
+    await db.commit()
+
+    # Enroll all 4 faces (sequential, wait per angle)
+    errors = []
+    for angle in ["frontal", "right", "left", "down"]:
+        task = celery_app.send_task(
+            "enroll_face",
+            kwargs={"patron_id": str(patron.id), "object_key": keys[angle], "angle": angle},
+        )
+        try:
+            result = await run_in_threadpool(task.get, timeout=60)
+            if result.get("status") == "error":
+                errors.append(f"{angle}: {result.get('error', 'Unknown error')}")
+                break
+        except Exception as exc:
+            errors.append(f"{angle}: {str(exc)}")
+            break
+
+    if errors:
+        # Rollback: clean up Milvus vectors already inserted
+        try:
+            _get_milvus_client().delete_by_user_id(user_id=str(patron.id))
+        except Exception:
+            pass
+        # Clean up MinIO patron images (best-effort)
+        try:
+            sto = _MinioStorage()
+            for angle in ["frontal", "right", "left", "down"]:
+                sto.delete_image(f"patrons/{patron.id}_{angle}.jpg")
+        except Exception:
+            pass
+        # Delete patron from PostgreSQL
+        await repo.delete_patron(patron.id)
+        await db.commit()
+        raise HTTPException(400, f"Đăng ký thất bại. Lỗi các góc: {'; '.join(errors)}")
+
+    return KioskResult(
+        success=True,
+        message="Đã tạo độc giả với đầy đủ 4 góc khuôn mặt.",
+        patron=await _patron_to_public(patron, repo),
+    )
+
+
+@router.post("/enroll-face/{patron_id}")
+async def kiosk_enroll_face(
+    patron_id: _uuid.UUID,
+    image: UploadFile,
+    angle: str = Form("frontal"),
+    db: AsyncSession = Depends(get_db_session),
+):
+    repo = PatronRepository(db)
+    patron = await repo.get_by_id(patron_id)
+    if not patron:
+        raise HTTPException(404, "Patron not found")
+
+    raw = await image.read()
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+
+    task = celery_app.send_task(
+        "enroll_face",
+        kwargs={"patron_id": str(patron_id), "object_key": object_key, "angle": angle},
+    )
+
+    result = await run_in_threadpool(task.get, timeout=60)
+    if result.get("status") == "error":
+        error_msg = result.get("error", "Unknown error")
+        raise HTTPException(400, error_msg)
+
+    return {"success": True, "message": f"Face enrolled at angle '{angle}'"}

@@ -45,10 +45,11 @@ class Settings(BaseSettings):
     entry_cam_url: str = ""
     exit_cam_url: str = ""
     relay_api_url: str = ""
-    face_match_threshold: float = 0.6
+    face_match_threshold: float = 0.5
     access_cooldown_seconds: int = 10
     max_entry_hours: int = 24
     enable_person_detection: bool = True
+    enable_multi_angle: bool = True
 
 
 settings = Settings()  # type: ignore

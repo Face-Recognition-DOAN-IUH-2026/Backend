@@ -82,7 +82,11 @@ def _upload_temp_frame(frame_bytes: bytes, task_id: str | None = None) -> str:
 
 
 def _get_temp_frame(object_key: str) -> bytes:
-    """Download temp frame from Redis cache first, then fall back to MinIO."""
+    """Download temp frame from Redis cache first, then fall back to MinIO.
+
+    Some uploads may become visible in MinIO slightly after the task starts.
+    To reduce transient `NoSuchKey` failures, we retry briefly when MinIO reports missing key.
+    """
     import time
     try:
         from infra.redis_cache import redis_client as _rc
@@ -92,16 +96,26 @@ def _get_temp_frame(object_key: str) -> bytes:
             return cached
     except Exception:
         pass
+
     last_error = None
-    for attempt in range(5):
+    # Retry quickly for transient propagation delays.
+    for attempt in range(8):
         try:
             return _get_storage().get_image(object_key)
         except Exception as exc:
             last_error = exc
-            if "NoSuchKey" in str(exc) and attempt < 4:
-                time.sleep(1)
+            is_missing = "NoSuchKey" in str(exc) or "not found" in str(exc).lower()
+            if is_missing and attempt < 7:
+                logger.warning(
+                    "Temp frame missing in MinIO (attempt %s/8). object_key=%s. error=%s",
+                    attempt + 1,
+                    object_key,
+                    str(exc),
+                )
+                time.sleep(0.5)
                 continue
             raise
+
     raise last_error  # type: ignore[misc]
 
 
@@ -214,46 +228,90 @@ def _resolve_image(object_key: str | None = None, image_data: str | None = None)
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
-def enroll_task(self, user_id: str, object_key: str | None = None, image_data: str | None = None) -> dict:
-    logger.info("Enrolling user %s", user_id)
+def enroll_task(
+    self,
+    user_id: str,
+    object_key: str | None = None,
+    image_data: str | None = None,
+    angle: str = "frontal",
+) -> dict:
+    angle = angle or "frontal"
+    logger.info("Enrolling user %s (angle=%s)", user_id, angle)
     try:
         patron_id = _get_patron_id_by_user_id(user_id) or user_id
         raw_data, img = _resolve_image(object_key, image_data)
+
         quality = check_face_quality(img)
         if not quality.get("valid"):
-            if object_key: _delete_temp_frame(object_key)
+            if object_key:
+                _delete_temp_frame(object_key)
             return {
                 "status": "error",
                 "error": quality.get("error"),
                 "score": quality.get("score"),
                 "count": quality.get("count"),
             }
-        liveness = run_liveness_analysis(img)
-        if not liveness.get("is_live", False):
-            if object_key: _delete_temp_frame(object_key)
-            logger.warning("Enroll: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
-            return {
-                "status": "error",
-                "error": "LIVENESS_FAILED",
-                "liveness_score": liveness.get("liveness_score"),
-            }
+
+        # Only run liveness for frontal to reduce friction (per existing enroll_face logic)
+        if angle == "frontal":
+            liveness = run_liveness_analysis(img)
+            if not liveness.get("is_live", False):
+                if object_key:
+                    _delete_temp_frame(object_key)
+                logger.warning(
+                    "Enroll: liveness check failed for patron_id %s (angle=%s), score=%.4f",
+                    patron_id,
+                    angle,
+                    liveness.get("liveness_score", 0),
+                )
+                return {
+                    "status": "error",
+                    "error": "LIVENESS_FAILED",
+                    "liveness_score": liveness.get("liveness_score"),
+                }
+
         vec = extract_embedding_placeholder(img)
         vec_arr = np.array(vec, dtype=np.float32)
         vec_sum = float(np.sum(np.abs(vec_arr)))
         if vec_sum < 0.1:
-            if object_key: _delete_temp_frame(object_key)
-            logger.error("Enroll: extracted embedding is near-zero for patron_id %s, sum=%.6f", patron_id, vec_sum)
+            if object_key:
+                _delete_temp_frame(object_key)
+            logger.error(
+                "Enroll: extracted embedding is near-zero for patron_id %s (angle=%s), sum=%.6f",
+                patron_id,
+                angle,
+                vec_sum,
+            )
             return {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
+
         norm_vec = l2_normalize(vec)
-        logger.info("Enroll embedding stats: min=%.4f, max=%.4f, sum_abs=%.4f, norm=%.4f",
-                    float(np.min(vec_arr)), float(np.max(vec_arr)), vec_sum, float(np.linalg.norm(vec_arr)))
+        logger.info(
+            "Enroll embedding stats (angle=%s): min=%.4f, max=%.4f, sum_abs=%.4f, norm=%.4f",
+            angle,
+            float(np.min(vec_arr)),
+            float(np.max(vec_arr)),
+            vec_sum,
+            float(np.linalg.norm(vec_arr)),
+        )
+
         _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
         _get_storage().upload_image(f"enrollments/{patron_id}.jpg", encrypted)
-        if object_key: _delete_temp_frame(object_key)
-        return {"status": "success", "patron_id": patron_id, "user_id": user_id, "quality_score": quality.get("score")}
+
+        if object_key:
+            _delete_temp_frame(object_key)
+
+        return {
+            "status": "success",
+            "patron_id": patron_id,
+            "user_id": user_id,
+            "angle": angle,
+            "quality_score": quality.get("score"),
+        }
     except Exception as exc:
-        logger.exception("Enroll failed for %s", user_id)
+        # NOTE: Do NOT delete temp frame here.
+        # When Celery retries, the next attempt still needs to read the same MinIO key.
+        logger.exception("Enroll failed for %s (angle=%s)", user_id, angle)
         raise self.retry(exc=exc)
 
 
@@ -418,20 +476,56 @@ def liveness_task(self, object_key: str | None = None, image_data: str | None = 
 def delete_user_task(self, user_id: str) -> dict:
     logger.info("Deleting user %s embeddings and images", user_id)
     try:
-        _get_milvus().delete_by_user_id(user_id=user_id)
         try:
             _get_storage().delete_image(f"enrollments/{user_id}.jpg")
         except Exception:
             logger.warning("No image found for user %s, skipping", user_id)
+        _get_milvus().delete_by_user_id(user_id=user_id)
         return {"status": "success", "user_id": user_id}
     except Exception as exc:
         logger.exception("Delete failed for %s", user_id)
         raise self.retry(exc=exc)
 
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=5)
+def full_delete_patron_task(self, patron_id: str) -> dict:
+    """Delete patron from all 3 databases: MinIO → Milvus → PostgreSQL.
+    Order ensures least orphan data if a step fails and retry is needed.
+    """
+    logger.info("Fully deleting patron %s from all databases", patron_id)
+    try:
+        try:
+            _get_storage().delete_image(f"patrons/{patron_id}.jpg")
+            _get_storage().delete_image(f"enrollments/{patron_id}.jpg")
+        except Exception:
+            logger.warning("No images found for patron %s, skipping MinIO cleanup", patron_id)
+        _get_milvus().delete_by_user_id(user_id=patron_id)
+        conn = _get_pg_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE access_logs SET patron_id = NULL WHERE patron_id = %s",
+            (patron_id,),
+        )
+        cur.execute(
+            "DELETE FROM patron_faces WHERE patron_id = %s",
+            (patron_id,),
+        )
+        cur.execute(
+            "DELETE FROM patrons WHERE id = %s",
+            (patron_id,),
+        )
+        conn.commit()
+        cur.close()
+        logger.info("Full deletion completed for patron %s", patron_id)
+        return {"status": "success", "patron_id": patron_id}
+    except Exception as exc:
+        logger.exception("Full deletion failed for patron %s", patron_id)
+        raise self.retry(exc=exc)
+
 
 @celery_app.task(bind=True, name="enroll_face", max_retries=2, default_retry_delay=5)
-def enroll_face(self, patron_id: str, object_key: str) -> dict:
-    logger.info("Enrolling face for patron %s", patron_id)
+def enroll_face(self, patron_id: str, object_key: str, angle: str = "frontal") -> dict:
+    angle = angle or "frontal"
+    logger.info("Enrolling face for patron %s (angle=%s)", patron_id, angle)
     try:
         raw_data = _get_temp_frame(object_key)
         img = safe_read_image_from_bytes(raw_data)
@@ -440,46 +534,56 @@ def enroll_face(self, patron_id: str, object_key: str) -> dict:
         if not face_result.get("valid"):
             _delete_temp_frame(object_key)
             return {"status": "error", "error": face_result.get("error", "No face detected")}
-        liveness = liveness_from_face(img, face_result["face"])
-        if not liveness.get("is_live", False):
-            _delete_temp_frame(object_key)
-            logger.warning("Enroll face: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
-            return {
-                "status": "error",
-                "error": "LIVENESS_FAILED",
-                "liveness_score": liveness.get("liveness_score"),
-            }
-        norm_vec = l2_normalize(face_result["embedding"])
-        _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
-        encrypted = encrypt_data(raw_data)
-        _get_storage().upload_image(f"patrons/{patron_id}.jpg", encrypted)
 
-        # Update PatronFaceModel in Postgres
+        # Skip liveness for non-frontal angles to reduce user friction
+        if angle == "frontal":
+            liveness = liveness_from_face(img, face_result["face"])
+            if not liveness.get("is_live", False):
+                _delete_temp_frame(object_key)
+                logger.warning("Enroll face: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
+                return {
+                    "status": "error",
+                    "error": "LIVENESS_FAILED",
+                    "liveness_score": liveness.get("liveness_score"),
+                }
+
+        norm_vec = l2_normalize(face_result["embedding"])
+        milvus_id = str(_get_milvus().insert_embedding(user_id=patron_id, angle=angle, embedding=norm_vec))
+        encrypted = encrypt_data(raw_data)
+        image_url = f"patrons/{patron_id}_{angle}.jpg"
+        _get_storage().upload_image(image_url, encrypted)
+
+        # Insert PatronFaceModel record (append, not upsert)
         conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT id FROM patron_faces WHERE patron_id = %s AND is_active = true",
-            (patron_id,),
+            "INSERT INTO patron_faces (id, patron_id, angle, milvus_id, image_url, is_active) VALUES (%s, %s, %s, %s, %s, true)",
+            (str(_uuid.uuid4()), patron_id, angle, milvus_id, image_url),
         )
-        exists = cur.fetchone()
-        if exists:
-            cur.execute(
-                "UPDATE patron_faces SET milvus_id = %s, updated_at = NOW() WHERE id = %s",
-                (patron_id, exists[0]),
-            )
-        else:
-            cur.execute(
-                "INSERT INTO patron_faces (id, patron_id, milvus_id, is_active) VALUES (%s, %s, %s, true)",
-                (str(_uuid.uuid4()), patron_id, patron_id),
-            )
         conn.commit()
         cur.close()
         _delete_temp_frame(object_key)
-        return {"status": "success", "patron_id": patron_id, "quality_score": face_result.get("score")}
+        return {"status": "success", "patron_id": patron_id, "angle": angle, "quality_score": face_result.get("score")}
     except Exception as exc:
-        _delete_temp_frame(object_key)
-        logger.exception("Enroll face failed for %s", patron_id)
+        # Do NOT delete temp frame on retry; retry still needs the same MinIO key.
+        logger.exception("Enroll face failed for %s (angle=%s)", patron_id, angle)
         raise self.retry(exc=exc)
+
+
+def _resolve_best_match(results: list[dict], threshold: float) -> dict | None:
+    from collections import Counter
+    counts: Counter[str] = Counter()
+    scores: dict[str, float] = {}
+    for r in results:
+        pid = r["user_id"]
+        counts[pid] += 1
+        scores[pid] = max(scores.get(pid, 0), r["score"])
+    best_pid = max(scores, key=lambda pid: (scores[pid], counts[pid]))
+    if scores[best_pid] >= threshold and counts[best_pid] >= 2:
+        return {"user_id": best_pid, "score": scores[best_pid], "votes": counts[best_pid]}
+    if scores.get(best_pid, 0) >= threshold:
+        return {"user_id": best_pid, "score": scores[best_pid], "votes": 1}
+    return None
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
@@ -492,12 +596,12 @@ def identify_patron(self, object_key: str) -> dict:
         vec = extract_embedding_placeholder(img)
         norm_vec = l2_normalize(vec)
         results = _get_milvus().search(embedding=norm_vec, top_k=3)
-        if not results or results[0]["score"] < settings.face_match_threshold:
+        best = _resolve_best_match(results, settings.face_match_threshold)
+        if not best:
             _delete_temp_frame(object_key)
             return {"status": "no_match"}
-        hit = results[0]
-        patron_id = hit["user_id"]
-        score = float(hit["score"])
+        patron_id = best["user_id"]
+        score = round(best["score"], 4)
 
         # Lookup patron info from Postgres
         conn = _get_pg_connection()
@@ -531,6 +635,7 @@ def identify_patron(self, object_key: str) -> dict:
             "full_name": full_name,
             "student_code": student_code,
             "score": score,
+            "votes": best["votes"],
         }
     except Exception as exc:
         _delete_temp_frame(object_key)
@@ -540,26 +645,19 @@ def identify_patron(self, object_key: str) -> dict:
 
 def _is_patron_inside(patron_id: str) -> bool:
     """Check if patron currently has an active entry (inside library).
+    Uses current_status column from patrons table for fast reads.
     Auto-expires after max_entry_hours to prevent stuck 'inside' status.
     """
     try:
         conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT access_time FROM access_logs WHERE patron_id = %s AND access_type = 'entry' AND status = 'success' AND access_time > NOW() - INTERVAL '%s hours' ORDER BY access_time DESC LIMIT 1",
-            (patron_id, settings.max_entry_hours),
+            "SELECT current_status = 'inside' AND last_entry_at > NOW() - INTERVAL '%s hours' FROM patrons WHERE id = %s",
+            (settings.max_entry_hours, patron_id),
         )
-        entry = cur.fetchone()
-        if not entry:
-            cur.close()
-            return False
-        cur.execute(
-            "SELECT COUNT(*) FROM access_logs WHERE patron_id = %s AND access_type = 'exit' AND status = 'success' AND access_time > %s",
-            (patron_id, entry[0]),
-        )
-        count = cur.fetchone()[0]
+        row = cur.fetchone()
         cur.close()
-        return count == 0
+        return bool(row and row[0])
     except Exception as e:
         logger.warning("Failed to check patron inside status for %s: %s", patron_id, e)
         return False
@@ -634,15 +732,15 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
         face = face_result["face"]
         norm_vec = l2_normalize(face_result["embedding"])
         results = _get_milvus().search(embedding=norm_vec, top_k=5)
-        if not results or results[0]["score"] < settings.face_match_threshold:
+        best = _resolve_best_match(results, settings.face_match_threshold)
+        if not best:
             result = {"camera_id": camera_id, "status": "no_match"}
             _publish_camera_event(result)
             _delete_temp_frame(object_key)
             return result
 
-        hit = results[0]
-        patron_id = hit["user_id"]
-        score = float(hit["score"])
+        patron_id = best["user_id"]
+        score = round(best["score"], 4)
 
         conn = _get_pg_connection()
         cur = conn.cursor()
@@ -727,6 +825,16 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
             (log_id, patron_id, access_type, "face", score, camera_id, "success"),
         )
+        if access_type == "entry":
+            cur.execute(
+                "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = %s, updated_at = NOW() WHERE id = %s",
+                (camera_id, patron_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
+                (patron_id,),
+            )
         conn.commit()
         cur.close()
 
@@ -797,6 +905,16 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
             (log_id, patron_id, access_type, "face", score, "kiosk", "success"),
         )
+        if access_type == "entry":
+            cur.execute(
+                "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = 'kiosk', updated_at = NOW() WHERE id = %s",
+                (patron_id,),
+            )
+        else:
+            cur.execute(
+                "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
+                (patron_id,),
+            )
         conn.commit()
         cur.close()
 

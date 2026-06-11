@@ -104,6 +104,10 @@ app.all('/kiosk/*', (req, res) => proxyRequest(req.originalUrl, req, res, config
 app.all('/camera', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 app.all('/camera/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 
+// Camera routes - proxy to face-recognition-api (with /api prefix)
+app.all('/api/camera', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/camera/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+
 // Generic API catch-all - any remaining /api/* -> face-recognition-api
 app.all('/api/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 

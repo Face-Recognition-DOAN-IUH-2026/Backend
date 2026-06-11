@@ -39,6 +39,7 @@ async def _store_temp_frame(raw: bytes) -> str:
 async def enroll(
     file: UploadFile = File(...),
     consent_given: bool = Form(True),
+    angle: str = Form("frontal"),
     current_user: dict = Depends(get_current_user),
 ):
     if not consent_given:
@@ -50,8 +51,12 @@ async def enroll(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
         )
     raw = await file.read()
-    object_key = await _store_temp_frame(raw)
-    task = enroll_task.delay(user_id=current_user["id"], object_key=object_key)
+    try:
+        object_key = await _store_temp_frame(raw)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to store temp frame: {exc}")
+
+    task = enroll_task.delay(user_id=current_user["id"], object_key=object_key, angle=angle)
     return EnrollmentResult(job_id=task.id)
 
 

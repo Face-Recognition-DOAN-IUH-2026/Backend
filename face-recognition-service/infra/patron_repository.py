@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from typing import List, Optional
 
-from sqlalchemy import Date, cast, func, select
+from sqlalchemy import Date, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infra.models import AccessLogModel, PatronFaceModel, PatronModel
@@ -14,21 +14,28 @@ class PatronRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    def _generate_card_number(self, student_code: str) -> str:
+        return f"THV-{student_code}"
+
     async def create_patron(
         self,
         full_name: str,
         student_code: str,
-        card_number: str,
         membership_expiry: date,
+        class_name: Optional[str] = None,
+        card_number: Optional[str] = None,
         identity_number: Optional[str] = None,
         email: Optional[str] = None,
         phone: Optional[str] = None,
         issue_date: Optional[date] = None,
     ) -> PatronModel:
+        if not card_number:
+            card_number = self._generate_card_number(student_code)
         patron = PatronModel(
             id=uuid.uuid4(),
             full_name=full_name,
             student_code=student_code,
+            class_name=class_name,
             card_number=card_number,
             membership_expiry=membership_expiry,
             identity_number=identity_number,
@@ -36,6 +43,7 @@ class PatronRepository:
             phone=phone,
             issue_date=issue_date or date.today(),
             status="active",
+            current_status="outside",
         )
         self.db.add(patron)
         await self.db.flush()
@@ -101,11 +109,11 @@ class PatronRepository:
         )
         for f in faces.scalars().all():
             await self.db.delete(f)
-        logs = await self.db.execute(
-            select(AccessLogModel).where(AccessLogModel.patron_id == patron_id)
+        await self.db.execute(
+            update(AccessLogModel)
+            .where(AccessLogModel.patron_id == patron_id)
+            .values(patron_id=None)
         )
-        for l in logs.scalars().all():
-            await self.db.delete(l)
         await self.db.delete(patron)
         await self.db.flush()
         return True
@@ -116,24 +124,42 @@ class PatronRepository:
                 PatronFaceModel.patron_id == patron_id,
                 PatronFaceModel.is_active == True,
             )
+            .order_by(PatronFaceModel.created_at.asc())
+            .limit(1)
         )
         return result.scalar_one_or_none()
 
-    async def upsert_face(
+    async def get_active_faces(self, patron_id: uuid.UUID) -> list[PatronFaceModel]:
+        result = await self.db.execute(
+            select(PatronFaceModel).where(
+                PatronFaceModel.patron_id == patron_id,
+                PatronFaceModel.is_active == True,
+            )
+            .order_by(PatronFaceModel.created_at.asc())
+        )
+        return list(result.scalars().all())
+
+    async def get_face_by_angle(self, patron_id: uuid.UUID, angle: str) -> Optional[PatronFaceModel]:
+        result = await self.db.execute(
+            select(PatronFaceModel).where(
+                PatronFaceModel.patron_id == patron_id,
+                PatronFaceModel.angle == angle,
+                PatronFaceModel.is_active == True,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def add_face(
         self,
         patron_id: uuid.UUID,
+        angle: str = "frontal",
         milvus_id: Optional[str] = None,
         image_url: Optional[str] = None,
     ) -> PatronFaceModel:
-        existing = await self.get_active_face(patron_id)
-        if existing:
-            existing.milvus_id = milvus_id or existing.milvus_id
-            existing.image_url = image_url or existing.image_url
-            existing.updated_at = datetime.utcnow()
-            return existing
         face = PatronFaceModel(
             id=uuid.uuid4(),
             patron_id=patron_id,
+            angle=angle,
             milvus_id=milvus_id,
             image_url=image_url,
             is_active=True,
@@ -141,6 +167,24 @@ class PatronRepository:
         self.db.add(face)
         await self.db.flush()
         return face
+
+    async def set_patron_current_status(
+        self,
+        patron_id: uuid.UUID,
+        status: str,
+        last_entry_at: Optional[datetime] = None,
+        last_entry_camera: Optional[str] = None,
+    ) -> None:
+        await self.db.execute(
+            update(PatronModel)
+            .where(PatronModel.id == patron_id)
+            .values(
+                current_status=status,
+                last_entry_at=last_entry_at,
+                last_entry_camera=last_entry_camera,
+                updated_at=datetime.utcnow(),
+            )
+        )
 
     async def create_access_log(
         self,
@@ -163,6 +207,14 @@ class PatronRepository:
             image_url=image_url,
         )
         self.db.add(log)
+        if patron_id and status == "success":
+            new_status = "inside" if access_type == "entry" else "outside"
+            await self.set_patron_current_status(
+                patron_id,
+                new_status,
+                last_entry_at=datetime.utcnow() if access_type == "entry" else None,
+                last_entry_camera=camera_id if access_type == "entry" else None,
+            )
         await self.db.flush()
         return log
 
@@ -259,47 +311,43 @@ class PatronRepository:
         return result.scalar_one_or_none()
 
     async def is_patron_inside(self, patron_id: uuid.UUID) -> bool:
-        latest = await self.get_latest_entry(patron_id)
-        if not latest:
-            return False
         result = await self.db.execute(
-            select(AccessLogModel)
-            .where(
-                AccessLogModel.patron_id == patron_id,
-                AccessLogModel.access_type == "exit",
-                AccessLogModel.access_time > latest.access_time,
-            )
-            .limit(1)
+            select(PatronModel.current_status).where(PatronModel.id == patron_id)
         )
-        return result.scalar_one_or_none() is None
+        return result.scalar_one_or_none() == "inside"
 
     async def get_active_patrons(self) -> List[PatronModel]:
-        latest_entry = (
-            select(
-                AccessLogModel.patron_id,
-                func.max(AccessLogModel.access_time).label("last_entry_time"),
+        result = await self.db.execute(
+            select(PatronModel).where(
+                PatronModel.current_status == "inside",
+                PatronModel.status == "active",
             )
-            .where(
-                AccessLogModel.status == "success",
-                AccessLogModel.access_type == "entry",
-            )
-            .group_by(AccessLogModel.patron_id)
-            .subquery()
         )
-        active_ids_q = (
-            select(latest_entry.c.patron_id)
-            .outerjoin(
-                AccessLogModel,
-                (AccessLogModel.patron_id == latest_entry.c.patron_id)
-                & (AccessLogModel.access_type == "exit")
-                & (AccessLogModel.access_time > latest_entry.c.last_entry_time),
-            )
-            .where(AccessLogModel.id.is_(None))
-        )
-        result = await self.db.execute(active_ids_q)
-        ids = [row[0] for row in result if row[0]]
-        if not ids:
-            return []
-        patrons_q = select(PatronModel).where(PatronModel.id.in_(ids))
-        result = await self.db.execute(patrons_q)
         return list(result.scalars().all())
+
+    async def count_active_inside(self) -> int:
+        result = await self.db.execute(
+            select(func.count(PatronModel.id)).where(
+                PatronModel.current_status == "inside",
+                PatronModel.status == "active",
+            )
+        )
+        return result.scalar() or 0
+
+    async def count_today_access(self, access_type: str) -> int:
+        today = date.today()
+        result = await self.db.execute(
+            select(func.count(AccessLogModel.id)).where(
+                AccessLogModel.access_type == access_type,
+                cast(AccessLogModel.access_time, Date) == today,
+                AccessLogModel.status == "success",
+            )
+        )
+        return result.scalar() or 0
+
+    async def nullify_patron_access_logs(self, patron_id: uuid.UUID) -> None:
+        await self.db.execute(
+            update(AccessLogModel)
+            .where(AccessLogModel.patron_id == patron_id)
+            .values(patron_id=None)
+        )

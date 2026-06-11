@@ -8,12 +8,12 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 from celery import Celery
 
-from api.dependencies import get_current_user, get_db_session
+from api.dependencies import get_current_user, get_db_session, require_role
 from core.schemas import PatronCreate, PatronPublic, PatronUpdate
 from infra.config import settings
 from infra.models import PatronModel
 from infra.patron_repository import PatronRepository
-from worker.tasks import _upload_temp_frame
+from worker.tasks import _upload_temp_frame, full_delete_patron_task
 
 celery_app = Celery(
     "tasks",
@@ -30,6 +30,7 @@ async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> Patr
         id=str(patron.id),
         full_name=patron.full_name,
         student_code=patron.student_code,
+        class_name=patron.class_name,
         identity_number=patron.identity_number,
         email=patron.email,
         phone=patron.phone,
@@ -103,16 +104,15 @@ async def create_patron(
     repo = PatronRepository(db)
     if await repo.get_by_student_code(body.student_code):
         raise HTTPException(409, "Student code already exists")
-    if await repo.get_by_card_number(body.card_number):
-        raise HTTPException(409, "Card number already exists")
+    card_number = f"THV-{body.student_code}"
+    if await repo.get_by_card_number(card_number):
+        raise HTTPException(409, "Student code already exists")
     patron = await repo.create_patron(
         full_name=body.full_name,
         student_code=body.student_code,
-        card_number=body.card_number,
+        class_name=body.class_name,
+        card_number=card_number,
         membership_expiry=body.membership_expiry,
-        identity_number=body.identity_number,
-        email=body.email,
-        phone=body.phone,
         issue_date=body.issue_date,
     )
     await db.commit()
@@ -142,23 +142,25 @@ async def update_patron(
     return await _patron_to_public(patron, repo)
 
 
-@router.delete("/{patron_id}")
+@router.delete("/{patron_id}", status_code=202)
 async def delete_patron(
     patron_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    _=Depends(get_current_user),
+    _=Depends(require_role("admin")),
 ):
     repo = PatronRepository(db)
-    if not await repo.delete_patron(patron_id):
+    patron = await repo.get_by_id(patron_id)
+    if not patron:
         raise HTTPException(404, "Patron not found")
-    await db.commit()
-    return {"ok": True}
+    task = full_delete_patron_task.delay(str(patron_id))
+    return {"job_id": task.id, "patron_id": str(patron_id)}
 
 
 @router.post("/{patron_id}/enroll-face")
 async def enroll_patron_face(
     patron_id: uuid.UUID,
     image: UploadFile,
+    angle: str = Form("frontal"),
     db: AsyncSession = Depends(get_db_session),
     _=Depends(get_current_user),
 ):
@@ -172,7 +174,7 @@ async def enroll_patron_face(
 
     task = celery_app.send_task(
         "enroll_face",
-        kwargs={"patron_id": str(patron_id), "object_key": object_key},
+        kwargs={"patron_id": str(patron_id), "object_key": object_key, "angle": angle},
     )
 
     result = await run_in_threadpool(task.get, timeout=60)
