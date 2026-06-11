@@ -114,6 +114,6 @@ async def face_login(
     file: UploadFile = File(...),
 ):
     raw = await file.read()
-    object_key = _upload_temp_frame(raw, str(_uuid.uuid4()))
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
     task = celery_app.send_task("worker.tasks.face_login_task", kwargs={"email": email, "object_key": object_key})
     return {"job_id": task.id}

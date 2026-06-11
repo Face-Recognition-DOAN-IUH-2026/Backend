@@ -50,6 +50,22 @@ def _get_pg_connection() -> psycopg.Connection:
         )
         _pg_connection_cache[thread_id] = conn
         logger.debug("Created new PG connection for thread %s", thread_id)
+    else:
+        try:
+            _pg_connection_cache[thread_id].execute("SELECT 1")
+        except Exception:
+            _pg_connection_cache[thread_id].close()
+            parsed = urllib.parse.urlparse(settings.postgres_url)
+            conn = psycopg.connect(
+                host=parsed.hostname,
+                port=parsed.port or 5432,
+                dbname=parsed.path.lstrip("/"),
+                user=parsed.username,
+                password=parsed.password,
+                autocommit=True,
+            )
+            _pg_connection_cache[thread_id] = conn
+            logger.debug("Recreated stale PG connection for thread %s", thread_id)
     return _pg_connection_cache[thread_id]
 
 # =============================================================================
@@ -66,8 +82,27 @@ def _upload_temp_frame(frame_bytes: bytes, task_id: str | None = None) -> str:
 
 
 def _get_temp_frame(object_key: str) -> bytes:
-    """Download temp frame from MinIO."""
-    return _get_storage().get_image(object_key)
+    """Download temp frame from Redis cache first, then fall back to MinIO."""
+    import time
+    try:
+        from infra.redis_cache import redis_client as _rc
+        cached = _rc.get(f"temp_frame:{object_key}")
+        if cached:
+            _rc.delete(f"temp_frame:{object_key}")
+            return cached
+    except Exception:
+        pass
+    last_error = None
+    for attempt in range(5):
+        try:
+            return _get_storage().get_image(object_key)
+        except Exception as exc:
+            last_error = exc
+            if "NoSuchKey" in str(exc) and attempt < 4:
+                time.sleep(1)
+                continue
+            raise
+    raise last_error  # type: ignore[misc]
 
 
 def _delete_temp_frame(object_key: str) -> None:
@@ -162,15 +197,31 @@ def _process_from_minio(object_key: str):
     return raw_data, img
 
 
+def _resolve_image(object_key: str | None = None, image_data: str | None = None):
+    """Get (raw_bytes, img) from either MinIO key or base64-encoded data."""
+    if image_data:
+        import base64 as _b64
+        raw = _b64.b64decode(image_data)
+        img = safe_read_image_from_bytes(raw)
+        img = resize_if_necessary(
+            img,
+            max_w=settings.max_image_width,
+            max_h=settings.max_image_height,
+            max_pixels=settings.max_image_pixels,
+        )
+        return raw, img
+    return _process_from_minio(object_key)  # type: ignore[arg-type]
+
+
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
-def enroll_task(self, user_id: str, object_key: str) -> dict:
+def enroll_task(self, user_id: str, object_key: str | None = None, image_data: str | None = None) -> dict:
     logger.info("Enrolling user %s", user_id)
     try:
         patron_id = _get_patron_id_by_user_id(user_id) or user_id
-        raw_data, img = _process_from_minio(object_key)
+        raw_data, img = _resolve_image(object_key, image_data)
         quality = check_face_quality(img)
         if not quality.get("valid"):
-            _delete_temp_frame(object_key)
+            if object_key: _delete_temp_frame(object_key)
             return {
                 "status": "error",
                 "error": quality.get("error"),
@@ -179,7 +230,7 @@ def enroll_task(self, user_id: str, object_key: str) -> dict:
             }
         liveness = run_liveness_analysis(img)
         if not liveness.get("is_live", False):
-            _delete_temp_frame(object_key)
+            if object_key: _delete_temp_frame(object_key)
             logger.warning("Enroll: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
             return {
                 "status": "error",
@@ -190,7 +241,7 @@ def enroll_task(self, user_id: str, object_key: str) -> dict:
         vec_arr = np.array(vec, dtype=np.float32)
         vec_sum = float(np.sum(np.abs(vec_arr)))
         if vec_sum < 0.1:
-            _delete_temp_frame(object_key)
+            if object_key: _delete_temp_frame(object_key)
             logger.error("Enroll: extracted embedding is near-zero for patron_id %s, sum=%.6f", patron_id, vec_sum)
             return {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
         norm_vec = l2_normalize(vec)
@@ -199,7 +250,7 @@ def enroll_task(self, user_id: str, object_key: str) -> dict:
         _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
         _get_storage().upload_image(f"enrollments/{patron_id}.jpg", encrypted)
-        _delete_temp_frame(object_key)
+        if object_key: _delete_temp_frame(object_key)
         return {"status": "success", "patron_id": patron_id, "user_id": user_id, "quality_score": quality.get("score")}
     except Exception as exc:
         logger.exception("Enroll failed for %s", user_id)
@@ -207,16 +258,15 @@ def enroll_task(self, user_id: str, object_key: str) -> dict:
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
-def verify_task(self, user_id: str, object_key: str) -> dict:
+def verify_task(self, user_id: str, object_key: str | None = None, image_data: str | None = None) -> dict:
     logger.info("Verifying user %s", user_id)
     try:
         patron_id = _get_patron_id_by_user_id(user_id) or user_id
-        _, img = _process_from_minio(object_key)
+        _, img = _resolve_image(object_key, image_data)
         vec = extract_embedding_placeholder(img)
         vec_arr = np.array(vec, dtype=np.float32)
         vec_sum = float(np.sum(np.abs(vec_arr)))
         if vec_sum < 0.1:
-            _delete_temp_frame(object_key)
             logger.error("Verify: extracted embedding is near-zero, sum=%.6f", vec_sum)
             return {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
         norm_vec = l2_normalize(vec)
@@ -224,19 +274,18 @@ def verify_task(self, user_id: str, object_key: str) -> dict:
         logger.info("Verify query embedding: min=%.4f, max=%.4f, sum_abs=%.4f",
                     float(np.min(vec_arr)), float(np.max(vec_arr)), vec_sum)
         enrolled_emb = _get_milvus().get_embedding_by_user_id(patron_id)
-        if enrolled_emb is None:
-            _delete_temp_frame(object_key)
+        if not enrolled_emb:
             return {"status": "success", "verified": False, "score": 0.0, "error": "Face not enrolled"}
         enrolled_arr = np.array(enrolled_emb, dtype=np.float32)
-        enrolled_sum = float(np.sum(np.abs(enrolled_arr)))
-        logger.info("Verify enrolled embedding: min=%.4f, max=%.4f, sum_abs=%.4f",
-                    float(np.min(enrolled_arr)), float(np.max(enrolled_arr)), enrolled_sum)
-        score = float(np.dot(norm_vec_arr, enrolled_arr))
+        best_score = float(np.dot(norm_vec_arr, enrolled_arr))
+        score = best_score
+        logger.info("Verify best score for patron_id %s (user_id %s): %.4f",
+                    patron_id, user_id, best_score)
         logger.info("Verify score for patron_id %s (user_id %s): %.4f (query_norm=%.4f, enrolled_norm=%.4f)",
                     patron_id, user_id, score,
                     float(np.linalg.norm(vec_arr)),
                     float(np.linalg.norm(enrolled_arr)))
-        _delete_temp_frame(object_key)
+        if object_key: _delete_temp_frame(object_key)
         return {"status": "success", "verified": score > 0.6, "score": score}
     except Exception as exc:
         logger.exception("Verify failed for %s", user_id)
@@ -244,29 +293,29 @@ def verify_task(self, user_id: str, object_key: str) -> dict:
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
-def identify_task(self, object_key: str) -> dict:
+def identify_task(self, object_key: str | None = None, image_data: str | None = None) -> dict:
     logger.info("Identifying face")
     try:
-        _, img = _process_from_minio(object_key)
+        _, img = _resolve_image(object_key, image_data)
         vec = extract_embedding_placeholder(img)
         norm_vec = l2_normalize(vec)
-        results = _get_milvus().search(embedding=norm_vec, top_k=3)
+        results = _get_milvus().search(embedding=norm_vec, top_k=5)
         matches = []
         for h in results:
-            uid = h["user_id"]
-            user = _get_user_info(uid) or {"id": uid}
+            pid = h["user_id"]
+            user = _get_user_info(pid) or {"id": pid}
             matches.append({
-                "user_id": uid,
+                "user_id": pid,
                 "score": float(h["score"]),
                 "email": user.get("email"),
                 "full_name": user.get("full_name"),
                 "role": user.get("role"),
                 "created_at": user.get("created_at"),
             })
-        _delete_temp_frame(object_key)
+        if object_key: _delete_temp_frame(object_key)
         return {"status": "success", "matches": matches}
     except Exception as exc:
-        _delete_temp_frame(object_key)
+        if object_key: _delete_temp_frame(object_key)
         logger.exception("Identify failed")
         raise self.retry(exc=exc)
 
@@ -295,10 +344,11 @@ def face_login_task(self, email: str, object_key: str) -> dict:
         norm_vec = l2_normalize(vec)
         norm_vec_arr = np.array(norm_vec, dtype=np.float32)
         enrolled_emb = _get_milvus().get_embedding_by_user_id(user_info["id"])
-        if enrolled_emb is None:
+        if not enrolled_emb:
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face not enrolled. Please enroll first."}
-        score = float(np.dot(norm_vec_arr, np.array(enrolled_emb, dtype=np.float32)))
+        enrolled_arr = np.array(enrolled_emb, dtype=np.float32)
+        score = float(np.dot(norm_vec_arr, enrolled_arr))
         if score < 0.6:
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face does not match", "score": score}
@@ -351,15 +401,15 @@ def face_login_task(self, email: str, object_key: str) -> dict:
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
-def liveness_task(self, object_key: str) -> dict:
+def liveness_task(self, object_key: str | None = None, image_data: str | None = None) -> dict:
     logger.info("Running liveness check")
     try:
-        _, img = _process_from_minio(object_key)
+        _, img = _resolve_image(object_key, image_data)
         result = run_liveness_analysis(img)
-        _delete_temp_frame(object_key)
+        if object_key: _delete_temp_frame(object_key)
         return {"status": "success", **result}
     except Exception as exc:
-        _delete_temp_frame(object_key)
+        if object_key: _delete_temp_frame(object_key)
         logger.exception("Liveness check failed")
         raise self.retry(exc=exc)
 
@@ -441,7 +491,7 @@ def identify_patron(self, object_key: str) -> dict:
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
         vec = extract_embedding_placeholder(img)
         norm_vec = l2_normalize(vec)
-        results = _get_milvus().search(embedding=norm_vec, top_k=1)
+        results = _get_milvus().search(embedding=norm_vec, top_k=3)
         if not results or results[0]["score"] < settings.face_match_threshold:
             _delete_temp_frame(object_key)
             return {"status": "no_match"}
@@ -552,7 +602,6 @@ def _get_redis_throttle():
         logger.warning("Redis throttle unavailable: %s", e)
         return None
 
-
 @celery_app.task(bind=True, name="process_camera_frame", max_retries=1, default_retry_delay=5)
 def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
     logger.info("Processing camera frame from %s", camera_id)
@@ -584,7 +633,7 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
 
         face = face_result["face"]
         norm_vec = l2_normalize(face_result["embedding"])
-        results = _get_milvus().search(embedding=norm_vec, top_k=1)
+        results = _get_milvus().search(embedding=norm_vec, top_k=5)
         if not results or results[0]["score"] < settings.face_match_threshold:
             result = {"camera_id": camera_id, "status": "no_match"}
             _publish_camera_event(result)
@@ -712,14 +761,14 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
         vec = extract_embedding_placeholder(img)
         norm_vec = l2_normalize(vec)
-        results = _get_milvus().search(embedding=norm_vec, top_k=1)
-        if not results:
+        enrolled_emb = _get_milvus().get_embedding_by_user_id(patron_id)
+        if not enrolled_emb:
             _delete_temp_frame(object_key)
-            return {"status": "error", "error": "No match found"}
-        hit = results[0]
-        if hit["user_id"] != patron_id or hit["score"] < settings.face_match_threshold:
+            return {"status": "error", "error": "Face not enrolled"}
+        score = float(np.dot(np.array(norm_vec, dtype=np.float32), np.array(enrolled_emb, dtype=np.float32)))
+        if score < settings.face_match_threshold:
             _delete_temp_frame(object_key)
-            return {"status": "error", "error": "Face does not match", "score": float(hit["score"])}
+            return {"status": "error", "error": "Face does not match", "score": score}
         liveness = run_liveness_analysis(img)
         if not liveness.get("is_live", False):
             _delete_temp_frame(object_key)
@@ -742,7 +791,6 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
 
         # Create access log
         log_id = str(_uuid.uuid4())
-        score = float(hit["score"])
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)

@@ -55,6 +55,7 @@ services:
 
   milvus:
     image: milvusdb/milvus:v2.4.0
+    command: milvus run standalone
     restart: unless-stopped
     ports:
       - "19530:19530"

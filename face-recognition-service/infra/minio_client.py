@@ -32,7 +32,11 @@ class MinioStorage:
 
     def get_image(self, object_name: str) -> bytes:
         response = self.client.get_object(self.bucket, object_name)
-        return response.read()
+        try:
+            return response.read()
+        finally:
+            response.close()
+            response.release_conn()
 
     def delete_image(self, object_name: str) -> None:
         self.client.remove_object(self.bucket, object_name)

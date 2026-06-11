@@ -28,13 +28,15 @@ const proxyRequest = (path: string, req: any, res: any, targetBase: string) => {
     headers: {} as any,
   };
 
-  const skipHeaders = ['host', 'connection', 'transfer-encoding'];
+  const skipHeaders = ['host', 'connection'];
   for (const [key, value] of Object.entries(req.headers)) {
     if (!skipHeaders.includes(key.toLowerCase())) {
       (options.headers as any)[key] = value;
     }
   }
-
+  
+  const headers = options.headers as Record<string, string>;
+  console.log(`  Headers: content-type=${headers['content-type']}, content-length=${headers['content-length']}`);
   console.log(`  -> ${options.method} ${options.hostname}:${options.port}${options.path}`);
 
   const proxyReq = http.request({ ...options, timeout: 0 }, (proxyRes) => {

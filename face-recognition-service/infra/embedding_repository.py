@@ -27,4 +27,3 @@ class MilvusEmbeddingRepository(EmbeddingRepository):
 
     async def delete_user_embeddings(self, user_id: str) -> None:
         self.milvus.delete_by_user_id(user_id=user_id)
-

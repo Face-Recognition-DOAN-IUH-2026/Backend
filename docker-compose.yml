@@ -81,6 +81,12 @@ services:
         condition: service_healthy
     networks:
       - face-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   worker:
     build:
@@ -90,6 +96,7 @@ services:
     shm_size: "2gb"
     deploy:
       replicas: 3
+    command: ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=2", "--include=worker.tasks"]
     env_file:
       - ./.env
     volumes:

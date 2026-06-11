@@ -5,8 +5,9 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
-from celery import Celery
+from celery import Celery as _Celery
 
 from api.dependencies import get_db_session
 from core.schemas import KioskEnrollRequest, KioskEnterRequest, KioskResult, PatronPublic
@@ -14,15 +15,11 @@ from infra.config import settings
 from infra.models import PatronModel
 from infra.patron_repository import PatronRepository
 from infra.sse_manager import sse_manager
+from worker.celery_app import celery_app as _celery_app
 from worker.tasks import _upload_temp_frame
 
 router = APIRouter(prefix="/kiosk", tags=["kiosk"])
-
-celery_app = Celery(
-    "tasks",
-    broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend,
-)
+celery_app = _celery_app
 
 
 async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> PatronPublic:
@@ -88,7 +85,7 @@ async def kiosk_enroll(
         raise HTTPException(409, "Card number already exists")
 
     raw = await image.read()
-    object_key = _upload_temp_frame(raw, str(_uuid.uuid4()))
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
 
     patron = await repo.create_patron(
         full_name=full_name,
@@ -135,7 +132,7 @@ async def kiosk_enter(
         return KioskResult(success=False, message="Patron has no enrolled face")
 
     raw = await image.read()
-    object_key = _upload_temp_frame(raw, str(_uuid.uuid4()))
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
 
     task = celery_app.send_task(
         "verify_face",

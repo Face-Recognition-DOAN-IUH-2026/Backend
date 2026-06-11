@@ -49,7 +49,6 @@ async def lifespan(app: FastAPI):
 
     entry = settings.entry_cam_url
     exit_ = settings.exit_cam_url
-    _sse_thread = None
     if entry or exit_:
         import threading as _t
         def _start_cameras():
@@ -68,10 +67,11 @@ async def lifespan(app: FastAPI):
                 logging.getLogger("uvicorn").error("Camera startup error: %s", e, exc_info=True)
         _t.Thread(target=_start_cameras, daemon=True).start()
 
+    _sse_stop = None
     try:
         import asyncio
         from infra.redis_pubsub import start_sse_bridge
-        _sse_thread = start_sse_bridge(asyncio.get_running_loop())
+        _sse_thread, _sse_stop = start_sse_bridge(asyncio.get_running_loop())
     except Exception as e:
         import logging
         logging.getLogger("uvicorn").warning("SSE bridge not started: %s", e)
@@ -79,12 +79,16 @@ async def lifespan(app: FastAPI):
     yield
 
     try:
-        if entry or exit_:
-            from worker.stream_service import stream_service
-            stream_service.stop_all()
+        from worker.stream_service import stream_service
+        stream_service.stop_all()
     except Exception as e:
         import logging
         logging.getLogger("uvicorn").error("Camera shutdown error: %s", e)
+    if _sse_stop:
+        try:
+            _sse_stop()
+        except Exception as e:
+            logging.getLogger("uvicorn").error("SSE bridge stop error: %s", e)
     await engine.dispose()
     cooldown = CooldownService()
     await cooldown.close()

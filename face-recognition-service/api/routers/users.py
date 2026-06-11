@@ -40,8 +40,8 @@ async def _check_has_face(user_id: str) -> bool:
             collection_name=settings.milvus_collection,
             dim=512,
         )
-        emb = mc.get_embedding_by_user_id(user_id)
-        return emb is not None
+        results = mc.search(embedding=[0.0] * 512, top_k=1)
+        return any(r["user_id"] == user_id for r in results)
     except Exception:
         return False
 

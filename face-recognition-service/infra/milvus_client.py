@@ -23,53 +23,63 @@ class MilvusClient:
 
         connections.connect(alias="default", host=self.host, port=self.port)
         self.collection = self._get_or_create_collection()
-        self._collection_loaded = True
-
-    def _ensure_collection_loaded(self) -> None:
-        if self._collection_loaded:
-            return
-        try:
-            self.collection.load()
-            self._collection_loaded = True
-        except Exception:
-            pass
 
     def _get_or_create_collection(self) -> Collection:
         if utility.has_collection(self.collection_name):
             collection = Collection(self.collection_name)
-            if not collection.indexes:
-                collection.create_index(field_name="embedding", index_params={"metric_type": self.metric_type})
-            try:
+            fields = {f.name: f for f in collection.schema.fields}
+            # Drop & recreate if collection has the new compound-PK schema
+            if "id" in fields:
+                __import__("logging").getLogger(__name__).warning(
+                    "Dropping collection '%s' with compound PK schema and recreating with user_id PK",
+                    self.collection_name,
+                )
+                collection.release()
+                utility.drop_collection(self.collection_name)
+                collection = self._create_collection()
                 collection.load()
-            except Exception:
-                pass
+                return collection
+            collection.load()
             return collection
 
+        collection = self._create_collection()
+        collection.load()
+        return collection
+
+    def _create_collection(self) -> Collection:
         fields = [
             FieldSchema(name="user_id", dtype=DataType.VARCHAR, max_length=128, is_primary=True),
             FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=self.dim),
         ]
         schema = CollectionSchema(fields=fields, description="face embeddings")
-        collection = Collection(
+        return Collection(
             name=self.collection_name,
             schema=schema,
             using="default",
             metric_type=self.metric_type,
         )
-        collection.create_index(field_name="embedding", index_params={"metric_type": self.metric_type})
-        collection.load()
-        return collection
 
     def upsert_embeddings(self, *, user_id: str, embedding: list[float]) -> None:
-        self.collection.upsert([[user_id], [embedding]])
+        # Milvus uses insert/upsert depending on primary key and indexes.
+        self.collection.insert([[user_id], [embedding]])
         self.collection.flush()
-        self._collection_loaded = False
+
+    def get_embedding_by_user_id(self, user_id: str) -> list[float] | None:
+        results = self.collection.query(
+            expr=f'user_id == "{user_id}"',
+            output_fields=["embedding"],
+            limit=1,
+        )
+        if not results:
+            return None
+        return results[0].get("embedding")
 
     def search(self, *, embedding: list[float], top_k: int = 1) -> list[dict[str, Any]]:
-        self._ensure_collection_loaded()
+        # Ensure an index exists in real deployments; for MVP use default.
+        collection = self.collection
         search_params = {"metric_type": self.metric_type, "params": {"nprobe": 16}}
 
-        res = self.collection.search(
+        res = collection.search(
             data=[embedding],
             anns_field="embedding",
             param=search_params,
@@ -81,17 +91,6 @@ class MilvusClient:
         for r in res[0]:
             hits.append({"user_id": r.entity.get("user_id"), "score": float(r.score)})
         return hits
-
-    def get_embedding_by_user_id(self, user_id: str) -> list[float] | None:
-        self._ensure_collection_loaded()
-        results = self.collection.query(
-            expr=f"user_id == '{user_id}'",
-            output_fields=["embedding"],
-            limit=1,
-        )
-        if results:
-            return results[0].get("embedding")
-        return None
 
     def delete_by_user_id(self, *, user_id: str) -> None:
         collection = self.collection

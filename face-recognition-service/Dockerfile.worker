@@ -25,4 +25,4 @@ RUN python -c "import urllib.request,os; os.makedirs('/app/models',exist_ok=True
 
 COPY . .
 
-CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=4", "-P", "gevent", "--include=worker.tasks"]
+CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=2", "--include=worker.tasks"]
