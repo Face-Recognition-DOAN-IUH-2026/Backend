@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
+from pymilvus import MilvusClient as _MilvusClient
 
 
 class MilvusClient:
@@ -21,78 +21,53 @@ class MilvusClient:
         self.dim = dim
         self.metric_type = metric_type
 
-        connections.connect(alias="default", host=self.host, port=self.port)
-        self.collection = self._get_or_create_collection()
+        self.client = _MilvusClient(uri=f"http://{host}:{port}")
+        self._get_or_create_collection()
 
-    def _get_or_create_collection(self) -> Collection:
-        if utility.has_collection(self.collection_name):
-            collection = Collection(self.collection_name)
-            fields = {f.name: f for f in collection.schema.fields}
-            # Drop & recreate if collection has the new compound-PK schema
-            if "id" in fields:
-                __import__("logging").getLogger(__name__).warning(
-                    "Dropping collection '%s' with compound PK schema and recreating with user_id PK",
-                    self.collection_name,
-                )
-                collection.release()
-                utility.drop_collection(self.collection_name)
-                collection = self._create_collection()
-                collection.load()
-                return collection
-            collection.load()
-            return collection
-
-        collection = self._create_collection()
-        collection.load()
-        return collection
-
-    def _create_collection(self) -> Collection:
-        fields = [
-            FieldSchema(name="user_id", dtype=DataType.VARCHAR, max_length=128, is_primary=True),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=self.dim),
-        ]
-        schema = CollectionSchema(fields=fields, description="face embeddings")
-        return Collection(
-            name=self.collection_name,
-            schema=schema,
-            using="default",
+    def _get_or_create_collection(self) -> None:
+        if self.client.has_collection(self.collection_name):
+            return
+        self.client.create_collection(
+            collection_name=self.collection_name,
+            dimension=self.dim,
+            primary_field_name="user_id",
+            id_type="string",
+            max_length=128,
+            vector_field_name="embedding",
             metric_type=self.metric_type,
         )
 
     def upsert_embeddings(self, *, user_id: str, embedding: list[float]) -> None:
-        # Milvus uses insert/upsert depending on primary key and indexes.
-        self.collection.insert([[user_id], [embedding]])
-        self.collection.flush()
+        self.client.upsert(
+            self.collection_name,
+            {"user_id": user_id, "embedding": embedding},
+        )
 
     def get_embedding_by_user_id(self, user_id: str) -> list[float] | None:
-        results = self.collection.query(
-            expr=f'user_id == "{user_id}"',
+        results = self.client.query(
+            self.collection_name,
+            filter=f'user_id == "{user_id}"',
             output_fields=["embedding"],
-            limit=1,
         )
         if not results:
             return None
         return results[0].get("embedding")
 
     def search(self, *, embedding: list[float], top_k: int = 1) -> list[dict[str, Any]]:
-        # Ensure an index exists in real deployments; for MVP use default.
-        collection = self.collection
-        search_params = {"metric_type": self.metric_type, "params": {"nprobe": 16}}
-
-        res = collection.search(
+        results = self.client.search(
+            collection_name=self.collection_name,
             data=[embedding],
             anns_field="embedding",
-            param=search_params,
+            search_params={"metric_type": self.metric_type, "params": {"nprobe": 16}},
             limit=top_k,
             output_fields=["user_id"],
         )
-
+        if not results:
+            return []
         hits = []
-        for r in res[0]:
-            hits.append({"user_id": r.entity.get("user_id"), "score": float(r.score)})
+        for r in results[0]:
+            hits.append({"user_id": r["entity"]["user_id"], "score": float(r["distance"])})
         return hits
 
     def delete_by_user_id(self, *, user_id: str) -> None:
-        collection = self.collection
-        collection.delete(f"user_id == '{user_id}'")
-        collection.flush()
+        self.client.delete(self.collection_name, f'user_id == "{user_id}"')

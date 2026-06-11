@@ -134,7 +134,7 @@ def create_app() -> FastAPI:
             collection_name=settings.milvus_collection,
             dim=512,
         )
-        results = m.collection.query(expr="", output_fields=["user_id"], limit=1000)
+        results = m.client.query(m.collection_name, filter="", output_fields=["user_id"], limit=1000)
         milvus_ids = {r["user_id"] for r in results}
         async with async_session_factory() as db:
             rs = await db.execute(select(PatronFaceModel))

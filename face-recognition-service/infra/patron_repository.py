@@ -96,6 +96,16 @@ class PatronRepository:
         patron = await self.get_by_id(patron_id)
         if not patron:
             return False
+        faces = await self.db.execute(
+            select(PatronFaceModel).where(PatronFaceModel.patron_id == patron_id)
+        )
+        for f in faces.scalars().all():
+            await self.db.delete(f)
+        logs = await self.db.execute(
+            select(AccessLogModel).where(AccessLogModel.patron_id == patron_id)
+        )
+        for l in logs.scalars().all():
+            await self.db.delete(l)
         await self.db.delete(patron)
         await self.db.flush()
         return True
@@ -264,23 +274,25 @@ class PatronRepository:
         return result.scalar_one_or_none() is None
 
     async def get_active_patrons(self) -> List[PatronModel]:
-        sub = (
+        latest_entry = (
             select(
                 AccessLogModel.patron_id,
-                func.max(AccessLogModel.access_time).label("last_time"),
+                func.max(AccessLogModel.access_time).label("last_entry_time"),
             )
-            .where(AccessLogModel.status == "success")
+            .where(
+                AccessLogModel.status == "success",
+                AccessLogModel.access_type == "entry",
+            )
             .group_by(AccessLogModel.patron_id)
             .subquery()
         )
-        # patrons whose latest log is an entry (no later exit)
         active_ids_q = (
-            select(sub.c.patron_id)
+            select(latest_entry.c.patron_id)
             .outerjoin(
                 AccessLogModel,
-                (AccessLogModel.patron_id == sub.c.patron_id)
+                (AccessLogModel.patron_id == latest_entry.c.patron_id)
                 & (AccessLogModel.access_type == "exit")
-                & (AccessLogModel.access_time > sub.c.last_time),
+                & (AccessLogModel.access_time > latest_entry.c.last_entry_time),
             )
             .where(AccessLogModel.id.is_(None))
         )
