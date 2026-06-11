@@ -3,9 +3,12 @@ FROM node:20-alpine
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --only=production
+RUN npm install
 
-COPY dist ./dist
+COPY . .
+RUN npx tsc
+
+RUN npm prune --production
 
 EXPOSE 80
 

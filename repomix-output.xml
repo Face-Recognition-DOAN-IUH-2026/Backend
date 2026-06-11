@@ -53,6 +53,124 @@ api-gateway/src/proxy.ts
 api-gateway/tsconfig.json
 docker-compose.yml
 face-recognition-service/.env.example
+face-recognition-service/.git/COMMIT_EDITMSG
+face-recognition-service/.git/config
+face-recognition-service/.git/description
+face-recognition-service/.git/HEAD
+face-recognition-service/.git/hooks/applypatch-msg.sample
+face-recognition-service/.git/hooks/commit-msg.sample
+face-recognition-service/.git/hooks/fsmonitor-watchman.sample
+face-recognition-service/.git/hooks/post-update.sample
+face-recognition-service/.git/hooks/pre-applypatch.sample
+face-recognition-service/.git/hooks/pre-commit.sample
+face-recognition-service/.git/hooks/pre-merge-commit.sample
+face-recognition-service/.git/hooks/pre-push.sample
+face-recognition-service/.git/hooks/pre-rebase.sample
+face-recognition-service/.git/hooks/pre-receive.sample
+face-recognition-service/.git/hooks/prepare-commit-msg.sample
+face-recognition-service/.git/hooks/push-to-checkout.sample
+face-recognition-service/.git/hooks/sendemail-validate.sample
+face-recognition-service/.git/hooks/update.sample
+face-recognition-service/.git/index
+face-recognition-service/.git/info/exclude
+face-recognition-service/.git/logs/HEAD
+face-recognition-service/.git/logs/refs/heads/master
+face-recognition-service/.git/objects/01/b87a56ba0fb3044dce828fc29c78ef957aab82
+face-recognition-service/.git/objects/0c/a077e24f0b55df652e4a26fafd1ec457a57a33
+face-recognition-service/.git/objects/0c/b206af1dcd79d481261a1219d3bd3b1cc048a8
+face-recognition-service/.git/objects/0d/4e5cc8f50947a1f719f4862eff37c30c698f4d
+face-recognition-service/.git/objects/0d/8b0d87054768606d7e0c8a674b720bd0bc87d5
+face-recognition-service/.git/objects/0d/dd977c4dd5f9dd8a33a8a560683776bc170c64
+face-recognition-service/.git/objects/0e/23bf87e33184dbbe28a03f60ade42494f0450b
+face-recognition-service/.git/objects/10/01ef7d13ec6d785916f33f21352eb703cb662b
+face-recognition-service/.git/objects/15/0de2c34614de7976558ca86d0bfd037c681add
+face-recognition-service/.git/objects/16/f9c6c2cc92adae5c7c722b8fa62e5bf7605dff
+face-recognition-service/.git/objects/1b/238644c1afd8ca51f8bab8bdd691095ba98a43
+face-recognition-service/.git/objects/1b/68669139422aa45c8d5b2811a4285e64b34d91
+face-recognition-service/.git/objects/1d/7fdcbfddbee6a82fc0601d018ad1adce04ef2a
+face-recognition-service/.git/objects/1f/7c2dd12c8ef5b037efe3f6a81e8b04f80c16a1
+face-recognition-service/.git/objects/1f/c31d3d467c761834f47113c3d8344f912c8bfa
+face-recognition-service/.git/objects/21/275a7c72e9462050b7f79a656c61d48e746a59
+face-recognition-service/.git/objects/21/3168d2eadf7e771d3e73692daf7ba096d1b5f9
+face-recognition-service/.git/objects/21/60adbc1db8893a88dff0e16aa2635c9171bc05
+face-recognition-service/.git/objects/21/ac56d9b4f957aa85d1a2b6eeb9fea1008c1cac
+face-recognition-service/.git/objects/25/0c2cd9ee8d83382ad8ac07c4ffae2423cf0200
+face-recognition-service/.git/objects/25/3e5012dd6a17666fd7ae16cfa14a6860280ff7
+face-recognition-service/.git/objects/29/c48875880ebb29753e526d29b02689cd98c1d9
+face-recognition-service/.git/objects/2c/4980e530ad6f5957e2bb59d417312b49362292
+face-recognition-service/.git/objects/2f/95e6099761583e8a1d7ac3868afde36cd533fc
+face-recognition-service/.git/objects/2f/bc1d80e82d0dd290da7b0371c00e0d1ad6cc49
+face-recognition-service/.git/objects/34/30c873a52c1259efc14c905c50caa94f06efe9
+face-recognition-service/.git/objects/35/b9509d50ce4a5d920d0f909e5d51bdf6c63239
+face-recognition-service/.git/objects/38/0ada7a0c09743707cf7fde62b3e46b6abb1fa3
+face-recognition-service/.git/objects/39/aa17835641cb4a4ae2d46e7462d5f4b8a499b6
+face-recognition-service/.git/objects/3a/fe77f8776e8bdede7868645473234149d199ba
+face-recognition-service/.git/objects/41/9ac7c5fcc5a32ab8237f56201519989d60532e
+face-recognition-service/.git/objects/4b/618ef6df748ae8986c3ac85b9a023adccbf526
+face-recognition-service/.git/objects/4e/701d71d5470ee53e9c0cf3888277b78c470e93
+face-recognition-service/.git/objects/4f/319412af4ec84431e8d304f962d4f92c1a082c
+face-recognition-service/.git/objects/4f/d927d94addb2e86d7c74a46b0826681a2565d1
+face-recognition-service/.git/objects/52/67c2d8969ed199e234acfd07a1d7723194e497
+face-recognition-service/.git/objects/58/6703d7d4b04a748a922051e115a121b1b278e2
+face-recognition-service/.git/objects/59/adc70952986c3babee38ebd689cb2f32fc3e24
+face-recognition-service/.git/objects/5e/bcd2cf68598f2acc76b5252626ccab8f346935
+face-recognition-service/.git/objects/66/732e8c1fdb0d5f7521fc04a762c256811ce2a6
+face-recognition-service/.git/objects/67/00376e86c8af6235cac87923fa2e51628268ff
+face-recognition-service/.git/objects/67/b9b9dba31aa0e0bda2d7697fa4492cc7a9124b
+face-recognition-service/.git/objects/69/0a16af2f655aec598b60796a18b4a6fe2b2b3f
+face-recognition-service/.git/objects/6d/3e6e69a13d5b39a73f0fee50d3c0b5b64a1940
+face-recognition-service/.git/objects/71/f24247f56bc41d32d44af4071f6de7c4830a26
+face-recognition-service/.git/objects/75/016e93d109b71e8293ecd906e1bbc955aea790
+face-recognition-service/.git/objects/75/9ce86505b001f474c6ff766581a91cea5d5404
+face-recognition-service/.git/objects/77/62be6bed3acc5476576f891968545fe4be879d
+face-recognition-service/.git/objects/7a/53a2036085eed9dab31dd13f647ec8578a115c
+face-recognition-service/.git/objects/7c/2f8030682e3da58c49451ba03e03b133d022e8
+face-recognition-service/.git/objects/7e/1b1d953ac479f48852a91d4a57bf388e6870cc
+face-recognition-service/.git/objects/7e/b074db2d017536198e6ffdcc650d90e8e3faa6
+face-recognition-service/.git/objects/82/66b91fab8a8c43dbcab5493fcc885ac509c763
+face-recognition-service/.git/objects/82/a075922c4cdd88bdd90e55ecd1436bbe374ba3
+face-recognition-service/.git/objects/85/5366b26f71b1f6e03cad961df9b0543abeccc6
+face-recognition-service/.git/objects/88/021a94bca5c22753a23664d388d4922b2186bb
+face-recognition-service/.git/objects/89/a904051129f22678710ca62f59658e7827ee28
+face-recognition-service/.git/objects/8c/6621c94c6284bca72e5afd31e96b689d2e4764
+face-recognition-service/.git/objects/8d/7bcc628458557113bcecef862488cb50dec27b
+face-recognition-service/.git/objects/93/f05364d6713d139a0504a1bc7bb5d9b65325d6
+face-recognition-service/.git/objects/95/f3b8952e4bf401d370bca88d633dda8c2aead2
+face-recognition-service/.git/objects/97/470fcb1395bb603e1f99e7b150e2291ada2946
+face-recognition-service/.git/objects/a1/cc810bf71a50872aa846b1db7558d840ed8b37
+face-recognition-service/.git/objects/a4/2263ea6ae4ca1228cbcb6559ef84457dc14546
+face-recognition-service/.git/objects/b2/99cc70f781ed3d1b2dc0d6d4036fb4de790254
+face-recognition-service/.git/objects/b9/a0b7ee8a72fe496df5e4adb3d56cdfb72ac18b
+face-recognition-service/.git/objects/bb/37d59d0666bcb95994a9b4d5d4232586d3330c
+face-recognition-service/.git/objects/be/fdee9d01a8b8de5cb726f46e1b8d52f9d2af28
+face-recognition-service/.git/objects/c0/e508ae96e7543523d5533870fd0623bab77766
+face-recognition-service/.git/objects/c2/133fa6d6f70f6e7f6b9424a818f24101359b93
+face-recognition-service/.git/objects/c7/bd67b19cd9656f90ea74416d7e2aa0abbd6e03
+face-recognition-service/.git/objects/c8/85b68e10100c30d704275b2f6a202f7ee97f39
+face-recognition-service/.git/objects/c9/39cbee2e7e30ae1f19084ca6c8711a3ea02e34
+face-recognition-service/.git/objects/ca/ae788dd4fb53d3a65c67868602577057199837
+face-recognition-service/.git/objects/cb/f7c65ec760b6c8577cb1274c23ebff0ce053b3
+face-recognition-service/.git/objects/cd/e17adab5e2032bb6aabc7e4271068b0afcb8ba
+face-recognition-service/.git/objects/d1/685fec2447676c69c5defaa2cb6bd011aa564b
+face-recognition-service/.git/objects/d4/36bd68d6649ae3edc2151e023374089c224b1f
+face-recognition-service/.git/objects/d4/6b44f82a5a503ac9898a218dcc03895644d38c
+face-recognition-service/.git/objects/dd/4e8c2b7ebd498b4710516dd1fbb5a5dde44cd9
+face-recognition-service/.git/objects/e0/2abfc9b0e17c18f0c365f044cc760d3b961f4a
+face-recognition-service/.git/objects/e5/9da730eaf68100d45ed6bae46d7ee2f9bca82b
+face-recognition-service/.git/objects/e9/30e18f418152bc5432753e1196ca9aea1e982c
+face-recognition-service/.git/objects/ea/699bbd924352bcde5dd718ba17ae36509610f1
+face-recognition-service/.git/objects/eb/88cfc3054af2065b74ff129267b6978dcc3bd1
+face-recognition-service/.git/objects/ec/c777ccf8b21caf5e0187d1147d5b9ef4f68cf5
+face-recognition-service/.git/objects/ed/68fe82c71a1d73d0105192f83fbf618ba3e845
+face-recognition-service/.git/objects/ed/c5fa338bb4e658cbe30fe2c45cf8739c12305e
+face-recognition-service/.git/objects/ed/e4f9d4f021e532e7218e1853b80a3f1b52fb59
+face-recognition-service/.git/objects/ef/f590e79f03bb71263c8ee7fab24d80886fafe5
+face-recognition-service/.git/objects/f5/39b68ad2106cea9a9fc1310dddb4a043ef38c9
+face-recognition-service/.git/objects/f6/9c4988fae941dfa053afef99bdbe112fe73dba
+face-recognition-service/.git/objects/fb/1e43524ee1bf89ac55a1390f2ee42e3f32308a
+face-recognition-service/.git/objects/fc/5b1cee06712552f5dd489ba3ee670eaba0f269
+face-recognition-service/.git/objects/fe/4f92dbb3b791e459c40469f7e6e4c6f76a43aa
+face-recognition-service/.git/refs/heads/master
 face-recognition-service/api/__init__.py
 face-recognition-service/api/app.py
 face-recognition-service/api/dependencies.py
@@ -80,6 +198,7 @@ face-recognition-service/infra/milvus_client.py
 face-recognition-service/infra/minio_client.py
 face-recognition-service/infra/models.py
 face-recognition-service/infra/patron_repository.py
+face-recognition-service/infra/redis_cache.py
 face-recognition-service/infra/redis_pubsub.py
 face-recognition-service/infra/sse_manager.py
 face-recognition-service/infra/user_repository.py
@@ -118,6 +237,1426 @@ user-service/tsconfig.json
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="face-recognition-service/.git/COMMIT_EDITMSG">
+backup: current state with all 4 fixes (multi-embedding, quality filter, consensus, adaptive threshold)
+</file>
+
+<file path="face-recognition-service/.git/config">
+[core]
+	repositoryformatversion = 0
+	filemode = false
+	bare = false
+	logallrefupdates = true
+	symlinks = false
+	ignorecase = true
+</file>
+
+<file path="face-recognition-service/.git/description">
+Unnamed repository; edit this file 'description' to name the repository.
+</file>
+
+<file path="face-recognition-service/.git/HEAD">
+ref: refs/heads/master
+</file>
+
+<file path="face-recognition-service/.git/hooks/applypatch-msg.sample">
+#!/bin/sh
+#
+# An example hook script to check the commit log message taken by
+# applypatch from an e-mail message.
+#
+# The hook should exit with non-zero status after issuing an
+# appropriate message if it wants to stop the commit.  The hook is
+# allowed to edit the commit message file.
+#
+# To enable this hook, rename this file to "applypatch-msg".
+
+. git-sh-setup
+commitmsg="$(git rev-parse --git-path hooks/commit-msg)"
+test -x "$commitmsg" && exec "$commitmsg" ${1+"$@"}
+:
+</file>
+
+<file path="face-recognition-service/.git/hooks/commit-msg.sample">
+#!/bin/sh
+#
+# An example hook script to check the commit log message.
+# Called by "git commit" with one argument, the name of the file
+# that has the commit message.  The hook should exit with non-zero
+# status after issuing an appropriate message if it wants to stop the
+# commit.  The hook is allowed to edit the commit message file.
+#
+# To enable this hook, rename this file to "commit-msg".
+
+# Uncomment the below to add a Signed-off-by line to the message.
+# Doing this in a hook is a bad idea in general, but the prepare-commit-msg
+# hook is more suited to it.
+#
+# SOB=$(git var GIT_AUTHOR_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
+# grep -qs "^$SOB" "$1" || echo "$SOB" >> "$1"
+
+# This example catches duplicate Signed-off-by lines.
+
+test "" = "$(grep '^Signed-off-by: ' "$1" |
+	 sort | uniq -c | sed -e '/^[ 	]*1[ 	]/d')" || {
+	echo >&2 Duplicate Signed-off-by lines.
+	exit 1
+}
+</file>
+
+<file path="face-recognition-service/.git/hooks/fsmonitor-watchman.sample">
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use IPC::Open2;
+
+# An example hook script to integrate Watchman
+# (https://facebook.github.io/watchman/) with git to speed up detecting
+# new and modified files.
+#
+# The hook is passed a version (currently 2) and last update token
+# formatted as a string and outputs to stdout a new update token and
+# all files that have been modified since the update token. Paths must
+# be relative to the root of the working tree and separated by a single NUL.
+#
+# To enable this hook, rename this file to "query-watchman" and set
+# 'git config core.fsmonitor .git/hooks/query-watchman'
+#
+my ($version, $last_update_token) = @ARGV;
+
+# Uncomment for debugging
+# print STDERR "$0 $version $last_update_token\n";
+
+# Check the hook interface version
+if ($version ne 2) {
+	die "Unsupported query-fsmonitor hook version '$version'.\n" .
+	    "Falling back to scanning...\n";
+}
+
+my $git_work_tree = get_working_dir();
+
+my $retry = 1;
+
+my $json_pkg;
+eval {
+	require JSON::XS;
+	$json_pkg = "JSON::XS";
+	1;
+} or do {
+	require JSON::PP;
+	$json_pkg = "JSON::PP";
+};
+
+launch_watchman();
+
+sub launch_watchman {
+	my $o = watchman_query();
+	if (is_work_tree_watched($o)) {
+		output_result($o->{clock}, @{$o->{files}});
+	}
+}
+
+sub output_result {
+	my ($clockid, @files) = @_;
+
+	# Uncomment for debugging watchman output
+	# open (my $fh, ">", ".git/watchman-output.out");
+	# binmode $fh, ":utf8";
+	# print $fh "$clockid\n@files\n";
+	# close $fh;
+
+	binmode STDOUT, ":utf8";
+	print $clockid;
+	print "\0";
+	local $, = "\0";
+	print @files;
+}
+
+sub watchman_clock {
+	my $response = qx/watchman clock "$git_work_tree"/;
+	die "Failed to get clock id on '$git_work_tree'.\n" .
+		"Falling back to scanning...\n" if $? != 0;
+
+	return $json_pkg->new->utf8->decode($response);
+}
+
+sub watchman_query {
+	my $pid = open2(\*CHLD_OUT, \*CHLD_IN, 'watchman -j --no-pretty')
+	or die "open2() failed: $!\n" .
+	"Falling back to scanning...\n";
+
+	# In the query expression below we're asking for names of files that
+	# changed since $last_update_token but not from the .git folder.
+	#
+	# To accomplish this, we're using the "since" generator to use the
+	# recency index to select candidate nodes and "fields" to limit the
+	# output to file names only. Then we're using the "expression" term to
+	# further constrain the results.
+	my $last_update_line = "";
+	if (substr($last_update_token, 0, 1) eq "c") {
+		$last_update_token = "\"$last_update_token\"";
+		$last_update_line = qq[\n"since": $last_update_token,];
+	}
+	my $query = <<"	END";
+		["query", "$git_work_tree", {$last_update_line
+			"fields": ["name"],
+			"expression": ["not", ["dirname", ".git"]]
+		}]
+	END
+
+	# Uncomment for debugging the watchman query
+	# open (my $fh, ">", ".git/watchman-query.json");
+	# print $fh $query;
+	# close $fh;
+
+	print CHLD_IN $query;
+	close CHLD_IN;
+	my $response = do {local $/; <CHLD_OUT>};
+
+	# Uncomment for debugging the watch response
+	# open ($fh, ">", ".git/watchman-response.json");
+	# print $fh $response;
+	# close $fh;
+
+	die "Watchman: command returned no output.\n" .
+	"Falling back to scanning...\n" if $response eq "";
+	die "Watchman: command returned invalid output: $response\n" .
+	"Falling back to scanning...\n" unless $response =~ /^\{/;
+
+	return $json_pkg->new->utf8->decode($response);
+}
+
+sub is_work_tree_watched {
+	my ($output) = @_;
+	my $error = $output->{error};
+	if ($retry > 0 and $error and $error =~ m/unable to resolve root .* directory (.*) is not watched/) {
+		$retry--;
+		my $response = qx/watchman watch "$git_work_tree"/;
+		die "Failed to make watchman watch '$git_work_tree'.\n" .
+		    "Falling back to scanning...\n" if $? != 0;
+		$output = $json_pkg->new->utf8->decode($response);
+		$error = $output->{error};
+		die "Watchman: $error.\n" .
+		"Falling back to scanning...\n" if $error;
+
+		# Uncomment for debugging watchman output
+		# open (my $fh, ">", ".git/watchman-output.out");
+		# close $fh;
+
+		# Watchman will always return all files on the first query so
+		# return the fast "everything is dirty" flag to git and do the
+		# Watchman query just to get it over with now so we won't pay
+		# the cost in git to look up each individual file.
+		my $o = watchman_clock();
+		$error = $output->{error};
+
+		die "Watchman: $error.\n" .
+		"Falling back to scanning...\n" if $error;
+
+		output_result($o->{clock}, ("/"));
+		$last_update_token = $o->{clock};
+
+		eval { launch_watchman() };
+		return 0;
+	}
+
+	die "Watchman: $error.\n" .
+	"Falling back to scanning...\n" if $error;
+
+	return 1;
+}
+
+sub get_working_dir {
+	my $working_dir;
+	if ($^O =~ 'msys' || $^O =~ 'cygwin') {
+		$working_dir = Win32::GetCwd();
+		$working_dir =~ tr/\\/\//;
+	} else {
+		require Cwd;
+		$working_dir = Cwd::cwd();
+	}
+
+	return $working_dir;
+}
+</file>
+
+<file path="face-recognition-service/.git/hooks/post-update.sample">
+#!/bin/sh
+#
+# An example hook script to prepare a packed repository for use over
+# dumb transports.
+#
+# To enable this hook, rename this file to "post-update".
+
+exec git update-server-info
+</file>
+
+<file path="face-recognition-service/.git/hooks/pre-applypatch.sample">
+#!/bin/sh
+#
+# An example hook script to verify what is about to be committed
+# by applypatch from an e-mail message.
+#
+# The hook should exit with non-zero status after issuing an
+# appropriate message if it wants to stop the commit.
+#
+# To enable this hook, rename this file to "pre-applypatch".
+
+. git-sh-setup
+precommit="$(git rev-parse --git-path hooks/pre-commit)"
+test -x "$precommit" && exec "$precommit" ${1+"$@"}
+:
+</file>
+
+<file path="face-recognition-service/.git/hooks/pre-commit.sample">
+#!/bin/sh
+#
+# An example hook script to verify what is about to be committed.
+# Called by "git commit" with no arguments.  The hook should
+# exit with non-zero status after issuing an appropriate message if
+# it wants to stop the commit.
+#
+# To enable this hook, rename this file to "pre-commit".
+
+if git rev-parse --verify HEAD >/dev/null 2>&1
+then
+	against=HEAD
+else
+	# Initial commit: diff against an empty tree object
+	against=$(git hash-object -t tree /dev/null)
+fi
+
+# If you want to allow non-ASCII filenames set this variable to true.
+allownonascii=$(git config --type=bool hooks.allownonascii)
+
+# Redirect output to stderr.
+exec 1>&2
+
+# Cross platform projects tend to avoid non-ASCII filenames; prevent
+# them from being added to the repository. We exploit the fact that the
+# printable range starts at the space character and ends with tilde.
+if [ "$allownonascii" != "true" ] &&
+	# Note that the use of brackets around a tr range is ok here, (it's
+	# even required, for portability to Solaris 10's /usr/bin/tr), since
+	# the square bracket bytes happen to fall in the designated range.
+	test $(git diff-index --cached --name-only --diff-filter=A -z $against |
+	  LC_ALL=C tr -d '[ -~]\0' | wc -c) != 0
+then
+	cat <<\EOF
+Error: Attempt to add a non-ASCII file name.
+
+This can cause problems if you want to work with people on other platforms.
+
+To be portable it is advisable to rename the file.
+
+If you know what you are doing you can disable this check using:
+
+  git config hooks.allownonascii true
+EOF
+	exit 1
+fi
+
+# If there are whitespace errors, print the offending file names and fail.
+exec git diff-index --check --cached $against --
+</file>
+
+<file path="face-recognition-service/.git/hooks/pre-merge-commit.sample">
+#!/bin/sh
+#
+# An example hook script to verify what is about to be committed.
+# Called by "git merge" with no arguments.  The hook should
+# exit with non-zero status after issuing an appropriate message to
+# stderr if it wants to stop the merge commit.
+#
+# To enable this hook, rename this file to "pre-merge-commit".
+
+. git-sh-setup
+test -x "$GIT_DIR/hooks/pre-commit" &&
+        exec "$GIT_DIR/hooks/pre-commit"
+:
+</file>
+
+<file path="face-recognition-service/.git/hooks/pre-push.sample">
+#!/bin/sh
+
+# An example hook script to verify what is about to be pushed.  Called by "git
+# push" after it has checked the remote status, but before anything has been
+# pushed.  If this script exits with a non-zero status nothing will be pushed.
+#
+# This hook is called with the following parameters:
+#
+# $1 -- Name of the remote to which the push is being done
+# $2 -- URL to which the push is being done
+#
+# If pushing without using a named remote those arguments will be equal.
+#
+# Information about the commits which are being pushed is supplied as lines to
+# the standard input in the form:
+#
+#   <local ref> <local oid> <remote ref> <remote oid>
+#
+# This sample shows how to prevent push of commits where the log message starts
+# with "WIP" (work in progress).
+
+remote="$1"
+url="$2"
+
+zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
+
+while read local_ref local_oid remote_ref remote_oid
+do
+	if test "$local_oid" = "$zero"
+	then
+		# Handle delete
+		:
+	else
+		if test "$remote_oid" = "$zero"
+		then
+			# New branch, examine all commits
+			range="$local_oid"
+		else
+			# Update to existing branch, examine new commits
+			range="$remote_oid..$local_oid"
+		fi
+
+		# Check for WIP commit
+		commit=$(git rev-list -n 1 --grep '^WIP' "$range")
+		if test -n "$commit"
+		then
+			echo >&2 "Found WIP commit in $local_ref, not pushing"
+			exit 1
+		fi
+	fi
+done
+
+exit 0
+</file>
+
+<file path="face-recognition-service/.git/hooks/pre-rebase.sample">
+#!/bin/sh
+#
+# Copyright (c) 2006, 2008 Junio C Hamano
+#
+# The "pre-rebase" hook is run just before "git rebase" starts doing
+# its job, and can prevent the command from running by exiting with
+# non-zero status.
+#
+# The hook is called with the following parameters:
+#
+# $1 -- the upstream the series was forked from.
+# $2 -- the branch being rebased (or empty when rebasing the current branch).
+#
+# This sample shows how to prevent topic branches that are already
+# merged to 'next' branch from getting rebased, because allowing it
+# would result in rebasing already published history.
+
+publish=next
+basebranch="$1"
+if test "$#" = 2
+then
+	topic="refs/heads/$2"
+else
+	topic=`git symbolic-ref HEAD` ||
+	exit 0 ;# we do not interrupt rebasing detached HEAD
+fi
+
+case "$topic" in
+refs/heads/??/*)
+	;;
+*)
+	exit 0 ;# we do not interrupt others.
+	;;
+esac
+
+# Now we are dealing with a topic branch being rebased
+# on top of master.  Is it OK to rebase it?
+
+# Does the topic really exist?
+git show-ref -q "$topic" || {
+	echo >&2 "No such branch $topic"
+	exit 1
+}
+
+# Is topic fully merged to master?
+not_in_master=`git rev-list --pretty=oneline ^master "$topic"`
+if test -z "$not_in_master"
+then
+	echo >&2 "$topic is fully merged to master; better remove it."
+	exit 1 ;# we could allow it, but there is no point.
+fi
+
+# Is topic ever merged to next?  If so you should not be rebasing it.
+only_next_1=`git rev-list ^master "^$topic" ${publish} | sort`
+only_next_2=`git rev-list ^master           ${publish} | sort`
+if test "$only_next_1" = "$only_next_2"
+then
+	not_in_topic=`git rev-list "^$topic" master`
+	if test -z "$not_in_topic"
+	then
+		echo >&2 "$topic is already up to date with master"
+		exit 1 ;# we could allow it, but there is no point.
+	else
+		exit 0
+	fi
+else
+	not_in_next=`git rev-list --pretty=oneline ^${publish} "$topic"`
+	/usr/bin/perl -e '
+		my $topic = $ARGV[0];
+		my $msg = "* $topic has commits already merged to public branch:\n";
+		my (%not_in_next) = map {
+			/^([0-9a-f]+) /;
+			($1 => 1);
+		} split(/\n/, $ARGV[1]);
+		for my $elem (map {
+				/^([0-9a-f]+) (.*)$/;
+				[$1 => $2];
+			} split(/\n/, $ARGV[2])) {
+			if (!exists $not_in_next{$elem->[0]}) {
+				if ($msg) {
+					print STDERR $msg;
+					undef $msg;
+				}
+				print STDERR " $elem->[1]\n";
+			}
+		}
+	' "$topic" "$not_in_next" "$not_in_master"
+	exit 1
+fi
+
+<<\DOC_END
+
+This sample hook safeguards topic branches that have been
+published from being rewound.
+
+The workflow assumed here is:
+
+ * Once a topic branch forks from "master", "master" is never
+   merged into it again (either directly or indirectly).
+
+ * Once a topic branch is fully cooked and merged into "master",
+   it is deleted.  If you need to build on top of it to correct
+   earlier mistakes, a new topic branch is created by forking at
+   the tip of the "master".  This is not strictly necessary, but
+   it makes it easier to keep your history simple.
+
+ * Whenever you need to test or publish your changes to topic
+   branches, merge them into "next" branch.
+
+The script, being an example, hardcodes the publish branch name
+to be "next", but it is trivial to make it configurable via
+$GIT_DIR/config mechanism.
+
+With this workflow, you would want to know:
+
+(1) ... if a topic branch has ever been merged to "next".  Young
+    topic branches can have stupid mistakes you would rather
+    clean up before publishing, and things that have not been
+    merged into other branches can be easily rebased without
+    affecting other people.  But once it is published, you would
+    not want to rewind it.
+
+(2) ... if a topic branch has been fully merged to "master".
+    Then you can delete it.  More importantly, you should not
+    build on top of it -- other people may already want to
+    change things related to the topic as patches against your
+    "master", so if you need further changes, it is better to
+    fork the topic (perhaps with the same name) afresh from the
+    tip of "master".
+
+Let's look at this example:
+
+		   o---o---o---o---o---o---o---o---o---o "next"
+		  /       /           /           /
+		 /   a---a---b A     /           /
+		/   /               /           /
+	       /   /   c---c---c---c B         /
+	      /   /   /             \         /
+	     /   /   /   b---b C     \       /
+	    /   /   /   /             \     /
+    ---o---o---o---o---o---o---o---o---o---o---o "master"
+
+
+A, B and C are topic branches.
+
+ * A has one fix since it was merged up to "next".
+
+ * B has finished.  It has been fully merged up to "master" and "next",
+   and is ready to be deleted.
+
+ * C has not merged to "next" at all.
+
+We would want to allow C to be rebased, refuse A, and encourage
+B to be deleted.
+
+To compute (1):
+
+	git rev-list ^master ^topic next
+	git rev-list ^master        next
+
+	if these match, topic has not merged in next at all.
+
+To compute (2):
+
+	git rev-list master..topic
+
+	if this is empty, it is fully merged to "master".
+
+DOC_END
+</file>
+
+<file path="face-recognition-service/.git/hooks/pre-receive.sample">
+#!/bin/sh
+#
+# An example hook script to make use of push options.
+# The example simply echoes all push options that start with 'echoback='
+# and rejects all pushes when the "reject" push option is used.
+#
+# To enable this hook, rename this file to "pre-receive".
+
+if test -n "$GIT_PUSH_OPTION_COUNT"
+then
+	i=0
+	while test "$i" -lt "$GIT_PUSH_OPTION_COUNT"
+	do
+		eval "value=\$GIT_PUSH_OPTION_$i"
+		case "$value" in
+		echoback=*)
+			echo "echo from the pre-receive-hook: ${value#*=}" >&2
+			;;
+		reject)
+			exit 1
+		esac
+		i=$((i + 1))
+	done
+fi
+</file>
+
+<file path="face-recognition-service/.git/hooks/prepare-commit-msg.sample">
+#!/bin/sh
+#
+# An example hook script to prepare the commit log message.
+# Called by "git commit" with the name of the file that has the
+# commit message, followed by the description of the commit
+# message's source.  The hook's purpose is to edit the commit
+# message file.  If the hook fails with a non-zero status,
+# the commit is aborted.
+#
+# To enable this hook, rename this file to "prepare-commit-msg".
+
+# This hook includes three examples. The first one removes the
+# "# Please enter the commit message..." help message.
+#
+# The second includes the output of "git diff --name-status -r"
+# into the message, just before the "git status" output.  It is
+# commented because it doesn't cope with --amend or with squashed
+# commits.
+#
+# The third example adds a Signed-off-by line to the message, that can
+# still be edited.  This is rarely a good idea.
+
+COMMIT_MSG_FILE=$1
+COMMIT_SOURCE=$2
+SHA1=$3
+
+/usr/bin/perl -i.bak -ne 'print unless(m/^. Please enter the commit message/..m/^#$/)' "$COMMIT_MSG_FILE"
+
+# case "$COMMIT_SOURCE,$SHA1" in
+#  ,|template,)
+#    /usr/bin/perl -i.bak -pe '
+#       print "\n" . `git diff --cached --name-status -r`
+# 	 if /^#/ && $first++ == 0' "$COMMIT_MSG_FILE" ;;
+#  *) ;;
+# esac
+
+# SOB=$(git var GIT_COMMITTER_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
+# git interpret-trailers --in-place --trailer "$SOB" "$COMMIT_MSG_FILE"
+# if test -z "$COMMIT_SOURCE"
+# then
+#   /usr/bin/perl -i.bak -pe 'print "\n" if !$first_line++' "$COMMIT_MSG_FILE"
+# fi
+</file>
+
+<file path="face-recognition-service/.git/hooks/push-to-checkout.sample">
+#!/bin/sh
+
+# An example hook script to update a checked-out tree on a git push.
+#
+# This hook is invoked by git-receive-pack(1) when it reacts to git
+# push and updates reference(s) in its repository, and when the push
+# tries to update the branch that is currently checked out and the
+# receive.denyCurrentBranch configuration variable is set to
+# updateInstead.
+#
+# By default, such a push is refused if the working tree and the index
+# of the remote repository has any difference from the currently
+# checked out commit; when both the working tree and the index match
+# the current commit, they are updated to match the newly pushed tip
+# of the branch. This hook is to be used to override the default
+# behaviour; however the code below reimplements the default behaviour
+# as a starting point for convenient modification.
+#
+# The hook receives the commit with which the tip of the current
+# branch is going to be updated:
+commit=$1
+
+# It can exit with a non-zero status to refuse the push (when it does
+# so, it must not modify the index or the working tree).
+die () {
+	echo >&2 "$*"
+	exit 1
+}
+
+# Or it can make any necessary changes to the working tree and to the
+# index to bring them to the desired state when the tip of the current
+# branch is updated to the new commit, and exit with a zero status.
+#
+# For example, the hook can simply run git read-tree -u -m HEAD "$1"
+# in order to emulate git fetch that is run in the reverse direction
+# with git push, as the two-tree form of git read-tree -u -m is
+# essentially the same as git switch or git checkout that switches
+# branches while keeping the local changes in the working tree that do
+# not interfere with the difference between the branches.
+
+# The below is a more-or-less exact translation to shell of the C code
+# for the default behaviour for git's push-to-checkout hook defined in
+# the push_to_deploy() function in builtin/receive-pack.c.
+#
+# Note that the hook will be executed from the repository directory,
+# not from the working tree, so if you want to perform operations on
+# the working tree, you will have to adapt your code accordingly, e.g.
+# by adding "cd .." or using relative paths.
+
+if ! git update-index -q --ignore-submodules --refresh
+then
+	die "Up-to-date check failed"
+fi
+
+if ! git diff-files --quiet --ignore-submodules --
+then
+	die "Working directory has unstaged changes"
+fi
+
+# This is a rough translation of:
+#
+#   head_has_history() ? "HEAD" : EMPTY_TREE_SHA1_HEX
+if git cat-file -e HEAD 2>/dev/null
+then
+	head=HEAD
+else
+	head=$(git hash-object -t tree --stdin </dev/null)
+fi
+
+if ! git diff-index --quiet --cached --ignore-submodules $head --
+then
+	die "Working directory has staged changes"
+fi
+
+if ! git read-tree -u -m "$commit"
+then
+	die "Could not update working tree to new HEAD"
+fi
+</file>
+
+<file path="face-recognition-service/.git/hooks/sendemail-validate.sample">
+#!/bin/sh
+
+# An example hook script to validate a patch (and/or patch series) before
+# sending it via email.
+#
+# The hook should exit with non-zero status after issuing an appropriate
+# message if it wants to prevent the email(s) from being sent.
+#
+# To enable this hook, rename this file to "sendemail-validate".
+#
+# By default, it will only check that the patch(es) can be applied on top of
+# the default upstream branch without conflicts in a secondary worktree. After
+# validation (successful or not) of the last patch of a series, the worktree
+# will be deleted.
+#
+# The following config variables can be set to change the default remote and
+# remote ref that are used to apply the patches against:
+#
+#   sendemail.validateRemote (default: origin)
+#   sendemail.validateRemoteRef (default: HEAD)
+#
+# Replace the TODO placeholders with appropriate checks according to your
+# needs.
+
+validate_cover_letter () {
+	file="$1"
+	# TODO: Replace with appropriate checks (e.g. spell checking).
+	true
+}
+
+validate_patch () {
+	file="$1"
+	# Ensure that the patch applies without conflicts.
+	git am -3 "$file" || return
+	# TODO: Replace with appropriate checks for this patch
+	# (e.g. checkpatch.pl).
+	true
+}
+
+validate_series () {
+	# TODO: Replace with appropriate checks for the whole series
+	# (e.g. quick build, coding style checks, etc.).
+	true
+}
+
+# main -------------------------------------------------------------------------
+
+if test "$GIT_SENDEMAIL_FILE_COUNTER" = 1
+then
+	remote=$(git config --default origin --get sendemail.validateRemote) &&
+	ref=$(git config --default HEAD --get sendemail.validateRemoteRef) &&
+	worktree=$(mktemp --tmpdir -d sendemail-validate.XXXXXXX) &&
+	git worktree add -fd --checkout "$worktree" "refs/remotes/$remote/$ref" &&
+	git config --replace-all sendemail.validateWorktree "$worktree"
+else
+	worktree=$(git config --get sendemail.validateWorktree)
+fi || {
+	echo "sendemail-validate: error: failed to prepare worktree" >&2
+	exit 1
+}
+
+unset GIT_DIR GIT_WORK_TREE
+cd "$worktree" &&
+
+if grep -q "^diff --git " "$1"
+then
+	validate_patch "$1"
+else
+	validate_cover_letter "$1"
+fi &&
+
+if test "$GIT_SENDEMAIL_FILE_COUNTER" = "$GIT_SENDEMAIL_FILE_TOTAL"
+then
+	git config --unset-all sendemail.validateWorktree &&
+	trap 'git worktree remove -ff "$worktree"' EXIT &&
+	validate_series
+fi
+</file>
+
+<file path="face-recognition-service/.git/hooks/update.sample">
+#!/bin/sh
+#
+# An example hook script to block unannotated tags from entering.
+# Called by "git receive-pack" with arguments: refname sha1-old sha1-new
+#
+# To enable this hook, rename this file to "update".
+#
+# Config
+# ------
+# hooks.allowunannotated
+#   This boolean sets whether unannotated tags will be allowed into the
+#   repository.  By default they won't be.
+# hooks.allowdeletetag
+#   This boolean sets whether deleting tags will be allowed in the
+#   repository.  By default they won't be.
+# hooks.allowmodifytag
+#   This boolean sets whether a tag may be modified after creation. By default
+#   it won't be.
+# hooks.allowdeletebranch
+#   This boolean sets whether deleting branches will be allowed in the
+#   repository.  By default they won't be.
+# hooks.denycreatebranch
+#   This boolean sets whether remotely creating branches will be denied
+#   in the repository.  By default this is allowed.
+#
+
+# --- Command line
+refname="$1"
+oldrev="$2"
+newrev="$3"
+
+# --- Safety check
+if [ -z "$GIT_DIR" ]; then
+	echo "Don't run this script from the command line." >&2
+	echo " (if you want, you could supply GIT_DIR then run" >&2
+	echo "  $0 <ref> <oldrev> <newrev>)" >&2
+	exit 1
+fi
+
+if [ -z "$refname" -o -z "$oldrev" -o -z "$newrev" ]; then
+	echo "usage: $0 <ref> <oldrev> <newrev>" >&2
+	exit 1
+fi
+
+# --- Config
+allowunannotated=$(git config --type=bool hooks.allowunannotated)
+allowdeletebranch=$(git config --type=bool hooks.allowdeletebranch)
+denycreatebranch=$(git config --type=bool hooks.denycreatebranch)
+allowdeletetag=$(git config --type=bool hooks.allowdeletetag)
+allowmodifytag=$(git config --type=bool hooks.allowmodifytag)
+
+# check for no description
+projectdesc=$(sed -e '1q' "$GIT_DIR/description")
+case "$projectdesc" in
+"Unnamed repository"* | "")
+	echo "*** Project description file hasn't been set" >&2
+	exit 1
+	;;
+esac
+
+# --- Check types
+# if $newrev is 0000...0000, it's a commit to delete a ref.
+zero=$(git hash-object --stdin </dev/null | tr '[0-9a-f]' '0')
+if [ "$newrev" = "$zero" ]; then
+	newrev_type=delete
+else
+	newrev_type=$(git cat-file -t $newrev)
+fi
+
+case "$refname","$newrev_type" in
+	refs/tags/*,commit)
+		# un-annotated tag
+		short_refname=${refname##refs/tags/}
+		if [ "$allowunannotated" != "true" ]; then
+			echo "*** The un-annotated tag, $short_refname, is not allowed in this repository" >&2
+			echo "*** Use 'git tag [ -a | -s ]' for tags you want to propagate." >&2
+			exit 1
+		fi
+		;;
+	refs/tags/*,delete)
+		# delete tag
+		if [ "$allowdeletetag" != "true" ]; then
+			echo "*** Deleting a tag is not allowed in this repository" >&2
+			exit 1
+		fi
+		;;
+	refs/tags/*,tag)
+		# annotated tag
+		if [ "$allowmodifytag" != "true" ] && git rev-parse $refname > /dev/null 2>&1
+		then
+			echo "*** Tag '$refname' already exists." >&2
+			echo "*** Modifying a tag is not allowed in this repository." >&2
+			exit 1
+		fi
+		;;
+	refs/heads/*,commit)
+		# branch
+		if [ "$oldrev" = "$zero" -a "$denycreatebranch" = "true" ]; then
+			echo "*** Creating a branch is not allowed in this repository" >&2
+			exit 1
+		fi
+		;;
+	refs/heads/*,delete)
+		# delete branch
+		if [ "$allowdeletebranch" != "true" ]; then
+			echo "*** Deleting a branch is not allowed in this repository" >&2
+			exit 1
+		fi
+		;;
+	refs/remotes/*,commit)
+		# tracking branch
+		;;
+	refs/remotes/*,delete)
+		# delete tracking branch
+		if [ "$allowdeletebranch" != "true" ]; then
+			echo "*** Deleting a tracking branch is not allowed in this repository" >&2
+			exit 1
+		fi
+		;;
+	*)
+		# Anything else (is there anything else?)
+		echo "*** Update hook: unknown type of update to ref $refname of type $newrev_type" >&2
+		exit 1
+		;;
+esac
+
+# --- Finished
+exit 0
+</file>
+
+<file path="face-recognition-service/.git/info/exclude">
+# git ls-files --others --exclude-from=.git/info/exclude
+# Lines that start with '#' are comments.
+# For a project mostly in C, the following would be a good set of
+# exclude patterns (uncomment them if you want to use them):
+# *.[oa]
+# *~
+</file>
+
+<file path="face-recognition-service/.git/logs/HEAD">
+0000000000000000000000000000000000000000 4f319412af4ec84431e8d304f962d4f92c1a082c MaiHuynhDuongTuanKiet-22664321 <maihuynhduongtuankiet7924@gmail.com> 1781152858 +0700	commit (initial): backup: current state with all 4 fixes (multi-embedding, quality filter, consensus, adaptive threshold)
+</file>
+
+<file path="face-recognition-service/.git/logs/refs/heads/master">
+0000000000000000000000000000000000000000 4f319412af4ec84431e8d304f962d4f92c1a082c MaiHuynhDuongTuanKiet-22664321 <maihuynhduongtuankiet7924@gmail.com> 1781152858 +0700	commit (initial): backup: current state with all 4 fixes (multi-embedding, quality filter, consensus, adaptive threshold)
+</file>
+
+<file path="face-recognition-service/.git/refs/heads/master">
+4f319412af4ec84431e8d304f962d4f92c1a082c
+</file>
+
+<file path="api-gateway/.dockerignore">
+node_modules
+.env
+*.log
+.DS_Store
+</file>
+
+<file path="api-gateway/.env.example">
+PORT=80
+NODE_ENV=production
+CORS_ORIGINS=*
+FACE_RECOGNITION_API=http://face-recognition-api:8000
+USER_SERVICE=http://user-service:3001
+</file>
+
+<file path="api-gateway/docker-compose.yml">
+version: "3.9"
+
+services:
+  gateway:
+    image: nginx:alpine
+    container_name: api-gateway
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - face-network
+      - frontend-network
+    restart: unless-stopped
+
+networks:
+  face-network:
+    external: true
+    name: face-network
+  frontend-network:
+    external: true
+    name: frontend-network
+</file>
+
+<file path="api-gateway/Dockerfile">
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install --only=production
+
+COPY dist ./dist
+
+EXPOSE 80
+
+CMD ["node", "dist/index.js"]
+</file>
+
+<file path="api-gateway/package.json">
+{
+  "name": "api-gateway",
+  "version": "1.0.0",
+  "description": "Node.js API Gateway for Face Recognition Platform",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "docker:build": "docker build -t api-gateway ."
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "http-proxy-middleware": "^3.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.0",
+    "@types/cors": "^2.8.17",
+    "@types/morgan": "^1.9.9",
+    "typescript": "^5.3.2",
+    "ts-node": "^10.9.2"
+  }
+}
+</file>
+
+<file path="api-gateway/src/proxy.ts">
+import { createProxyMiddleware } from 'http-proxy-middleware';
+import { config } from './config';
+
+export const setupProxy = (app: any) => {
+  app.use((req: any, res: any, next: any) => {
+    console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl || req.url}`);
+    next();
+  });
+
+  // User Service proxy - use originalUrl to preserve full path
+  app.use('/users', createProxyMiddleware({
+    target: config.services.userService,
+    changeOrigin: true,
+    pathRewrite: (path: string, req: any) => {
+      // Use originalUrl which has the full path before Express strips mount point
+      const originalPath = req.originalUrl || req.url;
+      console.log(`  User proxy: ${originalPath}`);
+      return originalPath;
+    },
+  }));
+
+  // Face API proxy
+  app.use('/api', createProxyMiddleware({
+    target: config.services.faceRecognitionApi,
+    changeOrigin: true,
+    pathRewrite: (path: string, req: any) => {
+      const originalPath = req.originalUrl || req.url;
+      // Strip /api prefix and use the rest
+      const newPath = originalPath.replace(/^\/api/, '') || '/';
+      console.log(`  Face API proxy: ${originalPath} -> ${newPath}`);
+      return newPath;
+    },
+  }));
+
+  app.use('/docs', createProxyMiddleware({
+    target: config.services.faceRecognitionApi,
+    changeOrigin: true,
+  }));
+
+  app.use('/openapi.json', createProxyMiddleware({
+    target: config.services.faceRecognitionApi,
+    changeOrigin: true,
+  }));
+
+  app.use('/redoc', createProxyMiddleware({
+    target: config.services.faceRecognitionApi,
+    changeOrigin: true,
+  }));
+
+  app.get('/healthz', (req: any, res: any) => {
+    res.json({ status: 'ok', gateway: 'Node.js-API-Gateway', timestamp: new Date().toISOString() });
+  });
+
+  app.get('/', (req: any, res: any) => {
+    res.json({
+      name: 'Face Recognition Platform API Gateway',
+      version: '1.0.0',
+      gateway: 'Node.js',
+    });
+  });
+};
+</file>
+
+<file path="api-gateway/tsconfig.json">
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["ES2020"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
+</file>
+
+<file path="face-recognition-service/.env.example">
+# --- API/Worker common ---
+APP_NAME=face-recognition-platform
+ENV=dev
+LOG_LEVEL=INFO
+
+# --- JWT ---
+JWT_ISSUER=face-recognition
+JWT_AUDIENCE=face-recognition-users
+JWT_ACCESS_SECRET=change_me_access_secret
+JWT_REFRESH_SECRET=change_me_refresh_secret
+JWT_ACCESS_EXPIRES_MINUTES=15
+JWT_REFRESH_EXPIRES_DAYS=30
+
+# --- RBAC ---
+# Roles: admin, user
+# (Seed users can be added later)
+
+# --- Redis (Celery + Cooldown) ---
+REDIS_URL=redis://redis:6379/0
+
+# --- Postgres ---
+POSTGRES_URL=postgresql+psycopg://postgres:postgres@postgres:5432/face_recognition
+POSTGRES_DB=face_recognition
+
+# --- MinIO (Object Storage for encrypted raw images) ---
+MINIO_ENDPOINT=minio:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+MINIO_BUCKET=face-raw-images
+
+# --- Milvus ---
+MILVUS_HOST=milvus
+MILVUS_PORT=19530
+MILVUS_COLLECTION=face_embeddings
+
+# --- Inference ---
+# Toggle based on available GPU.
+USE_CUDA=false
+MAX_IMAGE_WIDTH=1280
+MAX_IMAGE_HEIGHT=1280
+MAX_IMAGE_PIXELS=2073600  # 1280*1280
+
+# --- Celery ---
+CELERY_BROKER_URL=redis://redis:6379/1
+CELERY_RESULT_BACKEND=redis://redis:6379/2
+CELERY_TASK_SERIALIZER=json
+CELERY_RESULT_SERIALIZER=json
+
+# --- Privacy / Encryption ---
+# Placeholder: implement encryption-at-rest via MinIO SSE or app-level encryption later.
+# For local encrypted fallback:
+DATA_ENCRYPTION_KEY=change_me_32_bytes_minimum
+</file>
+
+<file path="face-recognition-service/api/__init__.py">
+
+</file>
+
+<file path="face-recognition-service/api/routers/camera.py">
+from __future__ import annotations
+
+import logging
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from api.dependencies import get_current_user
+from core.schemas import CameraStatusResponse
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/camera", tags=["camera"])
+
+
+def _get_stream_service():
+    from worker.stream_service import stream_service
+    return stream_service
+
+
+@router.get("/status", response_model=List[CameraStatusResponse])
+async def get_camera_status(_=Depends(get_current_user)):
+    ss = _get_stream_service()
+    return ss.get_all_status()
+
+
+@router.get("/status/{camera_id}", response_model=CameraStatusResponse)
+async def get_camera_status_by_id(camera_id: str, _=Depends(get_current_user)):
+    ss = _get_stream_service()
+    status = ss.get_status(camera_id)
+    if not status:
+        raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
+    return status
+
+
+@router.post("/reconnect/{camera_id}")
+async def reconnect_camera(camera_id: str, _=Depends(get_current_user)):
+    ss = _get_stream_service()
+    ok = ss.reconnect(camera_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
+    return {"message": f"Camera {camera_id} reconnection triggered"}
+
+
+@router.post("/reconnect-all")
+async def reconnect_all_cameras(_=Depends(get_current_user)):
+    ss = _get_stream_service()
+    ids = []
+    for s in ss.get_all_status():
+        ss.reconnect(s["camera_id"])
+        ids.append(s["camera_id"])
+    return {"message": "Reconnection triggered for all cameras", "cameras": ids}
+</file>
+
+<file path="face-recognition-service/core/repositories.py">
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Protocol
+
+
+@dataclass(frozen=True)
+class EmbeddingSearchResult:
+    user_id: str
+    score: float
+
+
+class EmbeddingRepository(Protocol):
+    async def upsert_embedding(self, user_id: str, embedding: list[float]) -> None: ...
+
+    async def search_1n(
+        self, embedding: list[float], top_k: int = 1, metric: str = "cosine"
+    ) -> list[EmbeddingSearchResult]: ...
+
+    async def delete_user_embeddings(self, user_id: str) -> None: ...
+
+
+class UserRepository(Protocol):
+    async def create_user(self, email: str, password_hash: str, role: str) -> str: ...
+
+    async def get_user_by_email(self, email: str): ...
+
+    async def get_user_by_id(self, user_id: str): ...
+
+    async def delete_user(self, user_id: str) -> None: ...
+
+
+class AuditLogRepository(Protocol):
+    async def insert_event(self, *, user_id: str | None, event_type: str, metadata: dict) -> None: ...
+</file>
+
+<file path="face-recognition-service/core/security.py">
+from __future__ import annotations
+
+import datetime as dt
+from typing import Literal
+
+from jose import jwt
+
+
+def create_access_token(
+    *,
+    subject: str,
+    secret: str,
+    issuer: str,
+    audience: str,
+    expires_minutes: int,
+    roles: list[str],
+) -> str:
+    now = dt.datetime.now(dt.UTC)
+    exp = now + dt.timedelta(minutes=expires_minutes)
+    payload = {
+        "sub": subject,
+        "iss": issuer,
+        "aud": audience,
+        "exp": exp,
+        "roles": roles,
+        "typ": "access",
+        "iat": now,
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def create_refresh_token(
+    *,
+    subject: str,
+    secret: str,
+    issuer: str,
+    audience: str,
+    expires_days: int,
+    roles: list[str],
+) -> str:
+    now = dt.datetime.now(dt.UTC)
+    exp = now + dt.timedelta(days=expires_days)
+    payload = {
+        "sub": subject,
+        "iss": issuer,
+        "aud": audience,
+        "exp": exp,
+        "roles": roles,
+        "typ": "refresh",
+        "iat": now,
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+TokenType = Literal["access", "refresh"]
+
+
+def decode_token(
+    *,
+    token: str,
+    secret: str,
+    issuer: str,
+    audience: str,
+    expected_type: TokenType,
+) -> dict:
+    payload = jwt.decode(token, secret, algorithms=["HS256"], issuer=issuer, audience=audience)
+    if payload.get("typ") != expected_type:
+        raise ValueError("Invalid token type")
+    return payload
+</file>
+
+<file path="face-recognition-service/infra/cooldown.py">
+from __future__ import annotations
+
+import redis.asyncio as aioredis
+
+from infra.config import settings
+
+
+class CooldownService:
+    def __init__(self) -> None:
+        self._redis: aioredis.Redis | None = None
+
+    async def _get_redis(self) -> aioredis.Redis:
+        if self._redis is None:
+            self._redis = aioredis.from_url(
+                settings.redis_url, encoding="utf-8", decode_responses=True
+            )
+        return self._redis
+
+    async def acquire(self, key: str, cooldown_seconds: int = 5) -> bool:
+        r = await self._get_redis()
+        exists = await r.exists(f"cooldown:{key}")
+        if exists:
+            return False
+        await r.setex(f"cooldown:{key}", cooldown_seconds, "1")
+        return True
+
+    async def close(self) -> None:
+        if self._redis is not None:
+            await self._redis.close()
+            self._redis = None
+</file>
+
+<file path="face-recognition-service/infra/crypto.py">
+from __future__ import annotations
+
+import base64
+
+from cryptography.fernet import Fernet
+
+from infra.config import settings
+
+
+def _get_fernet() -> Fernet:
+    raw = settings.data_encryption_key.encode("utf-8")
+    if len(raw) < 32:
+        raw = raw + b"x" * (32 - len(raw))
+    else:
+        raw = raw[:32]
+    key = base64.urlsafe_b64encode(raw)
+    return Fernet(key)
+
+
+def encrypt_data(data: bytes) -> bytes:
+    return _get_fernet().encrypt(data)
+
+
+def decrypt_data(data: bytes) -> bytes:
+    return _get_fernet().decrypt(data)
+</file>
+
+<file path="face-recognition-service/infra/redis_cache.py">
+from __future__ import annotations
+
+import logging
+
+import redis as _redis
+
+from infra.config import settings
+
+logger = logging.getLogger(__name__)
+
+redis_client: _redis.Redis = _redis.from_url(settings.redis_url, decode_responses=False)
+</file>
 
 <file path="face-recognition-service/models/MobileNetSSD_deploy.prototxt">
 name: "MobileNet-SSD"
@@ -3224,697 +4763,6 @@ layer {
 }
 </file>
 
-<file path="api-gateway/.dockerignore">
-node_modules
-.env
-*.log
-.DS_Store
-</file>
-
-<file path="api-gateway/.env.example">
-PORT=80
-NODE_ENV=production
-CORS_ORIGINS=*
-FACE_RECOGNITION_API=http://face-recognition-api:8000
-USER_SERVICE=http://user-service:3001
-</file>
-
-<file path="api-gateway/docker-compose.yml">
-version: "3.9"
-
-services:
-  gateway:
-    image: nginx:alpine
-    container_name: api-gateway
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    networks:
-      - face-network
-      - frontend-network
-    restart: unless-stopped
-
-networks:
-  face-network:
-    external: true
-    name: face-network
-  frontend-network:
-    external: true
-    name: frontend-network
-</file>
-
-<file path="api-gateway/Dockerfile">
-FROM node:20-alpine
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm install --only=production
-
-COPY dist ./dist
-
-EXPOSE 80
-
-CMD ["node", "dist/index.js"]
-</file>
-
-<file path="api-gateway/package.json">
-{
-  "name": "api-gateway",
-  "version": "1.0.0",
-  "description": "Node.js API Gateway for Face Recognition Platform",
-  "main": "dist/index.js",
-  "scripts": {
-    "dev": "ts-node src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "docker:build": "docker build -t api-gateway ."
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "http-proxy-middleware": "^3.0.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "helmet": "^7.1.0",
-    "morgan": "^1.10.0"
-  },
-  "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.10.0",
-    "@types/cors": "^2.8.17",
-    "@types/morgan": "^1.9.9",
-    "typescript": "^5.3.2",
-    "ts-node": "^10.9.2"
-  }
-}
-</file>
-
-<file path="api-gateway/src/proxy.ts">
-import { createProxyMiddleware } from 'http-proxy-middleware';
-import { config } from './config';
-
-export const setupProxy = (app: any) => {
-  app.use((req: any, res: any, next: any) => {
-    console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl || req.url}`);
-    next();
-  });
-
-  // User Service proxy - use originalUrl to preserve full path
-  app.use('/users', createProxyMiddleware({
-    target: config.services.userService,
-    changeOrigin: true,
-    pathRewrite: (path: string, req: any) => {
-      // Use originalUrl which has the full path before Express strips mount point
-      const originalPath = req.originalUrl || req.url;
-      console.log(`  User proxy: ${originalPath}`);
-      return originalPath;
-    },
-  }));
-
-  // Face API proxy
-  app.use('/api', createProxyMiddleware({
-    target: config.services.faceRecognitionApi,
-    changeOrigin: true,
-    pathRewrite: (path: string, req: any) => {
-      const originalPath = req.originalUrl || req.url;
-      // Strip /api prefix and use the rest
-      const newPath = originalPath.replace(/^\/api/, '') || '/';
-      console.log(`  Face API proxy: ${originalPath} -> ${newPath}`);
-      return newPath;
-    },
-  }));
-
-  app.use('/docs', createProxyMiddleware({
-    target: config.services.faceRecognitionApi,
-    changeOrigin: true,
-  }));
-
-  app.use('/openapi.json', createProxyMiddleware({
-    target: config.services.faceRecognitionApi,
-    changeOrigin: true,
-  }));
-
-  app.use('/redoc', createProxyMiddleware({
-    target: config.services.faceRecognitionApi,
-    changeOrigin: true,
-  }));
-
-  app.get('/healthz', (req: any, res: any) => {
-    res.json({ status: 'ok', gateway: 'Node.js-API-Gateway', timestamp: new Date().toISOString() });
-  });
-
-  app.get('/', (req: any, res: any) => {
-    res.json({
-      name: 'Face Recognition Platform API Gateway',
-      version: '1.0.0',
-      gateway: 'Node.js',
-    });
-  });
-};
-</file>
-
-<file path="api-gateway/tsconfig.json">
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "commonjs",
-    "lib": ["ES2020"],
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true
-  },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
-}
-</file>
-
-<file path="face-recognition-service/.env.example">
-# --- API/Worker common ---
-APP_NAME=face-recognition-platform
-ENV=dev
-LOG_LEVEL=INFO
-
-# --- JWT ---
-JWT_ISSUER=face-recognition
-JWT_AUDIENCE=face-recognition-users
-JWT_ACCESS_SECRET=change_me_access_secret
-JWT_REFRESH_SECRET=change_me_refresh_secret
-JWT_ACCESS_EXPIRES_MINUTES=15
-JWT_REFRESH_EXPIRES_DAYS=30
-
-# --- RBAC ---
-# Roles: admin, user
-# (Seed users can be added later)
-
-# --- Redis (Celery + Cooldown) ---
-REDIS_URL=redis://redis:6379/0
-
-# --- Postgres ---
-POSTGRES_URL=postgresql+psycopg://postgres:postgres@postgres:5432/face_recognition
-POSTGRES_DB=face_recognition
-
-# --- MinIO (Object Storage for encrypted raw images) ---
-MINIO_ENDPOINT=minio:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET=face-raw-images
-
-# --- Milvus ---
-MILVUS_HOST=milvus
-MILVUS_PORT=19530
-MILVUS_COLLECTION=face_embeddings
-
-# --- Inference ---
-# Toggle based on available GPU.
-USE_CUDA=false
-MAX_IMAGE_WIDTH=1280
-MAX_IMAGE_HEIGHT=1280
-MAX_IMAGE_PIXELS=2073600  # 1280*1280
-
-# --- Celery ---
-CELERY_BROKER_URL=redis://redis:6379/1
-CELERY_RESULT_BACKEND=redis://redis:6379/2
-CELERY_TASK_SERIALIZER=json
-CELERY_RESULT_SERIALIZER=json
-
-# --- Privacy / Encryption ---
-# Placeholder: implement encryption-at-rest via MinIO SSE or app-level encryption later.
-# For local encrypted fallback:
-DATA_ENCRYPTION_KEY=change_me_32_bytes_minimum
-</file>
-
-<file path="face-recognition-service/api/__init__.py">
-
-</file>
-
-<file path="face-recognition-service/api/routers/camera.py">
-from __future__ import annotations
-
-import logging
-from typing import List
-
-from fastapi import APIRouter, Depends, HTTPException
-
-from api.dependencies import get_current_user
-from core.schemas import CameraStatusResponse
-
-logger = logging.getLogger(__name__)
-
-router = APIRouter(prefix="/camera", tags=["camera"])
-
-
-def _get_stream_service():
-    from worker.stream_service import stream_service
-    return stream_service
-
-
-@router.get("/status", response_model=List[CameraStatusResponse])
-async def get_camera_status(_=Depends(get_current_user)):
-    ss = _get_stream_service()
-    return ss.get_all_status()
-
-
-@router.get("/status/{camera_id}", response_model=CameraStatusResponse)
-async def get_camera_status_by_id(camera_id: str, _=Depends(get_current_user)):
-    ss = _get_stream_service()
-    status = ss.get_status(camera_id)
-    if not status:
-        raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
-    return status
-
-
-@router.post("/reconnect/{camera_id}")
-async def reconnect_camera(camera_id: str, _=Depends(get_current_user)):
-    ss = _get_stream_service()
-    ok = ss.reconnect(camera_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
-    return {"message": f"Camera {camera_id} reconnection triggered"}
-
-
-@router.post("/reconnect-all")
-async def reconnect_all_cameras(_=Depends(get_current_user)):
-    ss = _get_stream_service()
-    ids = []
-    for s in ss.get_all_status():
-        ss.reconnect(s["camera_id"])
-        ids.append(s["camera_id"])
-    return {"message": "Reconnection triggered for all cameras", "cameras": ids}
-</file>
-
-<file path="face-recognition-service/api/routers/tasks.py">
-from __future__ import annotations
-
-import json
-from celery.result import AsyncResult
-from fastapi import APIRouter, HTTPException, status
-from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel
-
-from worker.celery_app import celery_app
-
-router = APIRouter(prefix="/tasks", tags=["tasks"])
-
-
-class TaskStatusResponse(BaseModel):
-    task_id: str
-    status: str
-    result: dict | None = None
-
-
-def _get_task_result_sync(task_id: str) -> dict:
-    task_result = AsyncResult(task_id, app=celery_app)
-    task_status = task_result.status
-    response_result = None
-
-    try:
-        if task_status == "SUCCESS":
-            try:
-                raw = task_result.result
-                if raw is None:
-                    response_result = None
-                elif isinstance(raw, dict):
-                    response_result = raw
-                elif isinstance(raw, str):
-                    try:
-                        response_result = json.loads(raw)
-                    except:
-                        response_result = {"message": raw}
-                else:
-                    response_result = {"result": str(raw)}
-            except Exception as e:
-                response_result = {"error": str(e), "type": "result_error"}
-        elif task_status == "FAILURE":
-            try:
-                error_info = str(task_result.result)
-                response_result = {"error": error_info, "type": "task_failure"}
-            except Exception:
-                response_result = {"error": "Task failed", "type": "task_failure"}
-    except Exception as e:
-        task_status = "ERROR"
-        response_result = {"error": str(e), "type": "unknown_error"}
-
-    return {
-        "task_id": task_id,
-        "status": task_status,
-        "result": response_result,
-    }
-
-
-@router.get("/{task_id}", response_model=TaskStatusResponse)
-async def get_task_status(task_id: str):
-    try:
-        result = await run_in_threadpool(_get_task_result_sync, task_id)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid task ID: {str(e)}"
-        )
-    return TaskStatusResponse(**result)
-</file>
-
-<file path="face-recognition-service/core/repositories.py">
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Protocol
-
-
-@dataclass(frozen=True)
-class EmbeddingSearchResult:
-    user_id: str
-    score: float
-
-
-class EmbeddingRepository(Protocol):
-    async def upsert_embedding(self, user_id: str, embedding: list[float]) -> None: ...
-
-    async def search_1n(
-        self, embedding: list[float], top_k: int = 1, metric: str = "cosine"
-    ) -> list[EmbeddingSearchResult]: ...
-
-    async def delete_user_embeddings(self, user_id: str) -> None: ...
-
-
-class UserRepository(Protocol):
-    async def create_user(self, email: str, password_hash: str, role: str) -> str: ...
-
-    async def get_user_by_email(self, email: str): ...
-
-    async def get_user_by_id(self, user_id: str): ...
-
-    async def delete_user(self, user_id: str) -> None: ...
-
-
-class AuditLogRepository(Protocol):
-    async def insert_event(self, *, user_id: str | None, event_type: str, metadata: dict) -> None: ...
-</file>
-
-<file path="face-recognition-service/core/security.py">
-from __future__ import annotations
-
-import datetime as dt
-from typing import Literal
-
-from jose import jwt
-
-
-def create_access_token(
-    *,
-    subject: str,
-    secret: str,
-    issuer: str,
-    audience: str,
-    expires_minutes: int,
-    roles: list[str],
-) -> str:
-    now = dt.datetime.now(dt.UTC)
-    exp = now + dt.timedelta(minutes=expires_minutes)
-    payload = {
-        "sub": subject,
-        "iss": issuer,
-        "aud": audience,
-        "exp": exp,
-        "roles": roles,
-        "typ": "access",
-        "iat": now,
-    }
-    return jwt.encode(payload, secret, algorithm="HS256")
-
-
-def create_refresh_token(
-    *,
-    subject: str,
-    secret: str,
-    issuer: str,
-    audience: str,
-    expires_days: int,
-    roles: list[str],
-) -> str:
-    now = dt.datetime.now(dt.UTC)
-    exp = now + dt.timedelta(days=expires_days)
-    payload = {
-        "sub": subject,
-        "iss": issuer,
-        "aud": audience,
-        "exp": exp,
-        "roles": roles,
-        "typ": "refresh",
-        "iat": now,
-    }
-    return jwt.encode(payload, secret, algorithm="HS256")
-
-
-TokenType = Literal["access", "refresh"]
-
-
-def decode_token(
-    *,
-    token: str,
-    secret: str,
-    issuer: str,
-    audience: str,
-    expected_type: TokenType,
-) -> dict:
-    payload = jwt.decode(token, secret, algorithms=["HS256"], issuer=issuer, audience=audience)
-    if payload.get("typ") != expected_type:
-        raise ValueError("Invalid token type")
-    return payload
-</file>
-
-<file path="face-recognition-service/Dockerfile.api">
-FROM python:3.12-slim
-
-WORKDIR /app
-
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 libglib2.0-0 curl && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY pyproject.toml .
-RUN pip install --no-cache-dir poetry && \
-    poetry config virtualenvs.create false && \
-    poetry install --only main --no-root --no-interaction --no-ansi
-
-COPY . .
-
-EXPOSE 8000
-
-CMD ["uvicorn", "api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
-</file>
-
-<file path="face-recognition-service/infra/cooldown.py">
-from __future__ import annotations
-
-import redis.asyncio as aioredis
-
-from infra.config import settings
-
-
-class CooldownService:
-    def __init__(self) -> None:
-        self._redis: aioredis.Redis | None = None
-
-    async def _get_redis(self) -> aioredis.Redis:
-        if self._redis is None:
-            self._redis = aioredis.from_url(
-                settings.redis_url, encoding="utf-8", decode_responses=True
-            )
-        return self._redis
-
-    async def acquire(self, key: str, cooldown_seconds: int = 5) -> bool:
-        r = await self._get_redis()
-        exists = await r.exists(f"cooldown:{key}")
-        if exists:
-            return False
-        await r.setex(f"cooldown:{key}", cooldown_seconds, "1")
-        return True
-
-    async def close(self) -> None:
-        if self._redis is not None:
-            await self._redis.close()
-            self._redis = None
-</file>
-
-<file path="face-recognition-service/infra/crypto.py">
-from __future__ import annotations
-
-import base64
-
-from cryptography.fernet import Fernet
-
-from infra.config import settings
-
-
-def _get_fernet() -> Fernet:
-    raw = settings.data_encryption_key.encode("utf-8")
-    if len(raw) < 32:
-        raw = raw + b"x" * (32 - len(raw))
-    else:
-        raw = raw[:32]
-    key = base64.urlsafe_b64encode(raw)
-    return Fernet(key)
-
-
-def encrypt_data(data: bytes) -> bytes:
-    return _get_fernet().encrypt(data)
-
-
-def decrypt_data(data: bytes) -> bytes:
-    return _get_fernet().decrypt(data)
-</file>
-
-<file path="face-recognition-service/infra/embedding_repository.py">
-from __future__ import annotations
-
-from typing import Literal
-
-from core.embedding import l2_normalize
-from core.repositories import EmbeddingRepository, EmbeddingSearchResult
-from infra.milvus_client import MilvusClient
-
-
-class MilvusEmbeddingRepository(EmbeddingRepository):
-    def __init__(self, milvus: MilvusClient) -> None:
-        self.milvus = milvus
-
-    async def upsert_embedding(self, user_id: str, embedding: list[float]) -> None:
-        vec = l2_normalize(embedding)
-        self.milvus.insert_embedding(patron_id=user_id, embedding=vec)
-
-    async def search_1n(
-        self,
-        embedding: list[float],
-        top_k: int = 1,
-        metric: Literal["cosine", "euclidean"] = "cosine",
-    ) -> list[EmbeddingSearchResult]:
-        vec = l2_normalize(embedding)
-        hits = self.milvus.search(embedding=vec, top_k=top_k)
-        return [EmbeddingSearchResult(user_id=h["patron_id"], score=h["score"]) for h in hits]
-
-    async def delete_user_embeddings(self, user_id: str) -> None:
-        self.milvus.delete_by_patron_id(patron_id=user_id)
-</file>
-
-<file path="face-recognition-service/infra/minio_client.py">
-from __future__ import annotations
-
-from io import BytesIO
-
-from minio import Minio
-
-from infra.config import settings
-
-
-class MinioStorage:
-    def __init__(self) -> None:
-        self.client = Minio(
-            settings.minio_endpoint,
-            access_key=settings.minio_access_key,
-            secret_key=settings.minio_secret_key,
-            secure=False,
-        )
-        self.bucket = settings.minio_bucket
-        if not self.client.bucket_exists(self.bucket):
-            self.client.make_bucket(self.bucket)
-
-    def upload_image(
-        self, object_name: str, data: bytes, content_type: str = "image/jpeg"
-    ) -> None:
-        self.client.put_object(
-            self.bucket,
-            object_name,
-            BytesIO(data),
-            length=len(data),
-            content_type=content_type,
-        )
-
-    def get_image(self, object_name: str) -> bytes:
-        response = self.client.get_object(self.bucket, object_name)
-        try:
-            return response.read()
-        finally:
-            response.close()
-            response.release_conn()
-
-    def delete_image(self, object_name: str) -> None:
-        self.client.remove_object(self.bucket, object_name)
-</file>
-
-<file path="face-recognition-service/infra/sse_manager.py">
-from __future__ import annotations
-
-import asyncio
-import json
-from typing import Any, Dict, Set
-
-from pydantic import BaseModel
-
-
-class SSEEvent(BaseModel):
-    event: str
-    data: Dict[str, Any]
-
-
-class SSEManager:
-    def __init__(self, queue_max: int = 100, keepalive_seconds: float = 30.0):
-        self._clients: Set[asyncio.Queue] = set()
-        self._queue_max = queue_max
-        self._keepalive_seconds = keepalive_seconds
-
-    def register(self) -> asyncio.Queue:
-        queue: asyncio.Queue = asyncio.Queue(maxsize=self._queue_max)
-        self._clients.add(queue)
-        return queue
-
-    def unregister(self, queue: asyncio.Queue) -> None:
-        self._clients.discard(queue)
-
-    async def broadcast(self, event: str, data: Dict[str, Any]) -> None:
-        payload = SSEEvent(event=event, data=data)
-
-        dead: list[asyncio.Queue] = []
-        # Avoid awaiting on each client; push using non-blocking semantics.
-        for q in list(self._clients):
-            try:
-                if q.full():
-                    # Drop oldest message to keep latency bounded.
-                    try:
-                        _ = q.get_nowait()
-                    except asyncio.QueueEmpty:
-                        pass
-                q.put_nowait(payload)
-            except Exception:
-                dead.append(q)
-
-        for q in dead:
-            self._clients.discard(q)
-
-
-    async def event_generator(self):
-        queue = self.register()
-        try:
-            while True:
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    yield f"event: {event.event}\ndata: {json.dumps(event.data, default=str)}\n\n"
-                except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"
-        finally:
-            self.unregister(queue)
-
-
-sse_manager = SSEManager()
-</file>
-
 <file path="face-recognition-service/pyproject.toml">
 [project]
 name = "face-recognition-platform"
@@ -4171,13 +5019,12 @@ def get_all_patron_faces():
 
 
 def get_milvus_ids(client: MilvusClient) -> set[str]:
-    results = client.collection.query(expr="", output_fields=["patron_id"], limit=10000)
-    return {r["patron_id"] for r in results}
+    results = client.collection.query(expr="", output_fields=["user_id"], limit=10000)
+    return {r["user_id"] for r in results}
 
 
 def get_embedding_from_milvus(client: MilvusClient, user_id: str) -> list[float] | None:
-    embs = client.get_embeddings_by_patron_id(user_id)
-    return embs[0] if embs else None
+    return client.get_embedding_by_user_id(user_id)
 
 
 def re_enroll_patron(patron_id: str, client: MilvusClient, storage: MinioStorage) -> bool:
@@ -5520,66 +6367,6 @@ export const userService = new UserService();
 }
 </file>
 
-<file path="api-gateway/nginx.conf">
-server {
-    listen 80;
-    server_name localhost;
-    client_max_body_size 10M;
-
-    # ──────────────────────────────────────────
-    # User Service: /users/* → Node.js User Service
-    # ──────────────────────────────────────────
-    location /users/ {
-        proxy_pass http://user-service:3001;
-
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # ──────────────────────────────────────────
-    # API Gateway: /api/* → FaceRecognition Backend
-    # ──────────────────────────────────────────
-    location /api/ {
-        rewrite ^/api/([^/].*)$ /$1 break;
-        proxy_pass http://face-recognition-api:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Content-Type $http_content_type;
-
-        proxy_read_timeout 120s;
-        proxy_send_timeout 120s;
-        proxy_buffer_size 128k;
-        proxy_buffers 4 256k;
-        proxy_busy_buffers_size 256k;
-        client_max_body_size 10M;
-    }
-
-    # ──────────────────────────────────────────
-    # Swagger/OpenAPI docs
-    # ──────────────────────────────────────────
-    location /docs {
-        proxy_pass http://face-recognition-api:8000;
-    }
-    location /openapi.json {
-        proxy_pass http://face-recognition-api:8000;
-    }
-    location /redoc {
-        proxy_pass http://face-recognition-api:8000;
-    }
-
-    # ──────────────────────────────────────────
-    # Health check
-    # ──────────────────────────────────────────
-    location /healthz {
-        proxy_pass http://face-recognition-api:8000;
-    }
-}
-</file>
-
 <file path="api-gateway/src/config.ts">
 import dotenv from 'dotenv';
 dotenv.config();
@@ -5657,233 +6444,75 @@ def require_role(required_role: str):
     return role_checker
 </file>
 
-<file path="face-recognition-service/api/routers/face.py">
+<file path="face-recognition-service/api/routers/tasks.py">
 from __future__ import annotations
 
-import base64
-import uuid as _uuid
-
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+import json
+from celery.result import AsyncResult
+from fastapi import APIRouter, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
-
-from api.dependencies import get_current_user, require_role
-from core.schemas import (
-    EnrollmentResult,
-    IdentificationResult,
-    LivenessResult,
-    VerificationResult,
-)
-from infra.cooldown import CooldownService
-from worker.tasks import (
-    _upload_temp_frame,
-    delete_user_task,
-    enroll_task,
-    identify_task,
-    liveness_task,
-    verify_task,
-)
-
-router = APIRouter(prefix="/face", tags=["face"])
-cooldown = CooldownService()
-
-
-@router.post("/enroll", response_model=EnrollmentResult, status_code=status.HTTP_202_ACCEPTED)
-async def enroll(
-    file: UploadFile = File(...),
-    consent_given: bool = Form(True),
-    current_user: dict = Depends(get_current_user),
-):
-    if not consent_given:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
-        )
-    if not await cooldown.acquire(f"enroll:{current_user['id']}"):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
-        )
-    raw = await file.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
-    task = enroll_task.delay(user_id=current_user["id"], object_key=object_key)
-    return EnrollmentResult(job_id=task.id)
-
-
-@router.post("/verify", response_model=VerificationResult, status_code=status.HTTP_202_ACCEPTED)
-async def verify(
-    file: UploadFile = File(...),
-    target_user_id: str = Form(...),
-    consent_given: bool = Form(True),
-    current_user: dict = Depends(get_current_user),
-):
-    if not consent_given:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
-        )
-    if not await cooldown.acquire(f"verify:{current_user['id']}"):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
-        )
-    raw = await file.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
-    task = verify_task.delay(user_id=target_user_id, object_key=object_key)
-    return VerificationResult(job_id=task.id)
-
-
-@router.post("/identify", response_model=IdentificationResult, status_code=status.HTTP_202_ACCEPTED)
-async def identify(
-    file: UploadFile = File(...),
-    consent_given: bool = Form(True),
-    current_user: dict = Depends(get_current_user),
-):
-    if not consent_given:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
-        )
-    if not await cooldown.acquire(f"identify:{current_user['id']}"):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
-        )
-    raw = await file.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
-    task = identify_task.delay(object_key=object_key)
-    return IdentificationResult(job_id=task.id)
-
-
-@router.post("/liveness", response_model=LivenessResult, status_code=status.HTTP_202_ACCEPTED)
-async def liveness(
-    file: UploadFile = File(...),
-    consent_given: bool = Form(True),
-    current_user: dict = Depends(get_current_user),
-):
-    if not consent_given:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
-        )
-    if not await cooldown.acquire(f"liveness:{current_user['id']}"):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
-        )
-    raw = await file.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
-    task = liveness_task.delay(object_key=object_key)
-    return LivenessResult(job_id=task.id)
-
-
-@router.delete("/{user_id}", status_code=status.HTTP_202_ACCEPTED)
-async def delete_face(
-    user_id: str,
-    current_user: dict = Depends(require_role("admin")),
-):
-    task = delete_user_task.delay(user_id=user_id)
-    return {"job_id": task.id}
-</file>
-
-<file path="face-recognition-service/api/routers/users.py">
-from __future__ import annotations
-
-from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import get_current_user
-from infra.database import async_session_factory
-from infra.models import UserModel
+from worker.celery_app import celery_app
 
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
-class UserResponse(BaseModel):
-    id: str
-    email: str
-    full_name: str | None = None
-    role: str
-    has_face: bool = False
+class TaskStatusResponse(BaseModel):
+    task_id: str
+    status: str
+    result: dict | None = None
 
 
-class UserListResponse(BaseModel):
-    users: list[UserResponse]
-    total: int
+def _get_task_result_sync(task_id: str) -> dict:
+    task_result = AsyncResult(task_id, app=celery_app)
+    task_status = task_result.status
+    response_result = None
 
-
-async def _get_db():
-    async with async_session_factory() as session:
-        yield session
-
-
-async def _check_has_face(user_id: str) -> bool:
     try:
-        from infra.milvus_client import MilvusClient
-        from infra.config import settings
-        mc = MilvusClient(
-            host=settings.milvus_host,
-            port=settings.milvus_port,
-            collection_name=settings.milvus_collection,
-            dim=512,
-        )
-        emb = mc.get_embeddings_by_patron_id(user_id)
-        return len(emb) > 0
-    except Exception:
-        return False
+        if task_status == "SUCCESS":
+            try:
+                raw = task_result.result
+                if raw is None:
+                    response_result = None
+                elif isinstance(raw, dict):
+                    response_result = raw
+                elif isinstance(raw, str):
+                    try:
+                        response_result = json.loads(raw)
+                    except:
+                        response_result = {"message": raw}
+                else:
+                    response_result = {"result": str(raw)}
+            except Exception as e:
+                response_result = {"error": str(e), "type": "result_error"}
+        elif task_status == "FAILURE":
+            try:
+                error_info = str(task_result.result)
+                response_result = {"error": error_info, "type": "task_failure"}
+            except Exception:
+                response_result = {"error": "Task failed", "type": "task_failure"}
+    except Exception as e:
+        task_status = "ERROR"
+        response_result = {"error": str(e), "type": "unknown_error"}
+
+    return {
+        "task_id": task_id,
+        "status": task_status,
+        "result": response_result,
+    }
 
 
-@router.get("/me", response_model=UserResponse)
-async def get_current_user_info(
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(_get_db),
-):
-    has_face = await _check_has_face(current_user["id"])
-    return UserResponse(
-        id=current_user["id"],
-        email=current_user["email"],
-        full_name=current_user.get("full_name"),
-        role=current_user["role"],
-        has_face=has_face,
-    )
-
-
-@router.get("", response_model=UserListResponse)
-async def list_users(
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(_get_db),
-):
-    if current_user["role"] != "admin":
+@router.get("/{task_id}", response_model=TaskStatusResponse)
+async def get_task_status(task_id: str):
+    try:
+        result = await run_in_threadpool(_get_task_result_sync, task_id)
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid task ID: {str(e)}"
         )
-
-    result = await db.execute(select(UserModel))
-    users = result.scalars().all()
-
-    return UserListResponse(
-        users=[UserResponse(id=str(u.id), email=u.email, full_name=u.full_name, role=u.role) for u in users],
-        total=len(users),
-    )
-
-
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(
-    user_id: str,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(_get_db),
-):
-    if current_user["role"] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-        )
-
-    result = await db.execute(select(UserModel).where(UserModel.id == user_id))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-
-    await db.delete(user)
-    await db.commit()
+    return TaskStatusResponse(**result)
 </file>
 
 <file path="face-recognition-service/core/embedding.py">
@@ -5907,6 +6536,30 @@ def l2_normalize(vec: Sequence[float], eps: float = 1e-12) -> list[float]:
     if norm < eps:
         return [0.0] * len(vec)
     return (vec_arr / norm).tolist()
+</file>
+
+<file path="face-recognition-service/Dockerfile.api">
+FROM python:3.12-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 curl && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml .
+RUN pip install --no-cache-dir poetry && \
+    poetry config virtualenvs.create false && \
+    poetry install --only main --no-root --no-interaction --no-ansi
+
+COPY . .
+
+EXPOSE 8000
+
+CMD ["uvicorn", "api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
 </file>
 
 <file path="face-recognition-service/infra/config.py">
@@ -5993,132 +6646,81 @@ class Base(DeclarativeBase):
     pass
 </file>
 
-<file path="face-recognition-service/infra/milvus_client.py">
+<file path="face-recognition-service/infra/embedding_repository.py">
 from __future__ import annotations
 
-import uuid
-from typing import Any
+from typing import Literal
 
-from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
+from core.embedding import l2_normalize
+from core.repositories import EmbeddingRepository, EmbeddingSearchResult
+from infra.milvus_client import MilvusClient
 
 
-class MilvusClient:
-    def __init__(
+class MilvusEmbeddingRepository(EmbeddingRepository):
+    def __init__(self, milvus: MilvusClient) -> None:
+        self.milvus = milvus
+
+    async def upsert_embedding(self, user_id: str, embedding: list[float]) -> None:
+        vec = l2_normalize(embedding)
+        self.milvus.upsert_embeddings(user_id=user_id, embedding=vec)
+
+    async def search_1n(
         self,
-        *,
-        host: str,
-        port: int,
-        collection_name: str,
-        dim: int,
-        metric_type: str = "COSINE",
+        embedding: list[float],
+        top_k: int = 1,
+        metric: Literal["cosine", "euclidean"] = "cosine",
+    ) -> list[EmbeddingSearchResult]:
+        vec = l2_normalize(embedding)
+        hits = self.milvus.search(embedding=vec, top_k=top_k)
+        return [EmbeddingSearchResult(user_id=h["user_id"], score=h["score"]) for h in hits]
+
+    async def delete_user_embeddings(self, user_id: str) -> None:
+        self.milvus.delete_by_user_id(user_id=user_id)
+</file>
+
+<file path="face-recognition-service/infra/minio_client.py">
+from __future__ import annotations
+
+from io import BytesIO
+
+from minio import Minio
+
+from infra.config import settings
+
+
+class MinioStorage:
+    def __init__(self) -> None:
+        self.client = Minio(
+            settings.minio_endpoint,
+            access_key=settings.minio_access_key,
+            secret_key=settings.minio_secret_key,
+            secure=False,
+        )
+        self.bucket = settings.minio_bucket
+        if not self.client.bucket_exists(self.bucket):
+            self.client.make_bucket(self.bucket)
+
+    def upload_image(
+        self, object_name: str, data: bytes, content_type: str = "image/jpeg"
     ) -> None:
-        self.host = host
-        self.port = port
-        self.collection_name = collection_name
-        self.dim = dim
-        self.metric_type = metric_type
+        self.client.put_object(
+            self.bucket,
+            object_name,
+            BytesIO(data),
+            length=len(data),
+            content_type=content_type,
+        )
 
-        connections.connect(alias="default", host=self.host, port=self.port)
-        self.collection = self._get_or_create_collection()
-        self._collection_loaded = True
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _ensure_collection_loaded(self) -> None:
-        if self._collection_loaded:
-            return
+    def get_image(self, object_name: str) -> bytes:
+        response = self.client.get_object(self.bucket, object_name)
         try:
-            self.collection.load()
-            self._collection_loaded = True
-        except Exception:
-            pass
+            return response.read()
+        finally:
+            response.close()
+            response.release_conn()
 
-    def _get_or_create_collection(self) -> Collection:
-        if utility.has_collection(self.collection_name):
-            collection = Collection(self.collection_name)
-            fields = {f.name: f for f in collection.schema.fields}
-            # Migrate from old schema (missing quality_score or patron_id)
-            if "patron_id" not in fields or "quality_score" not in fields:
-                logger = __import__("logging").getLogger(__name__)
-                logger.warning("Dropping old collection '%s' (missing patron_id or quality_score) and recreating...", self.collection_name)
-                collection.release()
-                utility.drop_collection(self.collection_name)
-                return self._create_collection()
-            if not collection.indexes:
-                collection.create_index(
-                    field_name="embedding",
-                    index_params={"metric_type": self.metric_type},
-                )
-            try:
-                collection.load()
-            except Exception:
-                pass
-            return collection
-
-        return self._create_collection()
-
-    def _create_collection(self) -> Collection:
-        fields = [
-            FieldSchema(name="id", dtype=DataType.VARCHAR, max_length=64, is_primary=True),
-            FieldSchema(name="patron_id", dtype=DataType.VARCHAR, max_length=128),
-            FieldSchema(name="quality_score", dtype=DataType.FLOAT),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=self.dim),
-        ]
-        schema = CollectionSchema(fields=fields, description="face embeddings (multi per patron)")
-        collection = Collection(
-            name=self.collection_name,
-            schema=schema,
-            using="default",
-        )
-        collection.create_index(field_name="embedding", index_params={"metric_type": self.metric_type})
-        collection.create_index(field_name="patron_id", index_name="idx_patron_id")
-        collection.load()
-        return collection
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    def insert_embedding(self, *, patron_id: str, embedding: list[float], quality_score: float = 0.5) -> None:
-        row_id = f"{patron_id}#{uuid.uuid4().hex[:12]}"
-        self.collection.insert([[row_id], [patron_id], [quality_score], [embedding]])
-        self.collection.flush()
-        self._collection_loaded = False
-
-    def search(self, *, embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
-        self._ensure_collection_loaded()
-        search_params = {"metric_type": self.metric_type, "params": {"nprobe": 16}}
-        res = self.collection.search(
-            data=[embedding],
-            anns_field="embedding",
-            param=search_params,
-            limit=top_k,
-            output_fields=["patron_id", "quality_score"],
-        )
-        seen: dict[str, dict] = {}
-        for r in res[0]:
-            pid = r.entity.get("patron_id")
-            score = float(r.score)
-            qs = float(r.entity.get("quality_score") or 0.5)
-            if pid not in seen or score > seen[pid]["score"]:
-                seen[pid] = {"patron_id": pid, "score": score, "quality_score": qs}
-        return list(seen.values())
-
-    def get_embeddings_by_patron_id(self, patron_id: str) -> list[list[float]]:
-        self._ensure_collection_loaded()
-        results = self.collection.query(
-            expr=f'patron_id == "{patron_id}"',
-            output_fields=["embedding"],
-            limit=100,
-        )
-        return [r["embedding"] for r in results if r.get("embedding")]
-
-    def delete_by_patron_id(self, *, patron_id: str) -> None:
-        collection = self.collection
-        collection.delete(f'patron_id == "{patron_id}"')
-        collection.flush()
+    def delete_image(self, object_name: str) -> None:
+        self.client.remove_object(self.bucket, object_name)
 </file>
 
 <file path="face-recognition-service/infra/patron_repository.py">
@@ -6417,102 +7019,70 @@ class PatronRepository:
         return list(result.scalars().all())
 </file>
 
-<file path="face-recognition-service/infra/redis_pubsub.py">
+<file path="face-recognition-service/infra/sse_manager.py">
 from __future__ import annotations
 
 import asyncio
 import json
-import logging
-import threading
-from typing import Any
+from typing import Any, Dict, Set
 
-from infra.config import settings
-from infra.sse_manager import sse_manager
-
-logger = logging.getLogger(__name__)
-
-CHANNEL = "camera:events"
-
-_running = True
-
-_redis_client = None
-_redis_lock = threading.Lock()
+from pydantic import BaseModel
 
 
-def _get_redis():
-    """Reuse a single Redis client per process to avoid socket churn."""
-    global _redis_client
-    if _redis_client is None:
-        with _redis_lock:
-            if _redis_client is None:
-                import redis as _redis
-
-                _redis_client = _redis.Redis.from_url(
-                    settings.celery_broker_url,
-                    decode_responses=True,
-                    socket_keepalive=True,
-                    socket_timeout=5,
-                    retry_on_timeout=True,
-                )
-    return _redis_client
+class SSEEvent(BaseModel):
+    event: str
+    data: Dict[str, Any]
 
 
-def publish(channel: str, data: dict[str, Any]) -> None:
-    try:
-        r = _get_redis()
-        r.publish(channel, json.dumps(data, default=str))
-    except Exception as e:
-        logger.error("Redis publish failed: %s - data=%s", e, data)
+class SSEManager:
+    def __init__(self, queue_max: int = 100, keepalive_seconds: float = 30.0):
+        self._clients: Set[asyncio.Queue] = set()
+        self._queue_max = queue_max
+        self._keepalive_seconds = keepalive_seconds
 
+    def register(self) -> asyncio.Queue:
+        queue: asyncio.Queue = asyncio.Queue(maxsize=self._queue_max)
+        self._clients.add(queue)
+        return queue
 
+    def unregister(self, queue: asyncio.Queue) -> None:
+        self._clients.discard(queue)
 
-def _subscribe_loop(channel: str, loop: asyncio.AbstractEventLoop) -> None:
-    global _running
-    pubsub = None
-    r = None
-    try:
-        r = _get_redis()
-        pubsub = r.pubsub()
-        pubsub.subscribe(channel)
-        logger.info("Redis subscribed to %s", channel)
-        for msg in pubsub.listen():
-            if not _running:
-                break
-            if msg["type"] != "message":
-                continue
+    async def broadcast(self, event: str, data: Dict[str, Any]) -> None:
+        payload = SSEEvent(event=event, data=data)
+
+        dead: list[asyncio.Queue] = []
+        # Avoid awaiting on each client; push using non-blocking semantics.
+        for q in list(self._clients):
             try:
-                data = json.loads(msg["data"])
-                logger.info("Redis message received on %s: %s", channel, data.get("status", "unknown"))
-                future = asyncio.run_coroutine_threadsafe(
-                    sse_manager.broadcast("camera_event", data), loop
-                )
-                future.add_done_callback(
-                    lambda f: logger.info("SSE broadcast completed for status=%s", data.get("status"))
-                    if not f.exception() else logger.error("SSE broadcast failed: %s", f.exception())
-                )
-            except Exception as e:
-                logger.warning("SSE broadcast error: %s", e)
-    except Exception as e:
-        logger.warning("Redis subscribe error: %s", e)
-    finally:
-        if pubsub:
-            try:
-                pubsub.unsubscribe()
-                pubsub.close()
+                if q.full():
+                    # Drop oldest message to keep latency bounded.
+                    try:
+                        _ = q.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                q.put_nowait(payload)
             except Exception:
-                pass
-        _running = False
+                dead.append(q)
+
+        for q in dead:
+            self._clients.discard(q)
 
 
-def stop_sse_bridge() -> None:
-    global _running
-    _running = False
+    async def event_generator(self):
+        queue = self.register()
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield f"event: {event.event}\ndata: {json.dumps(event.data, default=str)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            self.unregister(queue)
 
 
-def start_sse_bridge(loop: asyncio.AbstractEventLoop) -> tuple[threading.Thread, callable]:
-    t = threading.Thread(target=_subscribe_loop, args=(CHANNEL, loop), daemon=True)
-    t.start()
-    return t, stop_sse_bridge
+sse_manager = SSEManager()
 </file>
 
 <file path="face-recognition-service/infra/user_repository.py">
@@ -6565,31 +7135,6 @@ class PostgresUserRepository:
         if user:
             await self.session.delete(user)
             await self.session.commit()
-</file>
-
-<file path="face-recognition-service/worker/celery_app.py">
-from __future__ import annotations
-
-from celery import Celery
-
-from infra.config import settings
-
-
-celery_app = Celery(
-    "face_recognition",
-    broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend,
-)
-
-celery_app.conf.update(
-    task_serializer="json",
-    result_serializer="json",
-    accept_content=["json"],
-    timezone="UTC",
-    task_soft_time_limit=120,
-    task_time_limit=180,
-    worker_max_tasks_per_child=1000,
-)
 </file>
 
 <file path="face-recognition-service/worker/face_model.py">
@@ -7048,485 +7593,301 @@ CLAUDE.md
 AGENTS.md
 </file>
 
-<file path="api-gateway/src/index.ts">
-import express from 'express';
-import http from 'http';
-import cors from 'cors';
-import { config } from './config';
+<file path="api-gateway/nginx.conf">
+server {
+    listen 80;
+    server_name localhost;
+    client_max_body_size 10M;
 
-const app = express();
+    # ──────────────────────────────────────────
+    # User Service: /users/* → Node.js User Service
+    # ──────────────────────────────────────────
+    location /users/ {
+        proxy_pass http://user-service:3001;
 
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  credentials: true,
-}));
-
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
-  next();
-});
-
-const proxyRequest = (path: string, req: any, res: any, targetBase: string) => {
-  const targetUrl = new URL(path, targetBase);
-
-  const options: http.RequestOptions = {
-    hostname: targetUrl.hostname,
-    port: parseInt(targetUrl.port) || 80,
-    path: targetUrl.pathname + targetUrl.search,
-    method: req.method,
-    headers: {} as any,
-  };
-
-  const skipHeaders = ['host', 'connection'];
-  for (const [key, value] of Object.entries(req.headers)) {
-    if (!skipHeaders.includes(key.toLowerCase())) {
-      (options.headers as any)[key] = value;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
-  }
-  
-  const headers = options.headers as Record<string, string>;
-  console.log(`  Headers: content-type=${headers['content-type']}, content-length=${headers['content-length']}`);
-  console.log(`  -> ${options.method} ${options.hostname}:${options.port}${options.path}`);
 
-  const proxyReq = http.request({ ...options, timeout: 0 }, (proxyRes) => {
-    res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
-    proxyRes.pipe(res, { end: true });
-  });
+    # ──────────────────────────────────────────
+    # API Gateway: /api/* → FaceRecognition Backend
+    # ──────────────────────────────────────────
+    location /api/ {
+        rewrite ^/api/([^/].*)$ /$1 break;
+        proxy_pass http://face-recognition-api:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Content-Type $http_content_type;
 
-  proxyReq.on('error', (err) => {
-    console.error(`  Proxy error: ${err.message}`);
-    if (!res.headersSent) {
-      res.status(502).json({ error: 'Bad gateway', message: err.message });
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
+        client_max_body_size 10M;
     }
-  });
 
-  proxyReq.on('timeout', () => {
-    console.error(`  Proxy timeout`);
-    proxyReq.destroy();
-    if (!res.headersSent) {
-      res.status(504).json({ error: 'Gateway timeout' });
+    # ──────────────────────────────────────────
+    # Swagger/OpenAPI docs
+    # ──────────────────────────────────────────
+    location /docs {
+        proxy_pass http://face-recognition-api:8000;
     }
-  });
+    location /openapi.json {
+        proxy_pass http://face-recognition-api:8000;
+    }
+    location /redoc {
+        proxy_pass http://face-recognition-api:8000;
+    }
 
-  req.pipe(proxyReq, { end: true });
-};
-
-// Face Recognition API routes - strip /api prefix
-app.all('/api/auth', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/auth/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/auth', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
-app.all('/auth/*', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
-
-// Users routes (admin user management) -> face-recognition-api
-app.all('/api/users', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/users/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/users', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/users/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-
-// Face API routes - strip /api prefix (for face operations only, not auth)
-app.all('/api/face', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/face/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-
-// Tasks routes - proxy to face-recognition-api
-app.all('/api/tasks', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/tasks/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-
-// Swagger docs - no prefix stripping needed
-app.all('/docs', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/docs/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/openapi.json', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/redoc', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-
-// New routes: Patrons, Access, Kiosk, Camera - proxy to face-recognition-api
-app.all('/api/patrons', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/patrons/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/access', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/access/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/kiosk', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/kiosk/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-
-// Non-prefixed routes for Access, Kiosk, Camera - proxy directly
-app.all('/access', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/access/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/kiosk', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/kiosk/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/camera', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/camera/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-
-// Generic API catch-all - any remaining /api/* -> face-recognition-api
-app.all('/api/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-
-app.get('/healthz', (req, res) => {
-  res.json({ status: 'ok', gateway: 'Node.js-API-Gateway', timestamp: new Date().toISOString() });
-});
-
-// Frontend - proxy all other requests to Next.js dev server
-app.all('/*', (req, res) => {
-  proxyRequest(req.originalUrl, req, res, config.frontendUrl);
-});
-
-const PORT = config.port;
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 API Gateway running on port ${PORT}`);
-});
-
-server.timeout = 0;
-server.keepAliveTimeout = 0;
+    # ──────────────────────────────────────────
+    # Health check
+    # ──────────────────────────────────────────
+    location /healthz {
+        proxy_pass http://face-recognition-api:8000;
+    }
+}
 </file>
 
-<file path="face-recognition-service/api/routers/access.py">
+<file path="face-recognition-service/api/routers/face.py">
 from __future__ import annotations
 
-import uuid
-from datetime import date, datetime
-from typing import Any, Optional
+import base64
+import uuid as _uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
+
+from api.dependencies import get_current_user, require_role
+from core.schemas import (
+    EnrollmentResult,
+    IdentificationResult,
+    LivenessResult,
+    VerificationResult,
+)
+from infra.cooldown import CooldownService
+from infra.redis_cache import redis_client
+from worker.tasks import (
+    _upload_temp_frame,
+    delete_user_task,
+    enroll_task,
+    identify_task,
+    liveness_task,
+    verify_task,
+)
+
+router = APIRouter(prefix="/face", tags=["face"])
+cooldown = CooldownService()
+
+
+async def _store_temp_frame(raw: bytes) -> str:
+    """Upload to MinIO and also store in Redis for fast worker access."""
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+    redis_client.setex(f"temp_frame:{object_key}", 120, raw)
+    return object_key
+
+
+@router.post("/enroll", response_model=EnrollmentResult, status_code=status.HTTP_202_ACCEPTED)
+async def enroll(
+    file: UploadFile = File(...),
+    consent_given: bool = Form(True),
+    current_user: dict = Depends(get_current_user),
+):
+    if not consent_given:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
+        )
+    if not await cooldown.acquire(f"enroll:{current_user['id']}"):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
+        )
+    raw = await file.read()
+    object_key = await _store_temp_frame(raw)
+    task = enroll_task.delay(user_id=current_user["id"], object_key=object_key)
+    return EnrollmentResult(job_id=task.id)
+
+
+@router.post("/verify", response_model=VerificationResult, status_code=status.HTTP_202_ACCEPTED)
+async def verify(
+    file: UploadFile = File(...),
+    target_user_id: str = Form(...),
+    consent_given: bool = Form(True),
+    current_user: dict = Depends(get_current_user),
+):
+    if not consent_given:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
+        )
+    if not await cooldown.acquire(f"verify:{current_user['id']}"):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
+        )
+    raw = await file.read()
+    object_key = await _store_temp_frame(raw)
+    task = verify_task.delay(user_id=target_user_id, object_key=object_key)
+    return VerificationResult(job_id=task.id)
+
+
+@router.post("/identify", response_model=IdentificationResult, status_code=status.HTTP_202_ACCEPTED)
+async def identify(
+    file: UploadFile = File(...),
+    consent_given: bool = Form(True),
+    current_user: dict = Depends(get_current_user),
+):
+    if not consent_given:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
+        )
+    if not await cooldown.acquire(f"identify:{current_user['id']}"):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
+        )
+    raw = await file.read()
+    object_key = await _store_temp_frame(raw)
+    task = identify_task.delay(object_key=object_key)
+    return IdentificationResult(job_id=task.id)
+
+
+@router.post("/liveness", response_model=LivenessResult, status_code=status.HTTP_202_ACCEPTED)
+async def liveness(
+    file: UploadFile = File(...),
+    consent_given: bool = Form(True),
+    current_user: dict = Depends(get_current_user),
+):
+    if not consent_given:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
+        )
+    if not await cooldown.acquire(f"liveness:{current_user['id']}"):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
+        )
+    raw = await file.read()
+    object_key = await _store_temp_frame(raw)
+    task = liveness_task.delay(object_key=object_key)
+    return LivenessResult(job_id=task.id)
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_202_ACCEPTED)
+async def delete_face(
+    user_id: str,
+    current_user: dict = Depends(require_role("admin")),
+):
+    task = delete_user_task.delay(user_id=user_id)
+    return {"job_id": task.id}
+</file>
+
+<file path="face-recognition-service/api/routers/users.py">
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import get_current_user, get_db_session
-from core.schemas import AccessLogPublic, ActivePatron, StatsResponse
-from infra.patron_repository import PatronRepository
-from infra.sse_manager import sse_manager
+from api.dependencies import get_current_user
+from infra.database import async_session_factory
+from infra.models import UserModel
+
+router = APIRouter(prefix="/users", tags=["users"])
 
 
-router = APIRouter(prefix="/access", tags=["access"])
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    full_name: str | None = None
+    role: str
+    has_face: bool = False
 
 
-@router.get("/events")
-async def sse_events():
-    return StreamingResponse(
-        sse_manager.event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+class UserListResponse(BaseModel):
+    users: list[UserResponse]
+    total: int
+
+
+async def _get_db():
+    async with async_session_factory() as session:
+        yield session
+
+
+async def _check_has_face(user_id: str) -> bool:
+    try:
+        from infra.milvus_client import MilvusClient
+        from infra.config import settings
+        mc = MilvusClient(
+            host=settings.milvus_host,
+            port=settings.milvus_port,
+            collection_name=settings.milvus_collection,
+            dim=512,
+        )
+        results = mc.search(embedding=[0.0] * 512, top_k=1)
+        return any(r["user_id"] == user_id for r in results)
+    except Exception:
+        return False
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_current_user_info(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(_get_db),
+):
+    has_face = await _check_has_face(current_user["id"])
+    return UserResponse(
+        id=current_user["id"],
+        email=current_user["email"],
+        full_name=current_user.get("full_name"),
+        role=current_user["role"],
+        has_face=has_face,
     )
 
 
-@router.post("/test-broadcast")
-async def test_broadcast(
-    status: str = "granted",
-    full_name: str = "Test User",
-    camera_id: str = "entry_gate",
+@router.get("", response_model=UserListResponse)
+async def list_users(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(_get_db),
 ):
-    test_event = {
-        "status": status,
-        "camera_id": camera_id,
-        "patron_id": "test-id",
-        "full_name": full_name,
-        "student_code": "TEST123",
-        "score": 0.95,
-        "access_type": "entry",
-    }
-    await sse_manager.broadcast("camera_event", test_event)
-    return {"ok": True, "event": test_event}
-
-
-@router.get("/recent")
-async def get_recent_logs(db: AsyncSession = Depends(get_db_session)):
-    repo = PatronRepository(db)
-    logs, _ = await repo.get_access_logs(limit=20)
-
-    patron_ids = [log.patron_id for log in logs if log.patron_id]
-    unique_ids = list({str(pid) for pid in patron_ids})
-    patron_map: dict[str, Any] = {}
-
-    if unique_ids:
-        from infra.models import PatronModel
-
-        patrons = await db.execute(
-            select(PatronModel).where(
-                PatronModel.id.in_([uuid.UUID(pid) for pid in unique_ids])
-            )
-        )
-        patron_map = {str(p.id): p for p in patrons.scalars().all()}
-
-    items = []
-    for log in logs:
-        p = patron_map.get(str(log.patron_id)) if log.patron_id else None
-        items.append(
-            AccessLogPublic(
-                id=str(log.id),
-                patron_id=str(log.patron_id) if log.patron_id else None,
-                patron_name=p.full_name if p else None,
-                student_code=p.student_code if p else None,
-                access_type=log.access_type,
-                verify_method=log.verify_method,
-                confidence=log.confidence,
-                camera_id=log.camera_id,
-                access_time=log.access_time,
-                status=log.status,
-            )
+    if current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
         )
 
-    return {"items": items}
+    result = await db.execute(select(UserModel))
+    users = result.scalars().all()
 
-
-
-
-@router.get("/logs")
-async def get_logs(
-    patron_id: Optional[uuid.UUID] = Query(None),
-    camera_id: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
-    access_type: Optional[str] = Query(None),
-    date_from: Optional[datetime] = Query(None),
-    date_to: Optional[datetime] = Query(None),
-    search: Optional[str] = Query(None),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=200),
-    db: AsyncSession = Depends(get_db_session),
-    _=Depends(get_current_user),
-):
-    repo = PatronRepository(db)
-    logs, total = await repo.get_access_logs(
-        patron_id=patron_id,
-
-        camera_id=camera_id,
-        status=status,
-        access_type=access_type,
-        date_from=date_from,
-        date_to=date_to,
-        search=search,
-        skip=skip,
-        limit=limit,
+    return UserListResponse(
+        users=[UserResponse(id=str(u.id), email=u.email, full_name=u.full_name, role=u.role) for u in users],
+        total=len(users),
     )
-    items = []
-    for log in logs:
-        patron_name = None
-        student_code = None
-        if log.patron_id:
-            p = await repo.get_by_id(log.patron_id)
-            if p:
-                patron_name = p.full_name
-                student_code = p.student_code
-        items.append(
-            AccessLogPublic(
-                id=str(log.id),
-                patron_id=str(log.patron_id) if log.patron_id else None,
-                patron_name=patron_name,
-                student_code=student_code,
-                access_type=log.access_type,
-                verify_method=log.verify_method,
-                confidence=log.confidence,
-                camera_id=log.camera_id,
-                access_time=log.access_time,
-                status=log.status,
-            )
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(_get_db),
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
         )
-    return {"items": items, "total": total}
 
+    result = await db.execute(select(UserModel).where(UserModel.id == user_id))
+    user = result.scalar_one_or_none()
 
-@router.get("/active")
-async def get_active(
-    db: AsyncSession = Depends(get_db_session),
-    _=Depends(get_current_user),
-):
-    repo = PatronRepository(db)
-    patrons = await repo.get_active_patrons()
-    result = []
-    for p in patrons:
-        latest = await repo.get_latest_entry(p.id)
-        face = await repo.get_active_face(p.id)
-        result.append(
-            ActivePatron(
-                id=str(p.id),
-                full_name=p.full_name,
-                student_code=p.student_code,
-                entered_at=latest.access_time if latest else datetime.utcnow(),
-                camera_id=latest.camera_id if latest else "",
-                image_url=face.image_url if face else None,
-                confidence=latest.confidence if latest else None,
-            )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
         )
-    return {"items": result, "total": len(result)}
 
-
-@router.get("/frequency")
-async def get_frequency(
-    date_from: Optional[datetime] = Query(None),
-    date_to: Optional[datetime] = Query(None),
-    db: AsyncSession = Depends(get_db_session),
-    _=Depends(get_current_user),
-):
-    repo = PatronRepository(db)
-    daily = await repo.get_access_frequency(date_from=date_from, date_to=date_to)
-    return {"daily": daily}
-
-
-@router.get("/stats")
-async def get_stats(
-    db: AsyncSession = Depends(get_db_session),
-    _=Depends(get_current_user),
-):
-    repo = PatronRepository(db)
-    today = date.today()
-    logs_today = await repo.get_access_logs(skip=0, limit=10000)
-    entries = sum(1 for l in logs_today if l.access_type == "entry" and l.access_time.date() == today)
-    exits = sum(1 for l in logs_today if l.access_type == "exit" and l.access_time.date() == today)
-    return StatsResponse(
-        total_patrons=await repo.count_active(),
-        active_patrons=len(await repo.get_active_patrons()),
-        today_entries=entries,
-        today_exits=exits,
-    )
-</file>
-
-<file path="face-recognition-service/api/routers/kiosk.py">
-from __future__ import annotations
-
-import uuid as _uuid
-from datetime import date
-from typing import Optional
-
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
-from fastapi.concurrency import run_in_threadpool
-from sqlalchemy.ext.asyncio import AsyncSession
-from celery import Celery as _Celery
-
-from api.dependencies import get_db_session
-from core.schemas import KioskEnrollRequest, KioskEnterRequest, KioskResult, PatronPublic
-from infra.config import settings
-from infra.models import PatronModel
-from infra.patron_repository import PatronRepository
-from infra.sse_manager import sse_manager
-from worker.celery_app import celery_app as _celery_app
-from worker.tasks import _upload_temp_frame
-
-router = APIRouter(prefix="/kiosk", tags=["kiosk"])
-celery_app = _celery_app
-
-
-async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> PatronPublic:
-    face = await repo.get_active_face(patron.id)
-    return PatronPublic(
-        id=str(patron.id),
-        full_name=patron.full_name,
-        student_code=patron.student_code,
-        identity_number=patron.identity_number,
-        email=patron.email,
-        phone=patron.phone,
-        card_number=patron.card_number,
-        issue_date=patron.issue_date,
-        membership_expiry=patron.membership_expiry,
-        status=patron.status,
-        created_at=patron.created_at,
-        updated_at=patron.updated_at,
-        has_face=face is not None,
-    )
-
-
-@router.post("/lookup")
-async def kiosk_lookup(
-    student_code: Optional[str] = None,
-    card_number: Optional[str] = None,
-    db: AsyncSession = Depends(get_db_session),
-):
-    repo = PatronRepository(db)
-    patron = None
-    if student_code:
-        patron = await repo.get_by_student_code(student_code)
-    elif card_number:
-        patron = await repo.get_by_card_number(card_number)
-    if not patron:
-        return {"exists": False, "patron": None, "has_face": False, "is_expired": False}
-    is_expired = patron.membership_expiry and patron.membership_expiry < date.today()
-    return {
-        "exists": True,
-        "patron": (await _patron_to_public(patron, repo)).model_dump(),
-        "has_face": await repo.get_active_face(patron.id) is not None,
-        "is_expired": bool(is_expired),
-    }
-
-
-@router.post("/enroll")
-async def kiosk_enroll(
-    image: UploadFile,
-    full_name: str = Form(...),
-    student_code: str = Form(...),
-    card_number: str = Form(...),
-    membership_expiry: str = Form(...),
-    identity_number: Optional[str] = Form(None),
-    email: Optional[str] = Form(None),
-    phone: Optional[str] = Form(None),
-    issue_date: Optional[str] = Form(None),
-    db: AsyncSession = Depends(get_db_session),
-):
-    repo = PatronRepository(db)
-
-    if await repo.get_by_student_code(student_code):
-        raise HTTPException(409, "Student code already exists")
-    if await repo.get_by_card_number(card_number):
-        raise HTTPException(409, "Card number already exists")
-
-    raw = await image.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
-
-    patron = await repo.create_patron(
-        full_name=full_name,
-        student_code=student_code,
-        card_number=card_number,
-        membership_expiry=date.fromisoformat(membership_expiry),
-        identity_number=identity_number,
-        email=email,
-        phone=phone,
-        issue_date=date.fromisoformat(issue_date) if issue_date else None,
-    )
+    await db.delete(user)
     await db.commit()
-
-    task = celery_app.send_task(
-        "enroll_face",
-        kwargs={"patron_id": str(patron.id), "object_key": object_key},
-    )
-
-    return KioskResult(
-        success=True,
-        message="Patron created. Face enrollment in progress.",
-        patron=await _patron_to_public(patron, repo),
-        job_id=task.id,
-    )
-
-
-@router.post("/enter")
-async def kiosk_enter(
-    image: UploadFile,
-    student_code: str = Form(...),
-    db: AsyncSession = Depends(get_db_session),
-):
-    repo = PatronRepository(db)
-
-    patron = await repo.get_by_student_code(student_code)
-    if not patron:
-        raise HTTPException(404, "Patron not found")
-
-    if patron.membership_expiry and patron.membership_expiry < date.today():
-        return KioskResult(success=False, message="Membership has expired")
-
-    face = await repo.get_active_face(patron.id)
-    if not face:
-        return KioskResult(success=False, message="Patron has no enrolled face")
-
-    raw = await image.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
-
-    task = celery_app.send_task(
-        "verify_face",
-        kwargs={"patron_id": str(patron.id), "object_key": object_key},
-    )
-
-    return KioskResult(
-        success=True,
-        message="Face verification in progress",
-        patron=await _patron_to_public(patron, repo),
-        job_id=task.id,
-    )
 </file>
 
 <file path="face-recognition-service/core/schemas.py">
@@ -7733,6 +8094,462 @@ class CameraStatusResponse(BaseModel):
     next_retry_in: Optional[float] = None
 </file>
 
+<file path="face-recognition-service/infra/models.py">
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, Index, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+
+from infra.database import Base
+
+
+class UserModel(Base):
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    full_name = Column(String(255), nullable=True)
+    role = Column(String(50), default="user", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AuditLogModel(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), nullable=True)
+    event_type = Column(String(100), nullable=False)
+    details = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PatronModel(Base):
+    __tablename__ = "patrons"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    full_name = Column(String(255), nullable=False)
+    student_code = Column(String(50), unique=True, nullable=False, index=True)
+    identity_number = Column(String(50), nullable=True)
+    email = Column(String(255), nullable=True)
+    phone = Column(String(50), nullable=True)
+    card_number = Column(String(50), unique=True, nullable=False, index=True)
+    issue_date = Column(Date, nullable=True)
+    membership_expiry = Column(Date, nullable=False)
+    status = Column(String(20), default="active", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PatronFaceModel(Base):
+    __tablename__ = "patron_faces"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    patron_id = Column(UUID(as_uuid=True), ForeignKey("patrons.id"), unique=True, nullable=False)
+    milvus_id = Column(String(100), nullable=True)
+    image_url = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AccessLogModel(Base):
+    __tablename__ = "access_logs"
+    __table_args__ = (
+        Index('idx_patron_access_time', 'patron_id', 'access_time'),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    patron_id = Column(UUID(as_uuid=True), ForeignKey("patrons.id"), nullable=True)
+    access_type = Column(String(10), nullable=False)
+    verify_method = Column(String(20), nullable=False)
+    confidence = Column(Float, nullable=True)
+    camera_id = Column(String(50), nullable=False)
+    image_url = Column(Text, nullable=True)
+    access_time = Column(DateTime, default=datetime.utcnow)
+    status = Column(String(20), nullable=False)
+</file>
+
+<file path="face-recognition-service/infra/redis_pubsub.py">
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import threading
+from typing import Any
+
+from infra.config import settings
+from infra.sse_manager import sse_manager
+
+logger = logging.getLogger(__name__)
+
+CHANNEL = "camera:events"
+
+_running = True
+
+_redis_client = None
+_redis_lock = threading.Lock()
+
+
+def _get_redis():
+    """Reuse a single Redis client per process to avoid socket churn."""
+    global _redis_client
+    if _redis_client is None:
+        with _redis_lock:
+            if _redis_client is None:
+                import redis as _redis
+
+                _redis_client = _redis.Redis.from_url(
+                    settings.celery_broker_url,
+                    decode_responses=True,
+                    socket_keepalive=True,
+                    socket_timeout=5,
+                    retry_on_timeout=True,
+                )
+    return _redis_client
+
+
+def publish(channel: str, data: dict[str, Any]) -> None:
+    try:
+        r = _get_redis()
+        r.publish(channel, json.dumps(data, default=str))
+    except Exception as e:
+        logger.error("Redis publish failed: %s - data=%s", e, data)
+
+
+
+def _subscribe_loop(channel: str, loop: asyncio.AbstractEventLoop) -> None:
+    global _running
+    pubsub = None
+    r = None
+    try:
+        r = _get_redis()
+        pubsub = r.pubsub()
+        pubsub.subscribe(channel)
+        logger.info("Redis subscribed to %s", channel)
+        for msg in pubsub.listen():
+            if not _running:
+                break
+            if msg["type"] != "message":
+                continue
+            try:
+                data = json.loads(msg["data"])
+                logger.info("Redis message received on %s: %s", channel, data.get("status", "unknown"))
+                future = asyncio.run_coroutine_threadsafe(
+                    sse_manager.broadcast("camera_event", data), loop
+                )
+                future.add_done_callback(
+                    lambda f: logger.info("SSE broadcast completed for status=%s", data.get("status"))
+                    if not f.exception() else logger.error("SSE broadcast failed: %s", f.exception())
+                )
+            except Exception as e:
+                logger.warning("SSE broadcast error: %s", e)
+    except Exception as e:
+        logger.warning("Redis subscribe error: %s", e)
+    finally:
+        if pubsub:
+            try:
+                pubsub.unsubscribe()
+                pubsub.close()
+            except Exception:
+                pass
+        _running = False
+
+
+def stop_sse_bridge() -> None:
+    global _running
+    _running = False
+
+
+def start_sse_bridge(loop: asyncio.AbstractEventLoop) -> tuple[threading.Thread, callable]:
+    t = threading.Thread(target=_subscribe_loop, args=(CHANNEL, loop), daemon=True)
+    t.start()
+    return t, stop_sse_bridge
+</file>
+
+<file path="api-gateway/src/index.ts">
+import express from 'express';
+import http from 'http';
+import cors from 'cors';
+import { config } from './config';
+
+const app = express();
+
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  credentials: true,
+}));
+
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
+  next();
+});
+
+const proxyRequest = (path: string, req: any, res: any, targetBase: string) => {
+  const targetUrl = new URL(path, targetBase);
+
+  const options: http.RequestOptions = {
+    hostname: targetUrl.hostname,
+    port: parseInt(targetUrl.port) || 80,
+    path: targetUrl.pathname + targetUrl.search,
+    method: req.method,
+    headers: {} as any,
+  };
+
+  const skipHeaders = ['host', 'connection'];
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (!skipHeaders.includes(key.toLowerCase())) {
+      (options.headers as any)[key] = value;
+    }
+  }
+  
+  const headers = options.headers as Record<string, string>;
+  console.log(`  Headers: content-type=${headers['content-type']}, content-length=${headers['content-length']}`);
+  console.log(`  -> ${options.method} ${options.hostname}:${options.port}${options.path}`);
+
+  const proxyReq = http.request({ ...options, timeout: 0 }, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+    proxyRes.pipe(res, { end: true });
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error(`  Proxy error: ${err.message}`);
+    if (!res.headersSent) {
+      res.status(502).json({ error: 'Bad gateway', message: err.message });
+    }
+  });
+
+  proxyReq.on('timeout', () => {
+    console.error(`  Proxy timeout`);
+    proxyReq.destroy();
+    if (!res.headersSent) {
+      res.status(504).json({ error: 'Gateway timeout' });
+    }
+  });
+
+  req.pipe(proxyReq, { end: true });
+};
+
+// Face Recognition API routes - strip /api prefix
+app.all('/api/auth', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/auth/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/auth', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
+app.all('/auth/*', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
+
+// Users routes (admin user management) -> face-recognition-api
+app.all('/api/users', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/users/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/users', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/users/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+
+// Face API routes - strip /api prefix (for face operations only, not auth)
+app.all('/api/face', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/face/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+
+// Tasks routes - proxy to face-recognition-api
+app.all('/api/tasks', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/tasks/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+
+// Swagger docs - no prefix stripping needed
+app.all('/docs', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/docs/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/openapi.json', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/redoc', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+
+// New routes: Patrons, Access, Kiosk, Camera - proxy to face-recognition-api
+app.all('/api/patrons', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/patrons/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/access', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/access/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/kiosk', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/kiosk/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+
+// Non-prefixed routes for Access, Kiosk, Camera - proxy directly
+app.all('/access', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/access/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/kiosk', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/kiosk/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/camera', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/camera/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+
+// Generic API catch-all - any remaining /api/* -> face-recognition-api
+app.all('/api/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+
+app.get('/healthz', (req, res) => {
+  res.json({ status: 'ok', gateway: 'Node.js-API-Gateway', timestamp: new Date().toISOString() });
+});
+
+// Frontend - proxy all other requests to Next.js dev server
+app.all('/*', (req, res) => {
+  proxyRequest(req.originalUrl, req, res, config.frontendUrl);
+});
+
+const PORT = config.port;
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 API Gateway running on port ${PORT}`);
+});
+
+server.timeout = 0;
+server.keepAliveTimeout = 0;
+</file>
+
+<file path="face-recognition-service/api/routers/kiosk.py">
+from __future__ import annotations
+
+import uuid as _uuid
+from datetime import date
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
+from sqlalchemy.ext.asyncio import AsyncSession
+from celery import Celery as _Celery
+
+from api.dependencies import get_db_session
+from core.schemas import KioskEnrollRequest, KioskEnterRequest, KioskResult, PatronPublic
+from infra.config import settings
+from infra.models import PatronModel
+from infra.patron_repository import PatronRepository
+from infra.sse_manager import sse_manager
+from worker.celery_app import celery_app as _celery_app
+from worker.tasks import _upload_temp_frame
+
+router = APIRouter(prefix="/kiosk", tags=["kiosk"])
+celery_app = _celery_app
+
+
+async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> PatronPublic:
+    face = await repo.get_active_face(patron.id)
+    return PatronPublic(
+        id=str(patron.id),
+        full_name=patron.full_name,
+        student_code=patron.student_code,
+        identity_number=patron.identity_number,
+        email=patron.email,
+        phone=patron.phone,
+        card_number=patron.card_number,
+        issue_date=patron.issue_date,
+        membership_expiry=patron.membership_expiry,
+        status=patron.status,
+        created_at=patron.created_at,
+        updated_at=patron.updated_at,
+        has_face=face is not None,
+    )
+
+
+@router.post("/lookup")
+async def kiosk_lookup(
+    student_code: Optional[str] = None,
+    card_number: Optional[str] = None,
+    db: AsyncSession = Depends(get_db_session),
+):
+    repo = PatronRepository(db)
+    patron = None
+    if student_code:
+        patron = await repo.get_by_student_code(student_code)
+    elif card_number:
+        patron = await repo.get_by_card_number(card_number)
+    if not patron:
+        return {"exists": False, "patron": None, "has_face": False, "is_expired": False}
+    is_expired = patron.membership_expiry and patron.membership_expiry < date.today()
+    return {
+        "exists": True,
+        "patron": (await _patron_to_public(patron, repo)).model_dump(),
+        "has_face": await repo.get_active_face(patron.id) is not None,
+        "is_expired": bool(is_expired),
+    }
+
+
+@router.post("/enroll")
+async def kiosk_enroll(
+    image: UploadFile,
+    full_name: str = Form(...),
+    student_code: str = Form(...),
+    card_number: str = Form(...),
+    membership_expiry: str = Form(...),
+    identity_number: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
+    phone: Optional[str] = Form(None),
+    issue_date: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db_session),
+):
+    repo = PatronRepository(db)
+
+    if await repo.get_by_student_code(student_code):
+        raise HTTPException(409, "Student code already exists")
+    if await repo.get_by_card_number(card_number):
+        raise HTTPException(409, "Card number already exists")
+
+    raw = await image.read()
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+
+    patron = await repo.create_patron(
+        full_name=full_name,
+        student_code=student_code,
+        card_number=card_number,
+        membership_expiry=date.fromisoformat(membership_expiry),
+        identity_number=identity_number,
+        email=email,
+        phone=phone,
+        issue_date=date.fromisoformat(issue_date) if issue_date else None,
+    )
+    await db.commit()
+
+    task = celery_app.send_task(
+        "enroll_face",
+        kwargs={"patron_id": str(patron.id), "object_key": object_key},
+    )
+
+    return KioskResult(
+        success=True,
+        message="Patron created. Face enrollment in progress.",
+        patron=await _patron_to_public(patron, repo),
+        job_id=task.id,
+    )
+
+
+@router.post("/enter")
+async def kiosk_enter(
+    image: UploadFile,
+    student_code: str = Form(...),
+    db: AsyncSession = Depends(get_db_session),
+):
+    repo = PatronRepository(db)
+
+    patron = await repo.get_by_student_code(student_code)
+    if not patron:
+        raise HTTPException(404, "Patron not found")
+
+    if patron.membership_expiry and patron.membership_expiry < date.today():
+        return KioskResult(success=False, message="Membership has expired")
+
+    face = await repo.get_active_face(patron.id)
+    if not face:
+        return KioskResult(success=False, message="Patron has no enrolled face")
+
+    raw = await image.read()
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+
+    task = celery_app.send_task(
+        "verify_face",
+        kwargs={"patron_id": str(patron.id), "object_key": object_key},
+    )
+
+    return KioskResult(
+        success=True,
+        message="Face verification in progress",
+        patron=await _patron_to_public(patron, repo),
+        job_id=task.id,
+    )
+</file>
+
 <file path="face-recognition-service/docker-compose.yml">
 version: "3.9"
 
@@ -7865,84 +8682,334 @@ networks:
     driver: bridge
 </file>
 
-<file path="face-recognition-service/infra/models.py">
+<file path="face-recognition-service/infra/milvus_client.py">
+from __future__ import annotations
+
+from typing import Any
+
+from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, connections, utility
+
+
+class MilvusClient:
+    def __init__(
+        self,
+        *,
+        host: str,
+        port: int,
+        collection_name: str,
+        dim: int,
+        metric_type: str = "COSINE",
+    ) -> None:
+        self.host = host
+        self.port = port
+        self.collection_name = collection_name
+        self.dim = dim
+        self.metric_type = metric_type
+
+        connections.connect(alias="default", host=self.host, port=self.port)
+        self.collection = self._get_or_create_collection()
+
+    def _get_or_create_collection(self) -> Collection:
+        if utility.has_collection(self.collection_name):
+            collection = Collection(self.collection_name)
+            fields = {f.name: f for f in collection.schema.fields}
+            # Drop & recreate if collection has the new compound-PK schema
+            if "id" in fields:
+                __import__("logging").getLogger(__name__).warning(
+                    "Dropping collection '%s' with compound PK schema and recreating with user_id PK",
+                    self.collection_name,
+                )
+                collection.release()
+                utility.drop_collection(self.collection_name)
+                collection = self._create_collection()
+                collection.load()
+                return collection
+            if not collection.is_loaded:
+                collection.load()
+            return collection
+
+        collection = self._create_collection()
+        collection.load()
+        return collection
+
+    def _create_collection(self) -> Collection:
+        fields = [
+            FieldSchema(name="user_id", dtype=DataType.VARCHAR, max_length=128, is_primary=True),
+            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=self.dim),
+        ]
+        schema = CollectionSchema(fields=fields, description="face embeddings")
+        return Collection(
+            name=self.collection_name,
+            schema=schema,
+            using="default",
+            metric_type=self.metric_type,
+        )
+
+    def upsert_embeddings(self, *, user_id: str, embedding: list[float]) -> None:
+        # Milvus uses insert/upsert depending on primary key and indexes.
+        self.collection.insert([[user_id], [embedding]])
+        self.collection.flush()
+
+    def get_embedding_by_user_id(self, user_id: str) -> list[float] | None:
+        results = self.collection.query(
+            expr=f'user_id == "{user_id}"',
+            output_fields=["embedding"],
+            limit=1,
+        )
+        if not results:
+            return None
+        return results[0].get("embedding")
+
+    def search(self, *, embedding: list[float], top_k: int = 1) -> list[dict[str, Any]]:
+        # Ensure an index exists in real deployments; for MVP use default.
+        collection = self.collection
+        search_params = {"metric_type": self.metric_type, "params": {"nprobe": 16}}
+
+        res = collection.search(
+            data=[embedding],
+            anns_field="embedding",
+            param=search_params,
+            limit=top_k,
+            output_fields=["user_id"],
+        )
+
+        hits = []
+        for r in res[0]:
+            hits.append({"user_id": r.entity.get("user_id"), "score": float(r.score)})
+        return hits
+
+    def delete_by_user_id(self, *, user_id: str) -> None:
+        collection = self.collection
+        collection.delete(f"user_id == '{user_id}'")
+        collection.flush()
+</file>
+
+<file path="face-recognition-service/worker/celery_app.py">
+from __future__ import annotations
+
+from celery import Celery
+
+from infra.config import settings
+
+
+celery_app = Celery(
+    "face_recognition",
+    broker=settings.celery_broker_url,
+    backend=settings.celery_result_backend,
+)
+
+celery_app.conf.update(
+    task_serializer="json",
+    result_serializer="json",
+    accept_content=["json"],
+    timezone="UTC",
+    task_soft_time_limit=300,
+    task_time_limit=360,
+    worker_max_tasks_per_child=1000,
+)
+</file>
+
+<file path="face-recognition-service/api/routers/access.py">
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from typing import Any, Optional
 
-from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, Index, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from infra.database import Base
-
-
-class UserModel(Base):
-    __tablename__ = "users"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
-    full_name = Column(String(255), nullable=True)
-    role = Column(String(50), default="user", nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+from api.dependencies import get_current_user, get_db_session
+from core.schemas import AccessLogPublic, ActivePatron, StatsResponse
+from infra.patron_repository import PatronRepository
+from infra.sse_manager import sse_manager
 
 
-class AuditLogModel(Base):
-    __tablename__ = "audit_logs"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=True)
-    event_type = Column(String(100), nullable=False)
-    details = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+router = APIRouter(prefix="/access", tags=["access"])
 
 
-class PatronModel(Base):
-    __tablename__ = "patrons"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    full_name = Column(String(255), nullable=False)
-    student_code = Column(String(50), unique=True, nullable=False, index=True)
-    identity_number = Column(String(50), nullable=True)
-    email = Column(String(255), nullable=True)
-    phone = Column(String(50), nullable=True)
-    card_number = Column(String(50), unique=True, nullable=False, index=True)
-    issue_date = Column(Date, nullable=True)
-    membership_expiry = Column(Date, nullable=False)
-    status = Column(String(20), default="active", nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class PatronFaceModel(Base):
-    __tablename__ = "patron_faces"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    patron_id = Column(UUID(as_uuid=True), ForeignKey("patrons.id"), unique=True, nullable=False)
-    milvus_id = Column(String(100), nullable=True)
-    image_url = Column(Text, nullable=True)
-    is_active = Column(Boolean, default=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class AccessLogModel(Base):
-    __tablename__ = "access_logs"
-    __table_args__ = (
-        Index('idx_patron_access_time', 'patron_id', 'access_time'),
+@router.get("/events")
+async def sse_events():
+    return StreamingResponse(
+        sse_manager.event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    patron_id = Column(UUID(as_uuid=True), ForeignKey("patrons.id"), nullable=True)
-    access_type = Column(String(10), nullable=False)
-    verify_method = Column(String(20), nullable=False)
-    confidence = Column(Float, nullable=True)
-    camera_id = Column(String(50), nullable=False)
-    image_url = Column(Text, nullable=True)
-    access_time = Column(DateTime, default=datetime.utcnow)
-    status = Column(String(20), nullable=False)
+
+@router.post("/test-broadcast")
+async def test_broadcast(
+    status: str = "granted",
+    full_name: str = "Test User",
+    camera_id: str = "entry_gate",
+):
+    test_event = {
+        "status": status,
+        "camera_id": camera_id,
+        "patron_id": "test-id",
+        "full_name": full_name,
+        "student_code": "TEST123",
+        "score": 0.95,
+        "access_type": "entry",
+    }
+    await sse_manager.broadcast("camera_event", test_event)
+    return {"ok": True, "event": test_event}
+
+
+@router.get("/recent")
+async def get_recent_logs(db: AsyncSession = Depends(get_db_session)):
+    repo = PatronRepository(db)
+    logs, _ = await repo.get_access_logs(limit=20)
+
+    patron_ids = [log.patron_id for log in logs if log.patron_id]
+    unique_ids = list({str(pid) for pid in patron_ids})
+    patron_map: dict[str, Any] = {}
+
+    if unique_ids:
+        from infra.models import PatronModel
+
+        patrons = await db.execute(
+            select(PatronModel).where(
+                PatronModel.id.in_([uuid.UUID(pid) for pid in unique_ids])
+            )
+        )
+        patron_map = {str(p.id): p for p in patrons.scalars().all()}
+
+    items = []
+    for log in logs:
+        p = patron_map.get(str(log.patron_id)) if log.patron_id else None
+        items.append(
+            AccessLogPublic(
+                id=str(log.id),
+                patron_id=str(log.patron_id) if log.patron_id else None,
+                patron_name=p.full_name if p else None,
+                student_code=p.student_code if p else None,
+                access_type=log.access_type,
+                verify_method=log.verify_method,
+                confidence=log.confidence,
+                camera_id=log.camera_id,
+                access_time=log.access_time,
+                status=log.status,
+            )
+        )
+
+    return {"items": items}
+
+
+
+
+@router.get("/logs")
+async def get_logs(
+    patron_id: Optional[uuid.UUID] = Query(None),
+    camera_id: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    access_type: Optional[str] = Query(None),
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    search: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db_session),
+    _=Depends(get_current_user),
+):
+    repo = PatronRepository(db)
+    logs, total = await repo.get_access_logs(
+        patron_id=patron_id,
+
+        camera_id=camera_id,
+        status=status,
+        access_type=access_type,
+        date_from=date_from,
+        date_to=date_to,
+        search=search,
+        skip=skip,
+        limit=limit,
+    )
+    items = []
+    for log in logs:
+        patron_name = None
+        student_code = None
+        if log.patron_id:
+            p = await repo.get_by_id(log.patron_id)
+            if p:
+                patron_name = p.full_name
+                student_code = p.student_code
+        items.append(
+            AccessLogPublic(
+                id=str(log.id),
+                patron_id=str(log.patron_id) if log.patron_id else None,
+                patron_name=patron_name,
+                student_code=student_code,
+                access_type=log.access_type,
+                verify_method=log.verify_method,
+                confidence=log.confidence,
+                camera_id=log.camera_id,
+                access_time=log.access_time,
+                status=log.status,
+            )
+        )
+    return {"items": items, "total": total}
+
+
+@router.get("/active")
+async def get_active(
+    db: AsyncSession = Depends(get_db_session),
+    _=Depends(get_current_user),
+):
+    repo = PatronRepository(db)
+    patrons = await repo.get_active_patrons()
+    result = []
+    for p in patrons:
+        latest = await repo.get_latest_entry(p.id)
+        face = await repo.get_active_face(p.id)
+        result.append(
+            ActivePatron(
+                id=str(p.id),
+                full_name=p.full_name,
+                student_code=p.student_code,
+                entered_at=latest.access_time if latest else datetime.utcnow(),
+                camera_id=latest.camera_id if latest else "",
+                image_url=face.image_url if face else None,
+                confidence=latest.confidence if latest else None,
+            )
+        )
+    return {"items": result, "total": len(result)}
+
+
+@router.get("/frequency")
+async def get_frequency(
+    date_from: Optional[datetime] = Query(None),
+    date_to: Optional[datetime] = Query(None),
+    db: AsyncSession = Depends(get_db_session),
+    _=Depends(get_current_user),
+):
+    repo = PatronRepository(db)
+    daily = await repo.get_access_frequency(date_from=date_from, date_to=date_to)
+    return {"daily": daily}
+
+
+@router.get("/stats")
+async def get_stats(
+    db: AsyncSession = Depends(get_db_session),
+    _=Depends(get_current_user),
+):
+    repo = PatronRepository(db)
+    today = date.today()
+    logs_today, _ = await repo.get_access_logs(skip=0, limit=10000)
+    entries = sum(1 for l in logs_today if l.access_type == "entry" and l.access_time.date() == today)
+    exits = sum(1 for l in logs_today if l.access_type == "exit" and l.access_time.date() == today)
+    return StatsResponse(
+        total_patrons=await repo.count_active(),
+        active_patrons=len(await repo.get_active_patrons()),
+        today_entries=entries,
+        today_exits=exits,
+    )
 </file>
 
 <file path="face-recognition-service/api/routers/auth.py">
@@ -8619,7 +9686,6 @@ import threading
 import urllib.parse
 import uuid as _uuid
 
-import cv2
 import numpy as np
 import psycopg
 from jose import jwt
@@ -8697,8 +9763,27 @@ def _upload_temp_frame(frame_bytes: bytes, task_id: str | None = None) -> str:
 
 
 def _get_temp_frame(object_key: str) -> bytes:
-    """Download temp frame from MinIO."""
-    return _get_storage().get_image(object_key)
+    """Download temp frame from Redis cache first, then fall back to MinIO."""
+    import time
+    try:
+        from infra.redis_cache import redis_client as _rc
+        cached = _rc.get(f"temp_frame:{object_key}")
+        if cached:
+            _rc.delete(f"temp_frame:{object_key}")
+            return cached
+    except Exception:
+        pass
+    last_error = None
+    for attempt in range(5):
+        try:
+            return _get_storage().get_image(object_key)
+        except Exception as exc:
+            last_error = exc
+            if "NoSuchKey" in str(exc) and attempt < 4:
+                time.sleep(1)
+                continue
+            raise
+    raise last_error  # type: ignore[misc]
 
 
 def _delete_temp_frame(object_key: str) -> None:
@@ -8793,15 +9878,31 @@ def _process_from_minio(object_key: str):
     return raw_data, img
 
 
+def _resolve_image(object_key: str | None = None, image_data: str | None = None):
+    """Get (raw_bytes, img) from either MinIO key or base64-encoded data."""
+    if image_data:
+        import base64 as _b64
+        raw = _b64.b64decode(image_data)
+        img = safe_read_image_from_bytes(raw)
+        img = resize_if_necessary(
+            img,
+            max_w=settings.max_image_width,
+            max_h=settings.max_image_height,
+            max_pixels=settings.max_image_pixels,
+        )
+        return raw, img
+    return _process_from_minio(object_key)  # type: ignore[arg-type]
+
+
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
-def enroll_task(self, user_id: str, object_key: str) -> dict:
+def enroll_task(self, user_id: str, object_key: str | None = None, image_data: str | None = None) -> dict:
     logger.info("Enrolling user %s", user_id)
     try:
         patron_id = _get_patron_id_by_user_id(user_id) or user_id
-        raw_data, img = _process_from_minio(object_key)
+        raw_data, img = _resolve_image(object_key, image_data)
         quality = check_face_quality(img)
         if not quality.get("valid"):
-            _delete_temp_frame(object_key)
+            if object_key: _delete_temp_frame(object_key)
             return {
                 "status": "error",
                 "error": quality.get("error"),
@@ -8810,7 +9911,7 @@ def enroll_task(self, user_id: str, object_key: str) -> dict:
             }
         liveness = run_liveness_analysis(img)
         if not liveness.get("is_live", False):
-            _delete_temp_frame(object_key)
+            if object_key: _delete_temp_frame(object_key)
             logger.warning("Enroll: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
             return {
                 "status": "error",
@@ -8821,16 +9922,16 @@ def enroll_task(self, user_id: str, object_key: str) -> dict:
         vec_arr = np.array(vec, dtype=np.float32)
         vec_sum = float(np.sum(np.abs(vec_arr)))
         if vec_sum < 0.1:
-            _delete_temp_frame(object_key)
+            if object_key: _delete_temp_frame(object_key)
             logger.error("Enroll: extracted embedding is near-zero for patron_id %s, sum=%.6f", patron_id, vec_sum)
             return {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
         norm_vec = l2_normalize(vec)
         logger.info("Enroll embedding stats: min=%.4f, max=%.4f, sum_abs=%.4f, norm=%.4f",
                     float(np.min(vec_arr)), float(np.max(vec_arr)), vec_sum, float(np.linalg.norm(vec_arr)))
-        _get_milvus().insert_embedding(patron_id=patron_id, embedding=norm_vec, quality_score=quality.get("score", 0.5))
+        _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
         _get_storage().upload_image(f"enrollments/{patron_id}.jpg", encrypted)
-        _delete_temp_frame(object_key)
+        if object_key: _delete_temp_frame(object_key)
         return {"status": "success", "patron_id": patron_id, "user_id": user_id, "quality_score": quality.get("score")}
     except Exception as exc:
         logger.exception("Enroll failed for %s", user_id)
@@ -8838,40 +9939,34 @@ def enroll_task(self, user_id: str, object_key: str) -> dict:
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
-def verify_task(self, user_id: str, object_key: str) -> dict:
+def verify_task(self, user_id: str, object_key: str | None = None, image_data: str | None = None) -> dict:
     logger.info("Verifying user %s", user_id)
     try:
         patron_id = _get_patron_id_by_user_id(user_id) or user_id
-        _, img = _process_from_minio(object_key)
+        _, img = _resolve_image(object_key, image_data)
         vec = extract_embedding_placeholder(img)
         vec_arr = np.array(vec, dtype=np.float32)
         vec_sum = float(np.sum(np.abs(vec_arr)))
         if vec_sum < 0.1:
-            _delete_temp_frame(object_key)
             logger.error("Verify: extracted embedding is near-zero, sum=%.6f", vec_sum)
             return {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
         norm_vec = l2_normalize(vec)
         norm_vec_arr = np.array(norm_vec, dtype=np.float32)
         logger.info("Verify query embedding: min=%.4f, max=%.4f, sum_abs=%.4f",
                     float(np.min(vec_arr)), float(np.max(vec_arr)), vec_sum)
-        enrolled_embs = _get_milvus().get_embeddings_by_patron_id(patron_id)
-        if not enrolled_embs:
-            _delete_temp_frame(object_key)
+        enrolled_emb = _get_milvus().get_embedding_by_user_id(patron_id)
+        if not enrolled_emb:
             return {"status": "success", "verified": False, "score": 0.0, "error": "Face not enrolled"}
-        best_score = 0.0
-        for emb in enrolled_embs:
-            arr = np.array(emb, dtype=np.float32)
-            s = float(np.dot(norm_vec_arr, arr))
-            if s > best_score:
-                best_score = s
-        logger.info("Verify best score for patron_id %s (user_id %s): %.4f (from %d enrollments)",
-                    patron_id, user_id, best_score, len(enrolled_embs))
+        enrolled_arr = np.array(enrolled_emb, dtype=np.float32)
+        best_score = float(np.dot(norm_vec_arr, enrolled_arr))
         score = best_score
+        logger.info("Verify best score for patron_id %s (user_id %s): %.4f",
+                    patron_id, user_id, best_score)
         logger.info("Verify score for patron_id %s (user_id %s): %.4f (query_norm=%.4f, enrolled_norm=%.4f)",
                     patron_id, user_id, score,
                     float(np.linalg.norm(vec_arr)),
                     float(np.linalg.norm(enrolled_arr)))
-        _delete_temp_frame(object_key)
+        if object_key: _delete_temp_frame(object_key)
         return {"status": "success", "verified": score > 0.6, "score": score}
     except Exception as exc:
         logger.exception("Verify failed for %s", user_id)
@@ -8879,16 +9974,16 @@ def verify_task(self, user_id: str, object_key: str) -> dict:
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
-def identify_task(self, object_key: str) -> dict:
+def identify_task(self, object_key: str | None = None, image_data: str | None = None) -> dict:
     logger.info("Identifying face")
     try:
-        _, img = _process_from_minio(object_key)
+        _, img = _resolve_image(object_key, image_data)
         vec = extract_embedding_placeholder(img)
         norm_vec = l2_normalize(vec)
         results = _get_milvus().search(embedding=norm_vec, top_k=5)
         matches = []
         for h in results:
-            pid = h["patron_id"]
+            pid = h["user_id"]
             user = _get_user_info(pid) or {"id": pid}
             matches.append({
                 "user_id": pid,
@@ -8898,10 +9993,10 @@ def identify_task(self, object_key: str) -> dict:
                 "role": user.get("role"),
                 "created_at": user.get("created_at"),
             })
-        _delete_temp_frame(object_key)
+        if object_key: _delete_temp_frame(object_key)
         return {"status": "success", "matches": matches}
     except Exception as exc:
-        _delete_temp_frame(object_key)
+        if object_key: _delete_temp_frame(object_key)
         logger.exception("Identify failed")
         raise self.retry(exc=exc)
 
@@ -8929,16 +10024,12 @@ def face_login_task(self, email: str, object_key: str) -> dict:
         vec = extract_embedding_placeholder(img)
         norm_vec = l2_normalize(vec)
         norm_vec_arr = np.array(norm_vec, dtype=np.float32)
-        enrolled_embs = _get_milvus().get_embeddings_by_patron_id(user_info["id"])
-        if not enrolled_embs:
+        enrolled_emb = _get_milvus().get_embedding_by_user_id(user_info["id"])
+        if not enrolled_emb:
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face not enrolled. Please enroll first."}
-        best_score = 0.0
-        for emb in enrolled_embs:
-            s = float(np.dot(norm_vec_arr, np.array(emb, dtype=np.float32)))
-            if s > best_score:
-                best_score = s
-        score = best_score
+        enrolled_arr = np.array(enrolled_emb, dtype=np.float32)
+        score = float(np.dot(norm_vec_arr, enrolled_arr))
         if score < 0.6:
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face does not match", "score": score}
@@ -8991,15 +10082,15 @@ def face_login_task(self, email: str, object_key: str) -> dict:
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
-def liveness_task(self, object_key: str) -> dict:
+def liveness_task(self, object_key: str | None = None, image_data: str | None = None) -> dict:
     logger.info("Running liveness check")
     try:
-        _, img = _process_from_minio(object_key)
+        _, img = _resolve_image(object_key, image_data)
         result = run_liveness_analysis(img)
-        _delete_temp_frame(object_key)
+        if object_key: _delete_temp_frame(object_key)
         return {"status": "success", **result}
     except Exception as exc:
-        _delete_temp_frame(object_key)
+        if object_key: _delete_temp_frame(object_key)
         logger.exception("Liveness check failed")
         raise self.retry(exc=exc)
 
@@ -9008,7 +10099,7 @@ def liveness_task(self, object_key: str) -> dict:
 def delete_user_task(self, user_id: str) -> dict:
     logger.info("Deleting user %s embeddings and images", user_id)
     try:
-        _get_milvus().delete_by_patron_id(patron_id=user_id)
+        _get_milvus().delete_by_user_id(user_id=user_id)
         try:
             _get_storage().delete_image(f"enrollments/{user_id}.jpg")
         except Exception:
@@ -9040,8 +10131,7 @@ def enroll_face(self, patron_id: str, object_key: str) -> dict:
                 "liveness_score": liveness.get("liveness_score"),
             }
         norm_vec = l2_normalize(face_result["embedding"])
-        qs = face_result.get("det_score", 0.5)
-        _get_milvus().insert_embedding(patron_id=patron_id, embedding=norm_vec, quality_score=qs)
+        _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
         _get_storage().upload_image(f"patrons/{patron_id}.jpg", encrypted)
 
@@ -9083,18 +10173,11 @@ def identify_patron(self, object_key: str) -> dict:
         vec = extract_embedding_placeholder(img)
         norm_vec = l2_normalize(vec)
         results = _get_milvus().search(embedding=norm_vec, top_k=3)
-        if not results:
+        if not results or results[0]["score"] < settings.face_match_threshold:
             _delete_temp_frame(object_key)
             return {"status": "no_match"}
         hit = results[0]
-        base_th = settings.face_match_threshold
-        qs = hit.get("quality_score", 0.5)
-        adaptive_th = base_th + (qs - 0.6) * 0.2
-        if hit["score"] < adaptive_th:
-            _delete_temp_frame(object_key)
-            return {"status": "no_match"}
-        hit = results[0]
-        patron_id = hit["patron_id"]
+        patron_id = hit["user_id"]
         score = float(hit["score"])
 
         # Lookup patron info from Postgres
@@ -9108,7 +10191,7 @@ def identify_patron(self, object_key: str) -> dict:
         cur.close()
 
         if not row:
-            _get_milvus().delete_by_patron_id(patron_id=patron_id)
+            _get_milvus().delete_by_user_id(user_id=patron_id)
             logger.warning("Orphaned embedding cleaned up for %s", patron_id)
             _delete_temp_frame(object_key)
             return {"status": "no_match"}
@@ -9200,50 +10283,6 @@ def _get_redis_throttle():
         logger.warning("Redis throttle unavailable: %s", e)
         return None
 
-
-def _check_gate_consensus(camera_id: str, patron_id: str, score: float) -> tuple[bool, str | None, float]:
-    """Store recognition result in Redis and return True if 2 out of last 3 frames agree."""
-    try:
-        import json, time
-        import redis as _redis
-        from infra.config import settings
-        r = _redis.Redis.from_url(settings.redis_url)
-        key = f"gate_consensus:{camera_id}"
-        window = 30
-
-        results = []
-        raw = r.get(key)
-        if raw:
-            try:
-                results = json.loads(raw)
-            except Exception:
-                results = []
-        results.append({"patron_id": patron_id, "score": score, "ts": time.time()})
-        results = [x for x in results if x["ts"] > time.time() - window]
-        results = results[-3:]
-        r.setex(key, window, json.dumps(results))
-        r.close()
-
-        if len(results) < 2:
-            return False, None, 0.0
-
-        counts: dict[str, list[float]] = {}
-        for x in results:
-            pid = x["patron_id"]
-            if pid not in counts:
-                counts[pid] = []
-            counts[pid].append(x["score"])
-
-        for pid, scores in counts.items():
-            if len(scores) >= 2:
-                best = max(scores)
-                return True, pid, best
-        return False, None, 0.0
-    except Exception as e:
-        logger.warning("Consensus check failed: %s — granting on single frame", e)
-        return True, patron_id, score
-
-
 @celery_app.task(bind=True, name="process_camera_frame", max_retries=1, default_retry_delay=5)
 def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
     logger.info("Processing camera frame from %s", camera_id)
@@ -9274,60 +10313,17 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
             return result
 
         face = face_result["face"]
-
-        # Step 1b: Frame quality filter — reject blurry or too-small faces
-        h, w = img.shape[:2]
-        bbox = face.bbox.astype(np.int32)
-        face_w = bbox[2] - bbox[0]
-        face_h = bbox[3] - bbox[1]
-        min_face_px = 60
-        if face_w < min_face_px or face_h < min_face_px:
-            logger.info("Face too small (%dx%d) in frame from %s — skipping", face_w, face_h, camera_id)
-            result = {"camera_id": camera_id, "status": "no_match"}
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        lap_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-        if lap_var < 30:
-            logger.info("Frame too blurry (lap_var=%.1f) from %s — skipping", lap_var, camera_id)
-            result = {"camera_id": camera_id, "status": "no_match"}
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
-
         norm_vec = l2_normalize(face_result["embedding"])
         results = _get_milvus().search(embedding=norm_vec, top_k=5)
-        if not results:
-            result = {"camera_id": camera_id, "status": "no_match"}
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
-
-        # Adaptive threshold: lower threshold for low-quality enrollments
-        hit = results[0]
-        base_th = settings.face_match_threshold
-        qs = hit.get("quality_score", 0.5)
-        adaptive_th = base_th + (qs - 0.6) * 0.2  # 0.6→base, 0.3→base-0.06, 0.9→base+0.06
-        if hit["score"] < adaptive_th:
+        if not results or results[0]["score"] < settings.face_match_threshold:
             result = {"camera_id": camera_id, "status": "no_match"}
             _publish_camera_event(result)
             _delete_temp_frame(object_key)
             return result
 
         hit = results[0]
-        patron_id = hit["patron_id"]
+        patron_id = hit["user_id"]
         score = float(hit["score"])
-
-        # Step 2: Multi-frame consensus — need 2 out of last 3 frames to agree
-        consensus, consensus_pid, consensus_score = _check_gate_consensus(camera_id, patron_id, score)
-        if not consensus:
-            result = {"camera_id": camera_id, "status": "pending", "patron_id": patron_id, "score": score}
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
-        patron_id = consensus_pid or patron_id
-        score = consensus_score
 
         conn = _get_pg_connection()
         cur = conn.cursor()
@@ -9339,7 +10335,7 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
         cur.close()
 
         if not row:
-            _get_milvus().delete_by_patron_id(patron_id=patron_id)
+            _get_milvus().delete_by_user_id(user_id=patron_id)
             logger.warning("Orphaned embedding cleaned up for %s from camera %s", patron_id, camera_id)
             result = {"camera_id": camera_id, "status": "no_match"}
             _publish_camera_event(result)
@@ -9446,18 +10442,14 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
         vec = extract_embedding_placeholder(img)
         norm_vec = l2_normalize(vec)
-        enrolled_embs = _get_milvus().get_embeddings_by_patron_id(patron_id)
-        if not enrolled_embs:
+        enrolled_emb = _get_milvus().get_embedding_by_user_id(patron_id)
+        if not enrolled_emb:
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face not enrolled"}
-        best_score = 0.0
-        for emb in enrolled_embs:
-            s = float(np.dot(np.array(norm_vec, dtype=np.float32), np.array(emb, dtype=np.float32)))
-            if s > best_score:
-                best_score = s
-        if best_score < settings.face_match_threshold:
+        score = float(np.dot(np.array(norm_vec, dtype=np.float32), np.array(enrolled_emb, dtype=np.float32)))
+        if score < settings.face_match_threshold:
             _delete_temp_frame(object_key)
-            return {"status": "error", "error": "Face does not match", "score": best_score}
+            return {"status": "error", "error": "Face does not match", "score": score}
         liveness = run_liveness_analysis(img)
         if not liveness.get("is_live", False):
             _delete_temp_frame(object_key)
@@ -9480,7 +10472,6 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
 
         # Create access log
         log_id = str(_uuid.uuid4())
-        score = float(hit["score"])
         cur = conn.cursor()
         cur.execute(
             """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)

@@ -35,7 +35,7 @@ def get_all_patron_faces():
 
 
 def get_milvus_ids(client: MilvusClient) -> set[str]:
-    results = client.collection.query(expr="", output_fields=["user_id"], limit=10000)
+    results = client.client.query(client.collection_name, filter="user_id != \"\"", output_fields=["user_id"], limit=10000)
     return {r["user_id"] for r in results}
 
 
