@@ -25,6 +25,14 @@ class FaceModel:
             self._spoof_available = False
         self._cv_analyzer = AntiSpoofingAnalyzer()
 
+    @staticmethod
+    def enhance_illumination(img: cv2.Mat) -> cv2.Mat:
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        cl = clahe.apply(l)
+        return cv2.cvtColor(cv2.merge((cl, a, b)), cv2.COLOR_LAB2BGR)
+
     def extract_embedding(self, img: cv2.Mat) -> list[float]:
         faces = self.app.get(img)
         if len(faces) == 0:
@@ -34,7 +42,37 @@ class FaceModel:
             return [0.0] * 512
         return (faces[0].embedding / norm).tolist()
 
+    def detect_all_faces(self, img: cv2.Mat, min_face_size: int = 80) -> list[dict]:
+        faces = self.app.get(img)
+        if not faces:
+            return []
+        results = []
+        for face in faces:
+            bbox = face.bbox.astype(np.int32)
+            fw = bbox[2] - bbox[0]
+            fh = bbox[3] - bbox[1]
+            if fw < min_face_size or fh < min_face_size:
+                continue
+            norm = np.linalg.norm(face.embedding)
+            embedding = (face.embedding / norm).tolist() if norm > 0 else [0.0] * 512
+            results.append({
+                "embedding": embedding,
+                "face": face,
+                "det_score": float(face.det_score),
+                "bbox": bbox,
+            })
+        return results
+
+    def estimate_blur(self, img: cv2.Mat, threshold: float = 50.0) -> dict:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+        is_blurry = lap_var < threshold
+        return {"is_blurry": is_blurry, "laplacian_variance": lap_var, "threshold": threshold}
+
     def get_face_quality(self, img: cv2.Mat) -> dict:
+        blur = self.estimate_blur(img)
+        if blur["is_blurry"]:
+            return {"valid": False, "error": "MOTION_BLUR", "score": blur["laplacian_variance"]}
         faces = self.app.get(img)
         if len(faces) == 0:
             return {"valid": False, "error": "NO_FACE_DETECTED", "score": 0.0}
@@ -138,3 +176,19 @@ def detect_face_once(img: cv2.Mat) -> dict:
 
 def liveness_from_face(img: cv2.Mat, face) -> dict:
     return get_model().liveness_from_face(img, face)
+
+
+def enhance_illumination(img: cv2.Mat) -> cv2.Mat:
+    return FaceModel.enhance_illumination(img)
+
+
+def detect_all_faces(img: cv2.Mat, min_face_size: int = 80) -> list[dict]:
+    return get_model().detect_all_faces(img, min_face_size=min_face_size)
+
+
+def estimate_blur(img: cv2.Mat, threshold: float = 100.0) -> dict:
+    return get_model().estimate_blur(img, threshold)
+
+
+def check_motion_blur(img: cv2.Mat, threshold: float = 50.0) -> bool:
+    return get_model().estimate_blur(img, threshold)["is_blurry"]

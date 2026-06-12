@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     max_entry_hours: int = 24
     enable_person_detection: bool = True
     enable_multi_angle: bool = True
+    min_face_size: int = 80
+    frame_process_interval: float = 1.0
+    direction_grace_seconds: int = 120
+    camera_max_queue_depth: int = 50
+
+    user_service_url: str = "http://user-service:3001"
 
 
 settings = Settings()  # type: ignore

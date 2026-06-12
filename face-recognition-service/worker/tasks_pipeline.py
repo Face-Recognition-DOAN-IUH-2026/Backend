@@ -2,7 +2,17 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
-from worker.face_model import check_face_quality, extract_embedding, check_liveness, detect_face_once, liveness_from_face
+from worker.face_model import (
+    check_face_quality,
+    check_motion_blur,
+    detect_all_faces,
+    detect_face_once,
+    enhance_illumination,
+    estimate_blur,
+    extract_embedding,
+    check_liveness,
+    liveness_from_face,
+)
 
 
 def safe_read_image_from_bytes(data: bytes) -> "cv2.Mat":

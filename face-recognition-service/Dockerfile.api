@@ -10,6 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
+
+# Upgrade pip then install insightface + onnxruntime (needed for face login sync path)
+RUN pip install --upgrade pip && pip install --no-cache-dir insightface onnxruntime gevent
+
 RUN pip install --no-cache-dir poetry && \
     poetry config virtualenvs.create false && \
     poetry install --only main --no-root --no-interaction --no-ansi

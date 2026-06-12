@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user
-from infra.database import async_session_factory
-from infra.models import UserModel
+from infra.config import settings
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+USER_SERVICE_URL = settings.user_service_url or "http://user-service:3001"
 
 
 class UserResponse(BaseModel):
@@ -25,31 +25,32 @@ class UserListResponse(BaseModel):
     total: int
 
 
-async def _get_db():
-    async with async_session_factory() as session:
-        yield session
+async def _get_milvus_client():
+    from infra.milvus_client import MilvusClient
+    return MilvusClient(
+        host=settings.milvus_host,
+        port=settings.milvus_port,
+        collection_name=settings.milvus_collection,
+        dim=512,
+    )
+
+
+async def _get_face_user_ids() -> set[str]:
+    try:
+        mc = await _get_milvus_client()
+        all_rows = mc.client.query(mc.collection_name, filter='user_id != ""', output_fields=["user_id"], limit=10000)
+        return {r["user_id"] for r in all_rows}
+    except Exception:
+        return set()
 
 
 async def _check_has_face(user_id: str) -> bool:
-    try:
-        from infra.milvus_client import MilvusClient
-        from infra.config import settings
-        mc = MilvusClient(
-            host=settings.milvus_host,
-            port=settings.milvus_port,
-            collection_name=settings.milvus_collection,
-            dim=512,
-        )
-        results = mc.search(embedding=[0.0] * 512, top_k=1)
-        return any(r["user_id"] == user_id for r in results)
-    except Exception:
-        return False
+    return user_id in await _get_face_user_ids()
 
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(_get_db),
 ):
     has_face = await _check_has_face(current_user["id"])
     return UserResponse(
@@ -64,7 +65,6 @@ async def get_current_user_info(
 @router.get("", response_model=UserListResponse)
 async def list_users(
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(_get_db),
 ):
     if current_user["role"] != "admin":
         raise HTTPException(
@@ -72,12 +72,29 @@ async def list_users(
             detail="Admin access required",
         )
 
-    result = await db.execute(select(UserModel))
-    users = result.scalars().all()
+    async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
+        resp = await client.get("/users")
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to fetch users from user-service",
+            )
+        users_data = resp.json()
+
+    face_user_ids = await _get_face_user_ids()
 
     return UserListResponse(
-        users=[UserResponse(id=str(u.id), email=u.email, full_name=u.full_name, role=u.role) for u in users],
-        total=len(users),
+        users=[
+            UserResponse(
+                id=str(u["id"]),
+                email=u["email"],
+                full_name=u.get("full_name"),
+                role=u["role"],
+                has_face=str(u["id"]) in face_user_ids,
+            )
+            for u in users_data
+        ],
+        total=len(users_data),
     )
 
 
@@ -85,7 +102,6 @@ async def list_users(
 async def delete_user(
     user_id: str,
     current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(_get_db),
 ):
     if current_user["role"] != "admin":
         raise HTTPException(
@@ -93,14 +109,15 @@ async def delete_user(
             detail="Admin access required",
         )
 
-    result = await db.execute(select(UserModel).where(UserModel.id == user_id))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-
-    await db.delete(user)
-    await db.commit()
+    async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
+        resp = await client.delete(f"/users/{user_id}")
+        if resp.status_code == 404:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to delete user from user-service",
+            )

@@ -19,6 +19,7 @@ from worker.celery_app import celery_app as _celery_app
 from worker.tasks import _upload_temp_frame
 from infra.minio_client import MinioStorage as _MinioStorage
 from infra.milvus_client import MilvusClient as _MilvusClient
+from infra.redis_cache import redis_client as _redis_client
 
 def _get_milvus_client() -> _MilvusClient:
     return _MilvusClient(
@@ -30,6 +31,12 @@ def _get_milvus_client() -> _MilvusClient:
 
 router = APIRouter(prefix="/kiosk", tags=["kiosk"])
 celery_app = _celery_app
+
+
+async def _store_temp_frame(raw: bytes) -> str:
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+    _redis_client.setex(f"temp_frame:{object_key}", 120, raw)
+    return object_key
 
 
 async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> PatronPublic:
@@ -96,7 +103,7 @@ async def kiosk_enroll(
         raise HTTPException(409, "Student code already exists")
 
     raw = await image.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+    object_key = await _store_temp_frame(raw)
 
     patron = await repo.create_patron(
         full_name=full_name,
@@ -141,7 +148,7 @@ async def kiosk_enter(
         return KioskResult(success=False, message="Patron has no enrolled face")
 
     raw = await image.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+    object_key = await _store_temp_frame(raw)
 
     task = celery_app.send_task(
         "verify_face",
@@ -189,7 +196,7 @@ async def kiosk_batch_enroll(
     # Upload all 4 to temp storage
     keys = {}
     for angle, raw in raws.items():
-        keys[angle] = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+        keys[angle] = await _store_temp_frame(raw)
 
     # Create patron in DB (commit so Celery tasks can see it)
     patron = await repo.create_patron(
@@ -256,7 +263,7 @@ async def kiosk_enroll_face(
         raise HTTPException(404, "Patron not found")
 
     raw = await image.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+    object_key = await _store_temp_frame(raw)
 
     task = celery_app.send_task(
         "enroll_face",

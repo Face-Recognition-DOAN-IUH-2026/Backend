@@ -3,6 +3,7 @@ import cors from 'cors';
 import { config } from './config';
 import { initDb } from './db';
 import userRoutes from './routes/user.routes';
+import authRoutes from './routes/auth.routes';
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/users', userRoutes);
+app.use('/auth', authRoutes);
 
 async function start() {
   try {

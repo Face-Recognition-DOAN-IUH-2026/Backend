@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.security import decode_token
 from infra.config import settings
 from infra.database import async_session_factory
-from infra.user_repository import PostgresUserRepository
 
 security = HTTPBearer()
 
@@ -19,7 +18,6 @@ async def get_db_session() -> AsyncSession:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db_session),
 ) -> dict:
     token = credentials.credentials
     try:
@@ -35,15 +33,12 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
-    repo = PostgresUserRepository(db)
-    user_id = payload["sub"]
-    user = await repo.get_user_by_id(user_id)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-        )
-    return {"id": str(user.id), "email": user.email, "full_name": user.full_name, "role": user.role}
+    return {
+        "id": payload["sub"],
+        "email": payload.get("email", ""),
+        "full_name": payload.get("full_name"),
+        "role": (payload.get("roles") or [""])[0],
+    }
 
 
 def require_role(required_role: str):

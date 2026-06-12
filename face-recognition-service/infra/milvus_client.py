@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from pymilvus import CollectionSchema, DataType, FieldSchema, MilvusClient as _MilvusClient
+from pymilvus.milvus_client.index import IndexParams
+
+logger = logging.getLogger(__name__)
 
 
 class MilvusClient:
@@ -23,6 +27,7 @@ class MilvusClient:
 
         self.client = _MilvusClient(uri=f"http://{host}:{port}")
         self._get_or_create_collection()
+        self._ensure_index()
 
     def _get_or_create_collection(self) -> None:
         if self.client.has_collection(self.collection_name):
@@ -39,15 +44,34 @@ class MilvusClient:
             collection_name=self.collection_name,
             schema=schema,
         )
+        self._create_index()
+
+    def _create_index(self) -> None:
+        index_params = IndexParams()
+        index_params.add_index(
+            field_name="embedding",
+            metric_type=self.metric_type,
+            index_type="IVF_FLAT",
+            params={"nlist": 128},
+        )
         self.client.create_index(
             collection_name=self.collection_name,
-            index_params={
-                "field_name": "embedding",
-                "metric_type": self.metric_type,
-                "index_type": "IVF_FLAT",
-                "params": {"nprobe": 16},
-            },
+            index_params=index_params,
         )
+        self.client.load_collection(self.collection_name)
+
+    def _ensure_index(self) -> None:
+        try:
+            info = self.client.describe_index(self.collection_name, "embedding")
+            mt = info.get("metric_type", "")
+            if mt and mt.upper() != self.metric_type.upper():
+                self.client.release_collection(self.collection_name)
+                self.client.drop_index(self.collection_name, "embedding")
+                logger.info("Dropped index with mismatched metric_type=%s, recreating with %s", mt, self.metric_type)
+                self._create_index()
+        except Exception:
+            logger.warning("No existing index found, creating...")
+            self._create_index()
 
     def insert_embedding(self, *, user_id: str, angle: str, embedding: list[float]) -> int:
         data = [{"user_id": user_id, "angle": angle, "embedding": embedding}]
@@ -111,4 +135,7 @@ class MilvusClient:
         return hits
 
     def delete_by_user_id(self, *, user_id: str) -> None:
-        self.client.delete(self.collection_name, f'user_id == "{user_id}"')
+        self.client.delete(self.collection_name, filter=f'user_id == "{user_id}"')
+
+    def delete_by_user_id_and_angle(self, *, user_id: str, angle: str) -> None:
+        self.client.delete(self.collection_name, filter=f'user_id == "{user_id}" and angle == "{angle}"')

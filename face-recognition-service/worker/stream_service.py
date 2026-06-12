@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import base64
+import concurrent.futures
 import logging
 import threading
 import time
@@ -39,8 +39,9 @@ class CameraStream:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._last_process_time: float = 0
-        self._cooldown: float = settings.access_cooldown_seconds
+        self._cooldown: float = max(settings.frame_process_interval, 0.5)
         self._lock = threading.Lock()
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self.status = CameraStatus(camera_id, url)
 
     def start(self):
@@ -53,6 +54,7 @@ class CameraStream:
 
     def stop(self):
         self._running = False
+        self._executor.shutdown(wait=False)
         if self._thread:
             self._thread.join(timeout=5)
         with self._lock:
@@ -87,26 +89,14 @@ class CameraStream:
 
             retry_delay = INITIAL_RETRY_DELAY
 
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            cap.set(cv2.CAP_PROP_FPS, 15)
-
             now = time.time()
             if now - self._last_process_time >= self._cooldown:
                 self._last_process_time = now
                 try:
-                    self.on_frame(self.camera_id, frame)
-                    with self._lock:
-                        self.status.connected = True
-                        self.status.frames_processed += 1
-                        self.status.last_frame_time = datetime.now().isoformat(timespec="seconds")
-                        self.status.last_error = None
-                        self.status.retry_count = 0
-                        self.status.next_retry_in = None
+                    # Offload callback to thread pool so frame read is not blocked
+                    self._executor.submit(self._run_callback, self.camera_id, frame.copy())
                 except Exception as e:
                     logger.error("Camera %s callback error: %s", self.camera_id, e)
-                    with self._lock:
-                        self.status.last_error = str(e)
 
         if cap:
             cap.release()
@@ -114,9 +104,29 @@ class CameraStream:
             self.status.running = False
             self.status.connected = False
 
+    def _run_callback(self, camera_id: str, frame: np.ndarray):
+        try:
+            self.on_frame(camera_id, frame)
+            with self._lock:
+                self.status.connected = True
+                self.status.frames_processed += 1
+                self.status.last_frame_time = datetime.now().isoformat(timespec="seconds")
+                self.status.last_error = None
+                self.status.retry_count = 0
+                self.status.next_retry_in = None
+        except Exception as e:
+            logger.error("Camera %s callback error: %s", camera_id, e)
+            with self._lock:
+                self.status.last_error = str(e)
+
     def _open_camera_or_wait(self) -> Optional[cv2.VideoCapture]:
         cap = cv2.VideoCapture(self.url)
         if cap.isOpened():
+            # Set properties ONCE on open (not on every frame — causes lag)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_FPS, 15)
             with self._lock:
                 self.status.running = True
                 self.status.connected = True

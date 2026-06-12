@@ -16,7 +16,7 @@ class CooldownService:
             )
         return self._redis
 
-    async def acquire(self, key: str, cooldown_seconds: int = 5) -> bool:
+    async def acquire(self, key: str, cooldown_seconds: int = 1) -> bool:
         r = await self._get_redis()
         exists = await r.exists(f"cooldown:{key}")
         if exists:

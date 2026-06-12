@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import logging
-import threading
 import urllib.parse
 import uuid as _uuid
 
+import httpx
 import numpy as np
 import psycopg
 from jose import jwt
@@ -17,7 +17,10 @@ from infra.minio_client import MinioStorage
 from worker.celery_app import celery_app
 from worker.tasks_pipeline import (
     check_face_quality,
+    check_motion_blur,
+    detect_all_faces,
     detect_face_once,
+    enhance_illumination,
     extract_embedding_placeholder,
     liveness_from_face,
     resize_if_necessary,
@@ -29,44 +32,68 @@ logger = logging.getLogger(__name__)
 
 _milvus: MilvusClient | None = None
 _storage: MinioStorage | None = None
-_pg_connection_cache: dict[int, psycopg.Connection] = {}
-_pg_lock = threading.Lock()
 
 # =============================================================================
-# THREAD-LOCAL CONNECTION POOL - Reuse connections per thread
+# USER-SERVICE API CLIENT - HTTP calls instead of direct DB queries
+# =============================================================================
+_USER_SERVICE_URL = "http://user-service:3001"
+
+def _call_user_service(method: str, path: str, **kwargs) -> dict | None:
+    try:
+        with httpx.Client(base_url=_USER_SERVICE_URL, timeout=5.0) as client:
+            resp = client.request(method, path, **kwargs)
+            if resp.status_code == 200:
+                return resp.json()
+        return None
+    except Exception as exc:
+        logger.warning("user-service call failed %s %s: %s", method, path, exc)
+        return None
+
+
+def _get_user_via_api(user_id: str) -> dict | None:
+    try:
+        from infra.redis_cache import redis_client as _rc
+        cache_key = f"user:{user_id}"
+        cached = _rc.get(cache_key)
+        if cached:
+            import json
+            return json.loads(cached)
+    except Exception:
+        pass
+    result = _call_user_service("GET", f"/users/{user_id}")
+    if result:
+        try:
+            from infra.redis_cache import redis_client as _rc
+            import json
+            _rc.setex(cache_key, 30, json.dumps(result))
+        except Exception:
+            pass
+    return result
+
+
+# =============================================================================
+# PG CONNECTION - Create per-call, always close after use
 # =============================================================================
 def _get_pg_connection() -> psycopg.Connection:
-    """Get or create a thread-local PostgreSQL connection (autocommit mode)."""
-    thread_id = threading.current_thread().ident
-    if thread_id not in _pg_connection_cache or _pg_connection_cache[thread_id].closed:
-        parsed = urllib.parse.urlparse(settings.postgres_url)
-        conn = psycopg.connect(
-            host=parsed.hostname,
-            port=parsed.port or 5432,
-            dbname=parsed.path.lstrip("/"),
-            user=parsed.username,
-            password=parsed.password,
-            autocommit=True,
-        )
-        _pg_connection_cache[thread_id] = conn
-        logger.debug("Created new PG connection for thread %s", thread_id)
-    else:
+    """Create a fresh PostgreSQL connection (autocommit mode)."""
+    parsed = urllib.parse.urlparse(settings.postgres_url)
+    return psycopg.connect(
+        host=parsed.hostname,
+        port=parsed.port or 5432,
+        dbname=parsed.path.lstrip("/"),
+        user=parsed.username,
+        password=parsed.password,
+        autocommit=True,
+    )
+
+
+def _close_pg_connection(conn: psycopg.Connection | None) -> None:
+    """Close PG connection safely."""
+    if conn is not None and not conn.closed:
         try:
-            _pg_connection_cache[thread_id].execute("SELECT 1")
+            conn.close()
         except Exception:
-            _pg_connection_cache[thread_id].close()
-            parsed = urllib.parse.urlparse(settings.postgres_url)
-            conn = psycopg.connect(
-                host=parsed.hostname,
-                port=parsed.port or 5432,
-                dbname=parsed.path.lstrip("/"),
-                user=parsed.username,
-                password=parsed.password,
-                autocommit=True,
-            )
-            _pg_connection_cache[thread_id] = conn
-            logger.debug("Recreated stale PG connection for thread %s", thread_id)
-    return _pg_connection_cache[thread_id]
+            pass
 
 # =============================================================================
 # TEMP FRAME STORAGE - Upload to MinIO, pass key instead of base64 via Redis
@@ -149,21 +176,14 @@ def _get_storage() -> MinioStorage:
 
 def _get_user_info(user_id: str) -> dict | None:
     try:
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id::text, email, full_name, role, created_at FROM users WHERE id = %s",
-            (user_id,),
-        )
-        row = cur.fetchone()
-        cur.close()
-        if row:
+        data = _get_user_via_api(user_id)
+        if data:
             return {
-                "id": row[0],
-                "email": row[1],
-                "full_name": row[2],
-                "role": row[3],
-                "created_at": str(row[4]) if row[4] else None,
+                "id": str(data["id"]),
+                "email": data["email"],
+                "full_name": data.get("full_name"),
+                "role": data["role"],
+                "created_at": str(data["created_at"]) if data.get("created_at") else None,
             }
         return None
     except Exception as exc:
@@ -173,26 +193,25 @@ def _get_user_info(user_id: str) -> dict | None:
 
 def _get_patron_id_by_user_id(user_id: str) -> str | None:
     try:
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT u.email FROM users u WHERE u.id = %s",
-            (user_id,),
-        )
-        row = cur.fetchone()
-        if not row:
-            cur.close()
+        user = _get_user_via_api(user_id)
+        if not user:
             return None
-        email = row[0]
-        cur.execute(
-            "SELECT id::text FROM patrons WHERE email = %s LIMIT 1",
-            (email,),
-        )
-        patron_row = cur.fetchone()
-        cur.close()
-        if patron_row:
-            return patron_row[0]
-        return None
+        email = user["email"]
+        conn = None
+        try:
+            conn = _get_pg_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id::text FROM patrons WHERE email = %s LIMIT 1",
+                (email,),
+            )
+            patron_row = cur.fetchone()
+            cur.close()
+            if patron_row:
+                return patron_row[0]
+            return None
+        finally:
+            _close_pg_connection(conn)
     except Exception as exc:
         logger.warning("Failed to get patron_id for user_id %s: %s", user_id, exc)
         return None
@@ -294,7 +313,8 @@ def enroll_task(
             float(np.linalg.norm(vec_arr)),
         )
 
-        _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
+        _get_milvus().delete_by_user_id_and_angle(user_id=patron_id, angle=angle)
+        _get_milvus().insert_embedding(user_id=patron_id, angle=angle, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
         _get_storage().upload_image(f"enrollments/{patron_id}.jpg", encrypted)
 
@@ -313,6 +333,52 @@ def enroll_task(
         # When Celery retries, the next attempt still needs to read the same MinIO key.
         logger.exception("Enroll failed for %s (angle=%s)", user_id, angle)
         raise self.retry(exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=0)
+def batch_enroll_task(self, user_id: str, object_keys: list[str] | None = None) -> dict:
+    angles = ["frontal", "right", "left", "down"]
+    if not object_keys or len(object_keys) != len(angles):
+        return {"status": "error", "error": "Expected 4 object_keys for frontal/right/left/down"}
+    results = []
+    for idx, angle in enumerate(angles):
+        try:
+            _, img = _resolve_image(object_keys[idx], None)
+            quality = check_face_quality(img)
+            if not quality.get("valid"):
+                results.append({"angle": angle, "status": "error", "error": quality.get("error")})
+                continue
+            if angle == "frontal":
+                liveness = run_liveness_analysis(img)
+                if not liveness.get("is_live", False):
+                    results.append({"angle": angle, "status": "error", "error": "LIVENESS_FAILED", "liveness_score": liveness.get("liveness_score")})
+                    continue
+            vec = extract_embedding_placeholder(img)
+            vec_arr = np.array(vec, dtype=np.float32)
+            vec_sum = float(np.sum(np.abs(vec_arr)))
+            if vec_sum < 0.1:
+                results.append({"angle": angle, "status": "error", "error": "FACE_DETECTION_FAILED"})
+                continue
+            norm_vec = l2_normalize(vec)
+            patron_id = _get_patron_id_by_user_id(user_id) or user_id
+            _get_milvus().delete_by_user_id_and_angle(user_id=patron_id, angle=angle)
+            _get_milvus().insert_embedding(user_id=patron_id, angle=angle, embedding=norm_vec)
+            raw_data, _ = _resolve_image(object_keys[idx], None)
+            encrypted = encrypt_data(raw_data)
+            _get_storage().upload_image(f"enrollments/{patron_id}_{angle}.jpg", encrypted)
+            results.append({"angle": angle, "status": "success", "quality_score": quality.get("score")})
+        except Exception as exc:
+            logger.exception("Batch enroll failed for angle=%s", angle)
+            results.append({"angle": angle, "status": "error", "error": str(exc)})
+        finally:
+            try:
+                _delete_temp_frame(object_keys[idx])
+            except Exception:
+                pass
+    errors = [r for r in results if r["status"] != "success"]
+    if errors:
+        return {"status": "error", "error": f"{len(errors)} angle(s) failed", "results": results}
+    return {"status": "success", "results": results}
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
@@ -344,7 +410,7 @@ def verify_task(self, user_id: str, object_key: str | None = None, image_data: s
                     float(np.linalg.norm(vec_arr)),
                     float(np.linalg.norm(enrolled_arr)))
         if object_key: _delete_temp_frame(object_key)
-        return {"status": "success", "verified": score > 0.6, "score": score}
+        return {"status": "success", "verified": score > settings.face_match_threshold, "score": score}
     except Exception as exc:
         logger.exception("Verify failed for %s", user_id)
         raise self.retry(exc=exc)
@@ -373,58 +439,99 @@ def identify_task(self, object_key: str | None = None, image_data: str | None = 
         if object_key: _delete_temp_frame(object_key)
         return {"status": "success", "matches": matches}
     except Exception as exc:
-        if object_key: _delete_temp_frame(object_key)
+        # Do NOT delete temp frame here — retry still needs the same MinIO key.
         logger.exception("Identify failed")
         raise self.retry(exc=exc)
 
 
-@celery_app.task(bind=True, max_retries=1, default_retry_delay=5)
-def face_login_task(self, email: str, object_key: str) -> dict:
-    logger.info("Face login for %s", email)
-    try:
-        user_info = None
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id::text, email, role FROM users WHERE email = %s",
-            (email,),
-        )
-        row = cur.fetchone()
-        cur.close()
-        if row:
-            user_info = {"id": row[0], "email": row[1], "role": row[2]}
-        if not user_info:
-            _delete_temp_frame(object_key)
-            return {"status": "error", "error": "User not found"}
+def _sync_face_login(raw_bytes: bytes) -> dict:
+    """Passwordless face login — search Milvus across ALL users, return JWT tokens.
 
-        _, img = _process_from_minio(object_key)
-        vec = extract_embedding_placeholder(img)
+    This is a synchronous function (NOT a Celery task) so FastAPI can call it
+    directly via run_in_threadpool, eliminating async polling.
+    """
+    object_key = _upload_temp_frame(raw_bytes, str(_uuid.uuid4()))
+    try:
+        img = safe_read_image_from_bytes(raw_bytes)
+        img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
+        img = enhance_illumination(img)
+
+        face_data = detect_face_once(img)
+        if not face_data.get("valid"):
+            return {"status": "error", "error": "Không phát hiện khuôn mặt", "detail": face_data.get("error")}
+
+        vec = face_data["embedding"]
         norm_vec = l2_normalize(vec)
-        norm_vec_arr = np.array(norm_vec, dtype=np.float32)
-        enrolled_emb = _get_milvus().get_embedding_by_user_id(user_info["id"])
-        if not enrolled_emb:
-            _delete_temp_frame(object_key)
-            return {"status": "error", "error": "Face not enrolled. Please enroll first."}
-        enrolled_arr = np.array(enrolled_emb, dtype=np.float32)
-        score = float(np.dot(norm_vec_arr, enrolled_arr))
-        if score < 0.6:
-            _delete_temp_frame(object_key)
-            return {"status": "error", "error": "Face does not match", "score": score}
+
+        results = _get_milvus().search(embedding=norm_vec, top_k=10)
+        best = _resolve_best_match(results, settings.face_match_threshold)
+        if not best:
+            return {"status": "error", "error": "Khuôn mặt không khớp với tài khoản nào"}
+
+        matched_user_id = best["user_id"]
+        score = round(best["score"], 4)
+
+        user_data = _get_user_via_api(matched_user_id)
+        if not user_data:
+            return {"status": "error", "error": "Tài khoản không có quyền truy cập Dashboard"}
+
+        user_id = str(user_data["id"])
+        user_email = user_data["email"]
+        user_role = user_data["role"]
+
+        try:
+            import redis as _redis
+            r = _redis.Redis.from_url(settings.celery_broker_url)
+            lockout_key = f"face_login_lockout:{user_id}"
+            locked = r.get(lockout_key)
+            if locked:
+                ttl = r.ttl(lockout_key)
+                r.close()
+                return {"status": "error", "error": f"Đăng nhập khuôn mặt tạm thời bị khóa ({ttl}s). Vui lòng dùng mật khẩu."}
+            r.close()
+        except Exception:
+            pass
 
         liveness = run_liveness_analysis(img)
         is_live = liveness.get("is_live", False)
         if not is_live:
-            _delete_temp_frame(object_key)
-            return {"status": "error", "error": "Liveness check failed", "liveness_score": liveness.get("liveness_score")}
+            logger.warning("Spoof attempt detected for user %s (%s)", user_email, user_id)
+            try:
+                conn2 = _get_pg_connection()
+                try:
+                    cur2 = conn2.cursor()
+                    cur2.execute(
+                        """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
+                        (str(_uuid.uuid4()), user_id, "entry", "face_login", score, "web_login", "spoof_attempt"),
+                    )
+                    conn2.commit()
+                    cur2.close()
+                finally:
+                    _close_pg_connection(conn2)
+            except Exception:
+                pass
+            try:
+                import redis as _redis
+                r = _redis.Redis.from_url(settings.celery_broker_url)
+                fail_key = f"face_login_fail:{user_id}"
+                fail_count = r.incr(fail_key)
+                if fail_count == 1:
+                    r.expire(fail_key, 900)
+                r.close()
+            except Exception:
+                pass
+            return {"status": "error", "error": "Phát hiện giả mạo — đã ghi log bảo mật"}
 
         import datetime as dt
         access_token = jwt.encode(
             {
-                "sub": user_info["id"],
+                "sub": user_id,
+                "email": user_email,
                 "iss": settings.jwt_issuer,
                 "aud": settings.jwt_audience,
                 "exp": dt.datetime.now(dt.UTC) + dt.timedelta(minutes=settings.jwt_access_expires_minutes),
-                "roles": [user_info["role"]],
+                "roles": [user_role],
                 "typ": "access",
                 "iat": dt.datetime.now(dt.UTC),
             },
@@ -433,18 +540,26 @@ def face_login_task(self, email: str, object_key: str) -> dict:
         )
         refresh_token = jwt.encode(
             {
-                "sub": user_info["id"],
+                "sub": user_id,
                 "iss": settings.jwt_issuer,
                 "aud": settings.jwt_audience,
                 "exp": dt.datetime.now(dt.UTC) + dt.timedelta(days=settings.jwt_refresh_expires_days),
-                "roles": [user_info["role"]],
+                "roles": [user_role],
                 "typ": "refresh",
                 "iat": dt.datetime.now(dt.UTC),
             },
             settings.jwt_refresh_secret,
             algorithm="HS256",
         )
-        _delete_temp_frame(object_key)
+
+        try:
+            import redis as _redis
+            r = _redis.Redis.from_url(settings.celery_broker_url)
+            r.delete(f"face_login_fail:{user_id}")
+            r.close()
+        except Exception:
+            pass
+
         return {
             "status": "success",
             "access_token": access_token,
@@ -453,9 +568,13 @@ def face_login_task(self, email: str, object_key: str) -> dict:
             "score": score,
         }
     except Exception as exc:
-        _delete_temp_frame(object_key)
-        logger.exception("Face login failed for %s", email)
+        logger.exception("Face login failed")
         return {"status": "error", "error": str(exc)}
+    finally:
+        try:
+            _delete_temp_frame(object_key)
+        except Exception:
+            pass
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
@@ -467,7 +586,7 @@ def liveness_task(self, object_key: str | None = None, image_data: str | None = 
         if object_key: _delete_temp_frame(object_key)
         return {"status": "success", **result}
     except Exception as exc:
-        if object_key: _delete_temp_frame(object_key)
+        # Do NOT delete temp frame here — retry still needs the same MinIO key.
         logger.exception("Liveness check failed")
         raise self.retry(exc=exc)
 
@@ -499,22 +618,26 @@ def full_delete_patron_task(self, patron_id: str) -> dict:
         except Exception:
             logger.warning("No images found for patron %s, skipping MinIO cleanup", patron_id)
         _get_milvus().delete_by_user_id(user_id=patron_id)
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE access_logs SET patron_id = NULL WHERE patron_id = %s",
-            (patron_id,),
-        )
-        cur.execute(
-            "DELETE FROM patron_faces WHERE patron_id = %s",
-            (patron_id,),
-        )
-        cur.execute(
-            "DELETE FROM patrons WHERE id = %s",
-            (patron_id,),
-        )
-        conn.commit()
-        cur.close()
+        conn = None
+        try:
+            conn = _get_pg_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE access_logs SET patron_id = NULL WHERE patron_id = %s",
+                (patron_id,),
+            )
+            cur.execute(
+                "DELETE FROM patron_faces WHERE patron_id = %s",
+                (patron_id,),
+            )
+            cur.execute(
+                "DELETE FROM patrons WHERE id = %s",
+                (patron_id,),
+            )
+            conn.commit()
+            cur.close()
+        finally:
+            _close_pg_connection(conn)
         logger.info("Full deletion completed for patron %s", patron_id)
         return {"status": "success", "patron_id": patron_id}
     except Exception as exc:
@@ -548,20 +671,25 @@ def enroll_face(self, patron_id: str, object_key: str, angle: str = "frontal") -
                 }
 
         norm_vec = l2_normalize(face_result["embedding"])
+        _get_milvus().delete_by_user_id_and_angle(user_id=patron_id, angle=angle)
         milvus_id = str(_get_milvus().insert_embedding(user_id=patron_id, angle=angle, embedding=norm_vec))
         encrypted = encrypt_data(raw_data)
         image_url = f"patrons/{patron_id}_{angle}.jpg"
         _get_storage().upload_image(image_url, encrypted)
 
         # Insert PatronFaceModel record (append, not upsert)
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO patron_faces (id, patron_id, angle, milvus_id, image_url, is_active) VALUES (%s, %s, %s, %s, %s, true)",
-            (str(_uuid.uuid4()), patron_id, angle, milvus_id, image_url),
-        )
-        conn.commit()
-        cur.close()
+        conn = None
+        try:
+            conn = _get_pg_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO patron_faces (id, patron_id, angle, milvus_id, image_url, is_active) VALUES (%s, %s, %s, %s, %s, true)",
+                (str(_uuid.uuid4()), patron_id, angle, milvus_id, image_url),
+            )
+            conn.commit()
+            cur.close()
+        finally:
+            _close_pg_connection(conn)
         _delete_temp_frame(object_key)
         return {"status": "success", "patron_id": patron_id, "angle": angle, "quality_score": face_result.get("score")}
     except Exception as exc:
@@ -572,17 +700,17 @@ def enroll_face(self, patron_id: str, object_key: str, angle: str = "frontal") -
 
 def _resolve_best_match(results: list[dict], threshold: float) -> dict | None:
     from collections import Counter
+    if not results:
+        return None
     counts: Counter[str] = Counter()
     scores: dict[str, float] = {}
     for r in results:
         pid = r["user_id"]
         counts[pid] += 1
-        scores[pid] = max(scores.get(pid, 0), r["score"])
-    best_pid = max(scores, key=lambda pid: (scores[pid], counts[pid]))
-    if scores[best_pid] >= threshold and counts[best_pid] >= 2:
+        scores[pid] = max(scores.get(pid, 0.0), r["score"])
+    best_pid = max(scores, key=lambda pid: (counts[pid], scores[pid]))
+    if scores[best_pid] >= threshold:
         return {"user_id": best_pid, "score": scores[best_pid], "votes": counts[best_pid]}
-    if scores.get(best_pid, 0) >= threshold:
-        return {"user_id": best_pid, "score": scores[best_pid], "votes": 1}
     return None
 
 
@@ -593,50 +721,79 @@ def identify_patron(self, object_key: str) -> dict:
         raw = _get_temp_frame(object_key)
         img = safe_read_image_from_bytes(raw)
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
-        vec = extract_embedding_placeholder(img)
-        norm_vec = l2_normalize(vec)
-        results = _get_milvus().search(embedding=norm_vec, top_k=3)
-        best = _resolve_best_match(results, settings.face_match_threshold)
-        if not best:
+
+        # Enhance illumination (CLAHE) to handle backlight / low light
+        img = enhance_illumination(img)
+
+        # Filter motion-blurred frames before embedding extraction
+        if check_motion_blur(img):
+            logger.info("Frame too blurry for identification, skipping")
             _delete_temp_frame(object_key)
-            return {"status": "no_match"}
-        patron_id = best["user_id"]
-        score = round(best["score"], 4)
+            return {"status": "low_quality"}
 
-        # Lookup patron info from Postgres
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT full_name, student_code, membership_expiry, status FROM patrons WHERE id = %s",
-            (patron_id,),
-        )
-        row = cur.fetchone()
-        cur.close()
-
-        if not row:
-            _get_milvus().delete_by_user_id(user_id=patron_id)
-            logger.warning("Orphaned embedding cleaned up for %s", patron_id)
+        all_faces = detect_all_faces(img, min_face_size=settings.min_face_size)
+        if not all_faces:
             _delete_temp_frame(object_key)
             return {"status": "no_match"}
 
-        full_name, student_code, membership_expiry, status = row
+        matches = []
+        for face_data in all_faces:
+            norm_vec = l2_normalize(face_data["embedding"])
+            results = _get_milvus().search(embedding=norm_vec, top_k=3)
+            best = _resolve_best_match(results, settings.face_match_threshold)
+            if not best:
+                continue
 
-        # Check membership
-        from datetime import date
-        is_expired = membership_expiry and membership_expiry < date.today()
-        if is_expired or status != "active":
-            _delete_temp_frame(object_key)
-            return {"status": "expired", "patron_id": patron_id, "full_name": full_name, "student_code": student_code}
+            patron_id = best["user_id"]
+            score = round(best["score"], 4)
+
+            conn = None
+            try:
+                conn = _get_pg_connection()
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT full_name, student_code, membership_expiry, status FROM patrons WHERE id = %s",
+                    (patron_id,),
+                )
+                row = cur.fetchone()
+                cur.close()
+            finally:
+                _close_pg_connection(conn)
+
+            if not row:
+                _get_milvus().delete_by_user_id(user_id=patron_id)
+                logger.warning("Orphaned embedding cleaned up for %s", patron_id)
+                continue
+
+            full_name, student_code, membership_expiry, status = row
+
+            from datetime import date
+            is_expired = membership_expiry and membership_expiry < date.today()
+            if is_expired or status != "active":
+                matches.append({
+                    "status": "expired",
+                    "patron_id": patron_id,
+                    "full_name": full_name,
+                    "student_code": student_code,
+                    "score": score,
+                })
+                continue
+
+            matches.append({
+                "status": "matched",
+                "patron_id": patron_id,
+                "full_name": full_name,
+                "student_code": student_code,
+                "score": score,
+                "votes": best["votes"],
+            })
 
         _delete_temp_frame(object_key)
-        return {
-            "status": "matched",
-            "patron_id": patron_id,
-            "full_name": full_name,
-            "student_code": student_code,
-            "score": score,
-            "votes": best["votes"],
-        }
+
+        if not matches:
+            return {"status": "no_match"}
+
+        return {"status": "success", "matches": matches}
     except Exception as exc:
         _delete_temp_frame(object_key)
         logger.exception("Identify patron failed")
@@ -648,6 +805,7 @@ def _is_patron_inside(patron_id: str) -> bool:
     Uses current_status column from patrons table for fast reads.
     Auto-expires after max_entry_hours to prevent stuck 'inside' status.
     """
+    conn = None
     try:
         conn = _get_pg_connection()
         cur = conn.cursor()
@@ -661,13 +819,19 @@ def _is_patron_inside(patron_id: str) -> bool:
     except Exception as e:
         logger.warning("Failed to check patron inside status for %s: %s", patron_id, e)
         return False
+    finally:
+        _close_pg_connection(conn)
 
 
 def _publish_camera_event(data: dict) -> None:
     try:
         camera_id = data.get("camera_id", "unknown")
         status_val = data.get("status", "unknown")
-        throttle_key = f"cam_throttle:{camera_id}:{status_val}"
+        patron_id = data.get("patron_id")
+        if status_val == "granted" and patron_id:
+            throttle_key = f"cam_throttle:{camera_id}:{status_val}:{patron_id}"
+        else:
+            throttle_key = f"cam_throttle:{camera_id}:{status_val}"
 
         r = _get_redis_throttle()
         if r is None:
@@ -700,13 +864,258 @@ def _get_redis_throttle():
         logger.warning("Redis throttle unavailable: %s", e)
         return None
 
+def _upload_evidence_frame(raw_bytes: bytes, log_id: str, prefix: str = "") -> None:
+    """Upload frame evidence to MinIO for audit purposes.
+    Called only for granted/spoof/expired events (lazy upload).
+    """
+    try:
+        object_key = f"access_logs/{prefix}{log_id}.jpg"
+        _get_storage().upload_image(object_key, raw_bytes)
+        logger.debug("Uploaded evidence frame: %s", object_key)
+    except Exception as e:
+        logger.warning("Failed to upload evidence frame: %s", e)
+
+
+def _check_redis_cooldown(patron_id: str, access_type: str) -> bool:
+    """Check Redis cooldown — returns True if still in cooldown (skip)."""
+    try:
+        import redis as _redis
+        r = _redis.Redis.from_url(settings.celery_broker_url)
+        try:
+            key = f"cooldown:{access_type}:{patron_id}"
+            if r.get(key):
+                return True
+            r.setex(key, settings.access_cooldown_seconds, "1")
+            return False
+        finally:
+            r.close()
+    except Exception:
+        return False
+
+
+def _scale_bbox_landmarks(
+    bbox: list | None,
+    landmarks: list | None,
+    scale_x: float,
+    scale_y: float,
+) -> tuple[list | None, list | None]:
+    """Scale bbox and landmarks from resized frame to original frame coordinates."""
+    if bbox is not None and (scale_x != 1.0 or scale_y != 1.0):
+        bbox = [round(b * scale_x if i % 2 == 0 else b * scale_y) for i, b in enumerate(bbox)]
+    if landmarks is not None and (scale_x != 1.0 or scale_y != 1.0):
+        landmarks = [[round(x * scale_x), round(y * scale_y)] for x, y in landmarks]
+    return bbox, landmarks
+
+
+def _process_single_face(
+    camera_id: str,
+    img,  # cv2.Mat — avoid runtime cv2 import
+    face_data: dict,
+    raw_bytes: bytes | None = None,
+    orig_scale: tuple[float, float] | None = None,
+) -> dict | None:
+    """Process one detected face through the full access pipeline.
+
+    Pipeline order (optimized):
+      1. Embedding + Milvus search
+      2. Stranger alert (unknown face)
+      3. Redis cooldown check (before expensive operations)
+      4. DB lookup + expiry check
+      5. Direction check with grace period
+      6. Liveness (7 classifiers)
+      7. INSERT access_log + UPDATE patron status + lazy MinIO upload
+
+    Returns an event dict if access is granted, or None otherwise.
+    Non-granted statuses (spoof, expired, wrong_direction, unknown) published via SSE.
+    """
+    norm_vec = l2_normalize(face_data["embedding"])
+    face = face_data["face"]
+    bbox = face.bbox.tolist() if hasattr(face, "bbox") and face.bbox is not None else None
+    landmarks = face.kps.tolist() if hasattr(face, "kps") and face.kps is not None else None
+    if orig_scale:
+        bbox, landmarks = _scale_bbox_landmarks(bbox, landmarks, orig_scale[0], orig_scale[1])
+    results = _get_milvus().search(embedding=norm_vec, top_k=5)
+    best = _resolve_best_match(results, settings.face_match_threshold)
+    if not best:
+        event = {
+            "camera_id": camera_id, "status": "unknown",
+            "bbox": bbox, "landmarks": landmarks,
+        }
+        _publish_camera_event(event)
+        return None
+
+    patron_id = best["user_id"]
+    score = round(best["score"], 4)
+
+    # Determine access type before DB (based on camera_id)
+    if camera_id == settings.entry_cam_id:
+        access_type = "entry"
+    elif camera_id == settings.exit_cam_id:
+        access_type = "exit"
+    else:
+        logger.warning("Unknown camera_id: %s — skipping frame", camera_id)
+        return None
+
+    # Phase 2: Redis cooldown check (O(1), before expensive ops)
+    if _check_redis_cooldown(patron_id, access_type):
+        logger.debug("Cooldown hit for %s %s on %s", patron_id, access_type, camera_id)
+        return None
+
+    # DB lookup — single connection for all queries
+    conn = None
+    try:
+        conn = _get_pg_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT full_name, student_code, membership_expiry, status, current_status, last_entry_at FROM patrons WHERE id = %s",
+            (patron_id,),
+        )
+        row = cur.fetchone()
+
+        if not row:
+            _get_milvus().delete_by_user_id(user_id=patron_id)
+            logger.warning("Orphaned embedding cleaned up for %s from camera %s", patron_id, camera_id)
+            return None
+
+        full_name, student_code, membership_expiry, status, current_status, last_entry_at = row
+        from datetime import date, datetime, timezone
+
+        # Expiry check
+        is_expired = membership_expiry and membership_expiry < date.today()
+        if is_expired or status != "active":
+            event = {"camera_id": camera_id, "status": "expired", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "bbox": bbox, "landmarks": landmarks}
+            _publish_camera_event(event)
+            if raw_bytes:
+                _upload_evidence_frame(raw_bytes, patron_id, prefix="expired_")
+            return None
+
+        # Phase 5: Direction check with Grace Period
+        if camera_id == settings.entry_cam_id:
+            if current_status == "inside":
+                is_recent = (last_entry_at and (datetime.now(timezone.utc).timestamp() - last_entry_at.timestamp()) < settings.direction_grace_seconds)
+                if is_recent:
+                    logger.info("Grace period: %s (%s) still at entry — already_granted", full_name, student_code)
+                    event = {"camera_id": camera_id, "status": "already_granted", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
+                    _publish_camera_event(event)
+                    return None
+                else:
+                    logger.info("Wrong direction at entry for %s (%s) — already inside", full_name, student_code)
+                    event = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
+                    _publish_camera_event(event)
+                    if raw_bytes:
+                        _upload_evidence_frame(raw_bytes, patron_id, prefix="wrong_dir_")
+                    return None
+        elif camera_id == settings.exit_cam_id:
+            if current_status != "inside":
+                logger.info("Wrong direction at exit for %s (%s) — not inside library", full_name, student_code)
+                event = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
+                _publish_camera_event(event)
+                if raw_bytes:
+                    _upload_evidence_frame(raw_bytes, patron_id, prefix="wrong_dir_")
+                return None
+
+        cur.close()
+
+        # Phase 2 (cont): Liveness check (expensive — after all fast checks passed)
+        liveness = liveness_from_face(img, face)
+        if not liveness.get("is_live", False):
+            event = {
+                "camera_id": camera_id, "status": "spoof",
+                "patron_id": patron_id, "full_name": full_name, "student_code": student_code,
+                "score": score, "liveness_score": liveness.get("liveness_score"),
+                "bbox": bbox, "landmarks": landmarks,
+            }
+            _publish_camera_event(event)
+            if raw_bytes:
+                _upload_evidence_frame(raw_bytes, patron_id, prefix="spoof_")
+            return None
+
+        # All checks passed — write access log + update patron status
+        conn2 = None
+        try:
+            conn2 = _get_pg_connection()
+            cur2 = conn2.cursor()
+            log_id = str(_uuid.uuid4())
+            cur2.execute(
+                """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
+                (log_id, patron_id, access_type, "face", score, camera_id, "success"),
+            )
+            if access_type == "entry":
+                cur2.execute(
+                    "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = %s, updated_at = NOW() WHERE id = %s",
+                    (camera_id, patron_id),
+                )
+            else:
+                cur2.execute(
+                    "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
+                    (patron_id,),
+                )
+            conn2.commit()
+            cur2.close()
+        finally:
+            _close_pg_connection(conn2)
+
+        # Phase 4: Upload evidence to MinIO (lazy — only on grant)
+        if raw_bytes:
+            _upload_evidence_frame(raw_bytes, log_id)
+
+        logger.info("Access %s: %s (%s) at %s", access_type, full_name, student_code, camera_id)
+        event = {
+            "camera_id": camera_id,
+            "status": "granted",
+            "patron_id": patron_id,
+            "full_name": full_name,
+            "student_code": student_code,
+            "score": score,
+            "access_type": access_type,
+            "is_live": True,
+            "bbox": bbox,
+            "landmarks": landmarks,
+        }
+        return event
+
+    except Exception:
+        logger.exception("Failed to process face for camera %s", camera_id)
+        return None
+    finally:
+        _close_pg_connection(conn)
+
+
 @celery_app.task(bind=True, name="process_camera_frame", max_retries=1, default_retry_delay=5)
 def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
     logger.info("Processing camera frame from %s", camera_id)
+    # Decrement backpressure counter (Phase 3)
     try:
-        raw = _get_temp_frame(object_key)
-        img = safe_read_image_from_bytes(raw)
-        img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
+        import redis as _redis
+        r = _redis.Redis.from_url(settings.celery_broker_url)
+        try:
+            r.decr(f"camera_queue:{camera_id}")
+        finally:
+            r.close()
+    except Exception:
+        pass
+    try:
+        # Phase 4: Camera frames are Redis-only (no MinIO fallback)
+        import time
+        raw = None
+        for attempt in range(3):
+            try:
+                from infra.redis_cache import redis_client as _rc
+                cached = _rc.get(f"temp_frame:{object_key}")
+                if cached:
+                    _rc.delete(f"temp_frame:{object_key}")
+                    raw = cached
+                    break
+            except Exception:
+                pass
+            if attempt < 2:
+                time.sleep(0.3)
+        if raw is None:
+            raise FileNotFoundError(f"Camera frame {object_key} expired from Redis")
+        img_original = safe_read_image_from_bytes(raw)
+        orig_h, orig_w = img_original.shape[:2]
+        img = resize_if_necessary(img_original, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
 
         # Step 0: Person presence check
         if settings.enable_person_detection:
@@ -716,147 +1125,54 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
                     logger.info("No person detected in frame from %s — skipping", camera_id)
                     result = {"camera_id": camera_id, "status": "no_match"}
                     _publish_camera_event(result)
-                    _delete_temp_frame(object_key)
                     return result
             except Exception as pe:
                 logger.warning("Person detection failed (will proceed anyway): %s", pe)
 
-        # Step 1: Detect face once
-        face_result = detect_face_once(img)
-        if not face_result.get("valid") or face_result.get("face") is None:
+        # Step 1: Lightweight CLAHE on full frame for better detection
+        img = enhance_illumination(img)
+
+        # Step 2: Filter motion-blurred frames before detection
+        if check_motion_blur(img):
+            logger.info("Frame from %s too blurry — skipping", camera_id)
             result = {"camera_id": camera_id, "status": "no_match"}
             _publish_camera_event(result)
-            _delete_temp_frame(object_key)
             return result
 
-        face = face_result["face"]
-        norm_vec = l2_normalize(face_result["embedding"])
-        results = _get_milvus().search(embedding=norm_vec, top_k=5)
-        best = _resolve_best_match(results, settings.face_match_threshold)
-        if not best:
+        # Step 3: Detect all faces (filtered by min_face_size)
+        resized_h, resized_w = img.shape[:2]
+        all_faces = detect_all_faces(img, min_face_size=settings.min_face_size)
+        if not all_faces:
             result = {"camera_id": camera_id, "status": "no_match"}
             _publish_camera_event(result)
-            _delete_temp_frame(object_key)
             return result
 
-        patron_id = best["user_id"]
-        score = round(best["score"], 4)
+        # Step 4: Process each face independently (pass raw_bytes for lazy MinIO)
+        scale_x = orig_w / resized_w if resized_w else 1.0
+        scale_y = orig_h / resized_h if resized_h else 1.0
+        granted_events = []
+        for face_data in all_faces:
+            event = _process_single_face(camera_id, img, face_data, raw_bytes=raw, orig_scale=(scale_x, scale_y))
+            if event is not None:
+                granted_events.append(event)
 
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT full_name, student_code, membership_expiry, status FROM patrons WHERE id = %s",
-            (patron_id,),
-        )
-        row = cur.fetchone()
-        cur.close()
+        # Publish granted events (non-granted statuses already published inside _process_single_face)
+        for event in granted_events:
+            _publish_camera_event(event)
 
-        if not row:
-            _get_milvus().delete_by_user_id(user_id=patron_id)
-            logger.warning("Orphaned embedding cleaned up for %s from camera %s", patron_id, camera_id)
-            result = {"camera_id": camera_id, "status": "no_match"}
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
+        if not granted_events:
+            return {"camera_id": camera_id, "status": "no_match"}
 
-        full_name, student_code, membership_expiry, status = row
-        from datetime import date
-        is_expired = membership_expiry and membership_expiry < date.today()
-        if is_expired or status != "active":
-            result = {"camera_id": camera_id, "status": "expired", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score}
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
-
-        # Step 2: Liveness
-        liveness = liveness_from_face(img, face)
-        if not liveness.get("is_live", False):
-            result = {
-                "camera_id": camera_id, "status": "spoof",
-                "patron_id": patron_id, "full_name": full_name, "student_code": student_code,
-                "score": score, "liveness_score": liveness.get("liveness_score"),
-            }
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
-
-        # Step 3: Determine access type
-        if camera_id == settings.entry_cam_id:
-            access_type = "entry"
-            if _is_patron_inside(patron_id):
-                logger.info("Wrong direction at entry for %s (%s) — already inside", full_name, student_code)
-                result = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type}
-                _publish_camera_event(result)
-                _delete_temp_frame(object_key)
-                return result
-        elif camera_id == settings.exit_cam_id:
-            access_type = "exit"
-            if not _is_patron_inside(patron_id):
-                logger.info("Wrong direction at exit for %s (%s) — not inside library", full_name, student_code)
-                result = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type}
-                _publish_camera_event(result)
-                _delete_temp_frame(object_key)
-                return result
-        else:
-            logger.warning("Unknown camera_id: %s — skipping frame", camera_id)
-            result = {"camera_id": camera_id, "status": "no_match"}
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
-
-        # Step 4: Create access log
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT EXTRACT(EPOCH FROM (NOW() - access_time)) FROM access_logs WHERE patron_id = %s AND access_type = %s AND status = 'success' ORDER BY access_time DESC LIMIT 1",
-            (patron_id, access_type),
-        )
-        row = cur.fetchone()
-        if row and row[0] < settings.access_cooldown_seconds:
-            cur.close()
-            logger.info("Skipping duplicate %s for %s (%s) — last %s was %.0fs ago", access_type, full_name, student_code, access_type, row[0])
-            result = {"camera_id": camera_id, "status": "no_match", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score}
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
-        log_id = str(_uuid.uuid4())
-        cur.execute(
-            """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
-            (log_id, patron_id, access_type, "face", score, camera_id, "success"),
-        )
-        if access_type == "entry":
-            cur.execute(
-                "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = %s, updated_at = NOW() WHERE id = %s",
-                (camera_id, patron_id),
-            )
-        else:
-            cur.execute(
-                "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
-                (patron_id,),
-            )
-        conn.commit()
-        cur.close()
-
-        logger.info("Access %s: %s (%s) at %s", access_type, full_name, student_code, camera_id)
-        result = {
+        return {
             "camera_id": camera_id,
             "status": "granted",
-            "patron_id": patron_id,
-            "full_name": full_name,
-            "student_code": student_code,
-            "score": score,
-            "access_type": access_type,
-            "is_live": True,
+            "count": len(granted_events),
+            "events": granted_events,
         }
-        _publish_camera_event(result)
-        _delete_temp_frame(object_key)
-        return result
     except Exception as exc:
         logger.exception("Camera frame processing failed")
         result = {"camera_id": camera_id, "status": "error", "error": str(exc)}
         _publish_camera_event(result)
-        _delete_temp_frame(object_key)
         return result
 
 
@@ -869,11 +1185,18 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
         vec = extract_embedding_placeholder(img)
         norm_vec = l2_normalize(vec)
-        enrolled_emb = _get_milvus().get_embedding_by_user_id(patron_id)
-        if not enrolled_emb:
+        all_embeddings = _get_milvus().get_embeddings_by_user_id(patron_id)
+        if not all_embeddings:
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face not enrolled"}
-        score = float(np.dot(np.array(norm_vec, dtype=np.float32), np.array(enrolled_emb, dtype=np.float32)))
+        score = 0.0
+        for row in all_embeddings:
+            stored_emb = row.get("embedding")
+            if stored_emb:
+                s = float(np.dot(np.array(norm_vec, dtype=np.float32), np.array(stored_emb, dtype=np.float32)))
+                if s > score:
+                    score = s
+        score = round(score, 4)
         if score < settings.face_match_threshold:
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face does not match", "score": score}
@@ -883,40 +1206,44 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
             return {"status": "error", "error": "Liveness check failed", "is_live": False}
 
         # Lookup patron info for access log
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT full_name, student_code FROM patrons WHERE id = %s",
-            (patron_id,),
-        )
-        row = cur.fetchone()
-        full_name = row[0] if row else "Unknown"
-        student_code = row[1] if row else ""
-        cur.close()
-
-        # Determine entry/exit based on inside status
-        access_type = "exit" if _is_patron_inside(patron_id) else "entry"
-
-        # Create access log
-        log_id = str(_uuid.uuid4())
-        cur = conn.cursor()
-        cur.execute(
-            """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
-            (log_id, patron_id, access_type, "face", score, "kiosk", "success"),
-        )
-        if access_type == "entry":
+        conn = None
+        try:
+            conn = _get_pg_connection()
+            cur = conn.cursor()
             cur.execute(
-                "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = 'kiosk', updated_at = NOW() WHERE id = %s",
+                "SELECT full_name, student_code FROM patrons WHERE id = %s",
                 (patron_id,),
             )
-        else:
+            row = cur.fetchone()
+            full_name = row[0] if row else "Unknown"
+            student_code = row[1] if row else ""
+            cur.close()
+
+            # Determine entry/exit based on inside status
+            access_type = "exit" if _is_patron_inside(patron_id) else "entry"
+
+            # Create access log
+            log_id = str(_uuid.uuid4())
+            cur = conn.cursor()
             cur.execute(
-                "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
-                (patron_id,),
+                """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
+                (log_id, patron_id, access_type, "face", score, "kiosk", "success"),
             )
-        conn.commit()
-        cur.close()
+            if access_type == "entry":
+                cur.execute(
+                    "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = 'kiosk', updated_at = NOW() WHERE id = %s",
+                    (patron_id,),
+                )
+            else:
+                cur.execute(
+                    "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
+                    (patron_id,),
+                )
+            conn.commit()
+            cur.close()
+        finally:
+            _close_pg_connection(conn)
 
         logger.info("Access %s: %s (%s) at kiosk", access_type, full_name, student_code)
         result = {

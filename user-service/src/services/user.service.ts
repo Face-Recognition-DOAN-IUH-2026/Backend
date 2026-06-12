@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { pool } from '../db';
 import { config } from '../config';
 import { z } from 'zod';
@@ -8,6 +9,7 @@ export const RegisterSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   full_name: z.string().optional(),
+  role: z.string().optional(),
 });
 
 export const LoginSchema = z.object({
@@ -29,11 +31,12 @@ export interface TokenPayload {
   userId: string;
   email: string;
   role: string;
+  full_name?: string | null;
 }
 
 export class UserService {
-  async register(data: { email: string; password: string; full_name?: string }) {
-    const { email, password, full_name } = data;
+  async register(data: { email: string; password: string; full_name?: string; role?: string }) {
+    const { email, password, full_name, role } = data;
 
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows.length > 0) {
@@ -41,17 +44,21 @@ export class UserService {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    const id = crypto.randomUUID();
+    const userRole = role || 'user';
     const result = await pool.query(
-      `INSERT INTO users (email, password_hash, full_name) 
-       VALUES ($1, $2, $3) 
+      `INSERT INTO users (id, email, password_hash, full_name, role) 
+       VALUES ($1, $2, $3, $4, $5) 
        RETURNING id, email, full_name, role, created_at`,
-      [email, passwordHash, full_name || null]
+      [id, email, passwordHash, full_name || null, userRole]
     );
 
     const user = result.rows[0];
-    const token = this.generateToken({ userId: String(user.id), email: user.email, role: user.role });
+    const payload = { userId: String(user.id), email: user.email, role: user.role, full_name: user.full_name };
+    const access_token = this.generateToken(payload, 'access');
+    const refresh_token = this.generateToken(payload, 'refresh');
 
-    return { user, token };
+    return { id: String(user.id), email: user.email, full_name: user.full_name, role: user.role, access_token, refresh_token };
   }
 
   async login(data: { email: string; password: string }) {
@@ -68,18 +75,20 @@ export class UserService {
       throw new Error('Invalid credentials');
     }
 
-    const token = this.generateToken({ userId: String(user.id), email: user.email, role: user.role });
+    const payload = { userId: String(user.id), email: user.email, role: user.role, full_name: user.full_name };
+    const access_token = this.generateToken(payload, 'access');
+    const refresh_token = this.generateToken(payload, 'refresh');
 
     return {
-      user: { id: user.id, email: user.email, full_name: user.full_name, role: user.role },
-      access_token: token,
-      refresh_token: token,
+      access_token,
+      refresh_token,
+      token_type: 'bearer',
     };
   }
 
   async getUserById(id: string) {
     const result = await pool.query(
-      'SELECT id, email, full_name, role, created_at FROM users WHERE id = $1',
+      'SELECT id::text, email, full_name, role, created_at FROM users WHERE id = $1',
       [id]
     );
     if (result.rows.length === 0) {
@@ -90,7 +99,7 @@ export class UserService {
 
   async getAllUsers() {
     const result = await pool.query(
-      'SELECT id, email, full_name, role, created_at FROM users ORDER BY created_at DESC'
+      'SELECT id::text, email, full_name, role, created_at FROM users ORDER BY created_at DESC'
     );
     return result.rows;
   }
@@ -103,24 +112,55 @@ export class UserService {
     return { deleted: true, id };
   }
 
-  private generateToken(payload: TokenPayload): string {
-    const now = Math.floor(Date.now() / 1000);
-    const jwtPayload = {
-      sub: payload.userId,
-      email: payload.email,
-      iss: 'face-recognition',
-      aud: 'face-recognition-users',
-      exp: now + 86400,
-      iat: now,
-      roles: [payload.role],
-      typ: 'access',
-    };
-    return jwt.sign(jwtPayload, config.jwtSecret);
+  async refreshToken(refreshTokenStr: string) {
+    const payload = this.verifyToken(refreshTokenStr, 'refresh');
+    const user = await this.getUserById(payload.userId);
+    const newPayload = { userId: String(user.id), email: user.email, role: user.role, full_name: user.full_name };
+    const access_token = this.generateToken(newPayload, 'access');
+    return { access_token, token_type: 'bearer' };
   }
 
-  verifyToken(token: string): any {
-    const decoded: any = jwt.verify(token, config.jwtSecret);
-    return { userId: decoded.sub, email: '', role: decoded.roles?.[0] || 'user' };
+  private generateToken(payload: TokenPayload, type: 'access' | 'refresh' = 'access'): string {
+    const now = Math.floor(Date.now() / 1000);
+    const exp = type === 'refresh'
+      ? now + config.jwtRefreshExpiresDays * 86400
+      : now + config.jwtAccessExpiresMinutes * 60;
+    const secret = type === 'refresh' ? config.jwtRefreshSecret : config.jwtSecret;
+    const jwtPayload: Record<string, any> = {
+      sub: payload.userId,
+      email: payload.email,
+      iss: config.jwtIssuer,
+      aud: config.jwtAudience,
+      exp,
+      iat: now,
+      roles: [payload.role],
+      typ: type,
+    };
+    if (payload.full_name) {
+      jwtPayload.full_name = payload.full_name;
+    }
+    return jwt.sign(jwtPayload, secret);
+  }
+
+  verifyToken(token: string, expectedType?: 'access' | 'refresh'): any {
+    // Try access secret first, then refresh secret
+    let secret = config.jwtSecret;
+    try {
+      const decoded: any = jwt.verify(token, secret);
+      if (expectedType && decoded.typ !== expectedType) {
+        throw new Error(`Invalid token type: expected ${expectedType}, got ${decoded.typ}`);
+      }
+      return { userId: decoded.sub, email: decoded.email || '', role: decoded.roles?.[0] || 'user', full_name: decoded.full_name || null };
+    } catch (err: any) {
+      if (err.message?.includes('Invalid token type')) throw err;
+      // Try refresh secret
+      secret = config.jwtRefreshSecret;
+      const decoded: any = jwt.verify(token, secret);
+      if (expectedType && decoded.typ !== expectedType) {
+        throw new Error(`Invalid token type: expected ${expectedType}, got ${decoded.typ}`);
+      }
+      return { userId: decoded.sub, email: decoded.email || '', role: decoded.roles?.[0] || 'user', full_name: decoded.full_name || null };
+    }
   }
 }
 

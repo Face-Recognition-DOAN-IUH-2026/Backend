@@ -36,7 +36,6 @@ const proxyRequest = (path: string, req: any, res: any, targetBase: string) => {
   }
   
   const headers = options.headers as Record<string, string>;
-  console.log(`  Headers: content-type=${headers['content-type']}, content-length=${headers['content-length']}`);
   console.log(`  -> ${options.method} ${options.hostname}:${options.port}${options.path}`);
 
   const proxyReq = http.request({ ...options, timeout: 0 }, (proxyRes) => {
@@ -62,41 +61,61 @@ const proxyRequest = (path: string, req: any, res: any, targetBase: string) => {
   req.pipe(proxyReq, { end: true });
 };
 
-// Face Recognition API routes - strip /api prefix
-app.all('/api/auth', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/auth/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/auth', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
-app.all('/auth/*', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
+// ===== USER-SERVICE ROUTES =====
 
-// Users routes (admin user management) -> face-recognition-api
-app.all('/api/users', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/users/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/users', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/users/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+// Auth routes (login, register, refresh) -> user-service
+app.all('/api/auth/login', (req, res) => proxyRequest('/auth/login', req, res, config.services.userService));
+app.all('/api/auth/register', (req, res) => proxyRequest('/auth/register', req, res, config.services.userService));
+app.all('/api/auth/refresh', (req, res) => proxyRequest('/auth/refresh', req, res, config.services.userService));
+app.all('/auth/login', (req, res) => proxyRequest('/auth/login', req, res, config.services.userService));
+app.all('/auth/register', (req, res) => proxyRequest('/auth/register', req, res, config.services.userService));
+app.all('/auth/refresh', (req, res) => proxyRequest('/auth/refresh', req, res, config.services.userService));
 
-// Face API routes - strip /api prefix (for face operations only, not auth)
+// User info routes -> user-service
+app.all('/users/me', (req, res) => proxyRequest('/users/me', req, res, config.services.userService));
+
+// ===== FACE-RECOGNITION-API ROUTES =====
+
+// Face-login stays on face-recognition-api (needs Milvus + face processing)
+app.all('/api/auth/face-login', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+
+// Face API routes
 app.all('/api/face', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/face/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 
-// Tasks routes - proxy to face-recognition-api
+// Tasks routes
 app.all('/api/tasks', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/tasks/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 
-// Swagger docs - no prefix stripping needed
-app.all('/docs', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/docs/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/openapi.json', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/redoc', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-
-// New routes: Patrons, Access, Kiosk, Camera - proxy to face-recognition-api
+// Patrons, Access, Kiosk, Camera routes
 app.all('/api/patrons', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/patrons/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/access', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/access/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/kiosk', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/kiosk/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/camera', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/camera/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 
-// Non-prefixed routes for Access, Kiosk, Camera - proxy directly
+// Users admin routes (list + delete with has_face status) — still on face-recognition-api
+app.all('/api/users', (req, res) => proxyRequest('/users', req, res, config.services.faceRecognitionApi));
+app.all('/api/users/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/users', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/users/*', (req, res) => {
+  // Skip users/me (already routed to user-service above)
+  if (req.path === '/users/me' || req.path.startsWith('/users/me/')) {
+    return proxyRequest('/users/me', req, res, config.services.userService);
+  }
+  proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi);
+});
+
+// Swagger docs
+app.all('/docs', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/docs/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/openapi.json', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/redoc', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+
+// Non-prefixed routes for Access, Kiosk, Camera
 app.all('/access', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 app.all('/access/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 app.all('/kiosk', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
@@ -104,11 +123,13 @@ app.all('/kiosk/*', (req, res) => proxyRequest(req.originalUrl, req, res, config
 app.all('/camera', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 app.all('/camera/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 
-// Camera routes - proxy to face-recognition-api (with /api prefix)
-app.all('/api/camera', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/camera/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+// Auth catch-all for face-recognition-api (face-login, any other auth)
+app.all('/api/auth', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/auth/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/auth', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
+app.all('/auth/*', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
 
-// Generic API catch-all - any remaining /api/* -> face-recognition-api
+// Generic API catch-all
 app.all('/api/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 
 app.get('/healthz', (req, res) => {

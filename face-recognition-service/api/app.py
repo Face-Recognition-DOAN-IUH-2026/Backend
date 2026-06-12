@@ -13,21 +13,44 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 
 
 def _camera_callback_factory():
-    """Create a callback that uploads camera frames to MinIO and sends task to Celery."""
+    """Create a callback that caches camera frames to Redis and sends task to Celery.
+
+    Phase 3 (Backpressure): Drops frame if Celery queue is too deep.
+    Phase 4 (Lazy MinIO): Only Redis, no MinIO upload. Evidence uploaded on grant/spoof by worker.
+    """
     import logging
     _logger = logging.getLogger("uvicorn")
     from celery import Celery as _Celery
     _worker = _Celery("face_recognition", broker=settings.celery_broker_url, backend=settings.celery_result_backend)
-    from worker.tasks import _upload_temp_frame
 
     def _on_frame(camera_id: str, frame):
         import cv2, uuid as _uuid
-        _logger.info("Camera %s received frame, uploading to MinIO...", camera_id)
+        _logger.info("Camera %s received frame, caching to Redis...", camera_id)
         try:
+            # Phase 3: Backpressure check — drop if queue too deep
+            try:
+                import redis as _redis
+                r = _redis.Redis.from_url(settings.celery_broker_url)
+                try:
+                    queue_key = f"camera_queue:{camera_id}"
+                    depth = r.incr(queue_key)
+                    if depth == 1:
+                        r.expire(queue_key, 60)
+                    if depth > settings.camera_max_queue_depth:
+                        _logger.warning("Camera %s queue depth %d > %d, dropping frame", camera_id, depth, settings.camera_max_queue_depth)
+                        return
+                finally:
+                    r.close()
+            except Exception:
+                pass
+
+            # Phase 4: Store frame only in Redis (no MinIO)
             _, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
-            object_key = _upload_temp_frame(buf.tobytes(), str(_uuid.uuid4()))
+            object_key = f"camera_frames/{camera_id}/{str(_uuid.uuid4())}.jpg"
+            from infra.redis_cache import redis_client as _rc
+            _rc.setex(f"temp_frame:{object_key}", 120, buf.tobytes())
             _worker.send_task("process_camera_frame", kwargs={"camera_id": camera_id, "object_key": object_key})
-            _logger.info("Camera %s task queued successfully (key=%s)", camera_id, object_key)
+            _logger.info("Camera %s task queued (key=%s)", camera_id, object_key)
         except Exception as e:
             _logger.error("Camera %s failed to queue Celery task: %s", camera_id, e)
 

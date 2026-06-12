@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import uuid as _uuid
 
@@ -22,6 +23,7 @@ from worker.tasks import (
     identify_task,
     liveness_task,
     verify_task,
+    batch_enroll_task,
 )
 
 router = APIRouter(prefix="/face", tags=["face"])
@@ -46,7 +48,7 @@ async def enroll(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
         )
-    if not await cooldown.acquire(f"enroll:{current_user['id']}"):
+    if not await cooldown.acquire(f"enroll:{current_user['id']}:{angle}"):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
         )
@@ -57,6 +59,36 @@ async def enroll(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to store temp frame: {exc}")
 
     task = enroll_task.delay(user_id=current_user["id"], object_key=object_key, angle=angle)
+    return EnrollmentResult(job_id=task.id)
+
+
+@router.post("/enroll-batch", response_model=EnrollmentResult, status_code=status.HTTP_202_ACCEPTED)
+async def enroll_batch(
+    frontal: UploadFile = File(...),
+    right: UploadFile = File(...),
+    left: UploadFile = File(...),
+    down: UploadFile = File(...),
+    consent_given: bool = Form(True),
+    current_user: dict = Depends(get_current_user),
+):
+    if not consent_given:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
+        )
+    raw_frontal = await frontal.read()
+    raw_right = await right.read()
+    raw_left = await left.read()
+    raw_down = await down.read()
+    try:
+        keys = await asyncio.gather(
+            _store_temp_frame(raw_frontal),
+            _store_temp_frame(raw_right),
+            _store_temp_frame(raw_left),
+            _store_temp_frame(raw_down),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to store temp frames: {exc}")
+    task = batch_enroll_task.delay(user_id=current_user["id"], object_keys=keys)
     return EnrollmentResult(job_id=task.id)
 
 

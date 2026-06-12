@@ -335,11 +335,10 @@ class PatronRepository:
         return result.scalar() or 0
 
     async def count_today_access(self, access_type: str) -> int:
-        today = date.today()
         result = await self.db.execute(
             select(func.count(AccessLogModel.id)).where(
                 AccessLogModel.access_type == access_type,
-                cast(AccessLogModel.access_time, Date) == today,
+                cast(AccessLogModel.access_time, Date) == func.current_date(),
                 AccessLogModel.status == "success",
             )
         )

@@ -33,11 +33,25 @@ export class UserController {
       }
 
       const token = authHeader.split(' ')[1];
-      const payload = userService.verifyToken(token);
+      const payload = userService.verifyToken(token, 'access');
       const user = await userService.getUserById(payload.userId);
       res.json(user);
     } catch (error: any) {
       res.status(401).json({ error: 'Invalid token' });
+    }
+  }
+
+  async refresh(req: Request, res: Response) {
+    try {
+      const { refresh_token } = req.body;
+      if (!refresh_token) {
+        res.status(400).json({ error: 'refresh_token required' });
+        return;
+      }
+      const result = await userService.refreshToken(refresh_token);
+      res.json(result);
+    } catch (error: any) {
+      res.status(401).json({ error: 'Invalid refresh token' });
     }
   }
 
@@ -47,6 +61,20 @@ export class UserController {
       res.json(users);
     } catch (error: any) {
       res.status(500).json({ error: 'Failed to fetch users' });
+    }
+  }
+
+  async getById(req: Request, res: Response) {
+    try {
+      const id = req.params.id;
+      if (!id || id === 'undefined') {
+        res.status(400).json({ error: 'Invalid user ID' });
+        return;
+      }
+      const user = await userService.getUserById(id);
+      res.json(user);
+    } catch (error: any) {
+      res.status(404).json({ error: error.message });
     }
   }
 
