@@ -2,7 +2,7 @@ import { UserPublicDto } from './user.dto';
 
 export interface RegisterDto {
   email: string;
-  password: string;
+  password?: string;
   fullName?: string;
   role?: string;
   studentCode?: string;

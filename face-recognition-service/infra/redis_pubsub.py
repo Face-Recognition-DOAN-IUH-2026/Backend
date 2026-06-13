@@ -84,6 +84,14 @@ def _subscribe_loop(channel: str, loop: asyncio.AbstractEventLoop) -> None:
         _running = False
 
 
+def start_sse_bridge(loop: asyncio.AbstractEventLoop) -> tuple[threading.Thread, callable]:
+    global _running
+    _running = True
+    t = threading.Thread(target=_subscribe_loop, args=(CHANNEL, loop), daemon=True)
+    t.start()
+    return t, stop_sse_bridge
+
+
 def stop_sse_bridge() -> None:
     global _running
     _running = False

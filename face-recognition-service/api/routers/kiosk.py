@@ -17,7 +17,7 @@ from infra.models import UserModel
 from infra.patron_repository import PatronRepository
 from infra.sse_manager import sse_manager
 from worker.celery_app import celery_app as _celery_app
-from worker.tasks import _upload_temp_frame
+from worker.tasks import _upload_temp_frame, batch_enroll_task
 from infra.minio_client import MinioStorage as _MinioStorage
 from infra.milvus_client import MilvusClient as _MilvusClient
 from infra.redis_cache import redis_client as _redis_client
@@ -221,22 +221,18 @@ async def kiosk_batch_enroll(
         "issue_date": issue_date or str(date.today()),
     })
 
-    errors = []
-    for angle in ["frontal", "right", "left", "down"]:
-        task = celery_app.send_task(
-            "enroll_face",
-            kwargs={"patron_id": user_data["id"], "object_key": keys[angle], "angle": angle},
-        )
-        try:
-            result = await run_in_threadpool(task.get, timeout=60)
-            if result.get("status") == "error":
-                errors.append(f"{angle}: {result.get('error', 'Unknown error')}")
-                break
-        except Exception as exc:
-            errors.append(f"{angle}: {str(exc)}")
-            break
-
-    if errors:
+    task = celery_app.send_task(
+        "batch_enroll_task",
+        kwargs={"user_id": user_data["id"], "object_keys": [keys["frontal"], keys["right"], keys["left"], keys["down"]]},
+    )
+    result = await run_in_threadpool(task.get, timeout=120)
+    if result.get("status") == "error":
+        error_results = result.get("results", [])
+        error_msgs = []
+        for r in error_results:
+            if r.get("status") == "error":
+                msg = r.get("error", "Unknown error")
+                error_msgs.append(f"{r['angle']}: {msg}")
         try:
             _get_milvus_client().delete_by_user_id(user_id=user_data["id"])
         except Exception:
@@ -248,12 +244,12 @@ async def kiosk_batch_enroll(
         except Exception:
             pass
         await _proxy_delete_user(user_data["id"])
-        raise HTTPException(400, f"Đăng ký thất bại. Lỗi các góc: {'; '.join(errors)}")
+        raise HTTPException(400, f"Dang ky that bai. Loi cac goc: {', '.join(error_msgs)}")
 
     user = await repo.get_by_id(_uuid.UUID(user_data["id"]))
     return KioskResult(
         success=True,
-        message="Đã tạo độc giả với đầy đủ 4 góc khuôn mặt.",
+        message="Da tao doc gia voi day du 4 goc khuon mat.",
         patron=await _patron_to_public(user, repo) if user else PatronPublic(**user_data),
     )
 

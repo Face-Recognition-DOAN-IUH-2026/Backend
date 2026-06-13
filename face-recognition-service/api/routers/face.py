@@ -37,29 +37,17 @@ async def _store_temp_frame(raw: bytes) -> str:
     return object_key
 
 
-@router.post("/enroll", response_model=EnrollmentResult, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/enroll", response_model=EnrollmentResult, status_code=status.HTTP_410_GONE)
 async def enroll(
     file: UploadFile = File(...),
     consent_given: bool = Form(True),
     angle: str = Form("frontal"),
     current_user: dict = Depends(get_current_user),
 ):
-    if not consent_given:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
-        )
-    if not await cooldown.acquire(f"enroll:{current_user['id']}:{angle}"):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
-        )
-    raw = await file.read()
-    try:
-        object_key = await _store_temp_frame(raw)
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to store temp frame: {exc}")
-
-    task = enroll_task.delay(user_id=current_user["id"], object_key=object_key, angle=angle)
-    return EnrollmentResult(job_id=task.id)
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Single-image enrollment is no longer supported. Use /face/enroll-batch with 4 angles."
+    )
 
 
 @router.post("/enroll-batch", response_model=EnrollmentResult, status_code=status.HTTP_202_ACCEPTED)

@@ -69,10 +69,11 @@ class FaceModel:
         is_blurry = lap_var < threshold
         return {"is_blurry": is_blurry, "laplacian_variance": lap_var, "threshold": threshold}
 
-    def get_face_quality(self, img: cv2.Mat) -> dict:
-        blur = self.estimate_blur(img)
-        if blur["is_blurry"]:
-            return {"valid": False, "error": "MOTION_BLUR", "score": blur["laplacian_variance"]}
+    def get_face_quality(self, img: cv2.Mat, angle: str = "frontal") -> dict:
+        if angle != "right" and angle != "left" and angle != "down":
+            blur = self.estimate_blur(img)
+            if blur["is_blurry"]:
+                return {"valid": False, "error": "MOTION_BLUR", "score": blur["laplacian_variance"]}
         faces = self.app.get(img)
         if len(faces) == 0:
             return {"valid": False, "error": "NO_FACE_DETECTED", "score": 0.0}
@@ -166,8 +167,8 @@ def check_liveness(img: cv2.Mat) -> dict:
     return get_model().detailed_liveness_check(img)
 
 
-def check_face_quality(img: cv2.Mat) -> dict:
-    return get_model().get_face_quality(img)
+def check_face_quality(img: cv2.Mat, angle: str = "frontal") -> dict:
+    return get_model().get_face_quality(img, angle)
 
 
 def detect_face_once(img: cv2.Mat) -> dict:

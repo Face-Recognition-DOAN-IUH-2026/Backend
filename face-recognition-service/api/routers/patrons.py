@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Optional, Annotated
 
 import httpx
-from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +13,7 @@ from api.dependencies import get_current_user, get_db_session, require_role
 from core.schemas import PatronCreate, PatronPublic, PatronUpdate, PatronRegisterRequest, PatronLoginRequest, PatronAuthResponse
 from infra.config import settings
 from infra.patron_repository import PatronRepository
-from worker.tasks import _upload_temp_frame, enroll_face
+from worker.tasks import _upload_temp_frame, batch_enroll_task
 
 router = APIRouter(prefix="/patrons", tags=["patrons"])
 
@@ -30,6 +31,15 @@ def _convert_keys(obj: dict) -> dict:
     return {_camel_to_snake(k): v for k, v in obj.items()}
 
 
+def _snake_to_camel(name: str) -> str:
+    import re
+    return re.sub(r'_([a-z])', lambda m: m.group(1).upper(), name)
+
+
+def _to_camel_case(obj: dict) -> dict:
+    return {_snake_to_camel(k): v for k, v in obj.items()}
+
+
 async def _proxy_to_user_service(method: str, path: str, body: dict | None = None) -> dict:
     async with httpx.AsyncClient(timeout=10.0) as client:
         headers = {}
@@ -37,14 +47,25 @@ async def _proxy_to_user_service(method: str, path: str, body: dict | None = Non
             headers["X-Internal-Api-Key"] = INTERNAL_KEY
         resp = await client.request(method, f"{USER_SERVICE}{path}", json=body, headers=headers)
         if resp.status_code >= 400:
-            detail = resp.json().get("error", "Patron operation failed")
+            try:
+                detail = resp.json().get("error") or resp.json().get("detail") or "Patron operation failed"
+            except Exception:
+                detail = f"User service error (status {resp.status_code}): {resp.text[:200]}"
             raise HTTPException(status_code=resp.status_code, detail=detail)
-        return resp.json()
+        try:
+            return resp.json()
+        except Exception:
+            raise HTTPException(status_code=502, detail="Invalid response from user service")
 
 
 async def _patron_to_public(user_data: dict, db: AsyncSession) -> PatronPublic:
     repo = PatronRepository(db)
-    user_id = uuid.UUID(user_data["id"])
+    if "id" not in user_data:
+        raise HTTPException(status_code=502, detail="User service returned no ID")
+    try:
+        user_id = uuid.UUID(str(user_data["id"]))
+    except (ValueError, TypeError) as e:
+        raise HTTPException(status_code=502, detail=f"Invalid user ID format: {user_data.get('id')}")
     face = await repo.get_active_face(user_id)
     return PatronPublic(
         id=user_data["id"],
@@ -149,7 +170,11 @@ async def create_patron(
     db: AsyncSession = Depends(get_db_session),
     _=Depends(get_current_user),
 ):
-    result = await _proxy_to_user_service("POST", "/patrons", body.model_dump())
+    body_dict = body.model_dump()
+    body_dict["membership_expiry"] = str(body_dict["membership_expiry"])
+    if body_dict.get("issue_date"):
+        body_dict["issue_date"] = str(body_dict["issue_date"])
+    result = await _proxy_to_user_service("POST", "/patrons", body_dict)
     return await _patron_to_public(result, db)
 
 
@@ -160,8 +185,11 @@ async def update_patron(
     db: AsyncSession = Depends(get_db_session),
     _=Depends(get_current_user),
 ):
+    body_dict = body.model_dump(mode='json', exclude_none=True)
+    if body_dict.get("membership_expiry"):
+        body_dict["membership_expiry"] = str(body_dict["membership_expiry"])
     result = await _proxy_to_user_service(
-        "PUT", f"/patrons/{patron_id}", body.model_dump(mode='json', exclude_none=True)
+        "PUT", f"/patrons/{patron_id}", body_dict
     )
     return await _patron_to_public(result, db)
 
@@ -174,56 +202,71 @@ async def delete_patron(
     return await _proxy_to_user_service("DELETE", f"/patrons/{patron_id}")
 
 
-@router.post("/{patron_id}/enroll-face")
-async def enroll_patron_face(
+@router.post("/{patron_id}/enroll-batch")
+async def enroll_patron_face_batch(
     patron_id: uuid.UUID,
-    image: UploadFile = None,
-    angle: str = Form("frontal"),
-    image_data: str = Form(None),
+    frontal: UploadFile = File(...),
+    right: UploadFile = File(...),
+    left: UploadFile = File(...),
+    down: UploadFile = File(...),
+    consent_given: bool = Form(False),
     db: AsyncSession = Depends(get_db_session),
     _=Depends(get_current_user),
-    body_image: Annotated[str | None, Body()] = None,
 ):
     repo = PatronRepository(db)
     user = await repo.get_by_id(patron_id)
     if not user:
         raise HTTPException(404, "Patron not found")
 
-    raw = None
-    if image:
-        raw = await image.read()
-    elif image_data:
-        import base64
-        raw = base64.b64decode(image_data)
-    elif body_image:
-        import base64
-        raw = base64.b64decode(body_image)
-    else:
-        raise HTTPException(400, "Missing image")
+    if not consent_given:
+        raise HTTPException(400, "Consent not given")
 
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(uuid.uuid4()))
+    raw_frontal = await frontal.read()
+    raw_right = await right.read()
+    raw_left = await left.read()
+    raw_down = await down.read()
 
-    from celery import Celery
-    celery_app = Celery(
-        "tasks",
-        broker=settings.celery_broker_url,
-        backend=settings.celery_result_backend,
-    )
-    task = celery_app.send_task(
-        "enroll_face",
-        kwargs={"patron_id": str(patron_id), "object_key": object_key, "angle": angle},
-    )
+    try:
+        keys = await asyncio.gather(
+            run_in_threadpool(_upload_temp_frame, raw_frontal, str(uuid.uuid4())),
+            run_in_threadpool(_upload_temp_frame, raw_right, str(uuid.uuid4())),
+            run_in_threadpool(_upload_temp_frame, raw_left, str(uuid.uuid4())),
+            run_in_threadpool(_upload_temp_frame, raw_down, str(uuid.uuid4())),
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"Failed to store temp frames: {exc}")
 
-    result = await run_in_threadpool(task.get, timeout=60)
+    task = batch_enroll_task.delay(str(patron_id), keys)
+
+    result = await run_in_threadpool(task.get, timeout=120)
     if result.get("status") == "error":
-        error_msg = result.get("error", "Unknown error")
-        error_detail = {
-            "LIVENESS_FAILED": "Ảnh không phải khuôn mặt thật, vui lòng chụp ảnh trực tiếp",
-            "NO_FACE_DETECTED": "Không tìm thấy khuôn mặt trong ảnh, vui lòng thử lại",
-            "MULTIPLE_FACES": "Có nhiều hơn 1 khuôn mặt trong ảnh, vui lòng chụp lại",
-            "LOW_QUALITY": "Ảnh quá mờ hoặc thiếu sáng, vui lòng chụp ảnh trực tiếp với điều kiện ánh sáng tốt hơn",
-            "FACE_DETECTION_FAILED": "Không thể trích xuất khuôn mặt, vui lòng thử lại",
-        }.get(error_msg, error_msg)
-        raise HTTPException(400, error_detail)
+        error_results = result.get("results", [])
+        error_msgs = []
+        for r in error_results:
+            if r.get("status") == "error":
+                msg = r.get("error", "Unknown error")
+                if msg == "LIVENESS_FAILED":
+                    error_msgs.append(f"{r['angle']}: An khong phai khuon mat that")
+                elif msg == "NO_FACE_DETECTED":
+                    error_msgs.append(f"{r['angle']}: Khong tim thay khuon mat")
+                elif msg == "MULTIPLE_FACES":
+                    error_msgs.append(f"{r['angle']}: Co nhieu hon 1 khuon mat")
+                elif msg == "LOW_QUALITY":
+                    error_msgs.append(f"{r['angle']}: Anh qua mo hoac thieu sang")
+                elif msg == "FACE_DETECTION_FAILED":
+                    error_msgs.append(f"{r['angle']}: Khong the trich xuat khuon mat")
+                else:
+                    error_msgs.append(f"{r['angle']}: {msg}")
+        raise HTTPException(400, f"Enroll that bai: {', '.join(error_msgs)}")
 
-    return {"success": True, "message": "Face enrolled successfully", "patron_id": str(patron_id)}
+    return {"success": True, "message": "Face enrolled successfully (4 angles)", "patron_id": str(patron_id)}
+
+
+@router.post("/{patron_id}/enroll-face", status_code=410)
+async def enroll_patron_face_legacy(
+    patron_id: uuid.UUID,
+):
+    raise HTTPException(
+        status_code=410,
+        detail="Single-image enrollment is deprecated. Use /enroll-batch with 4 angles (frontal, right, left, down).",
+    )

@@ -87,7 +87,13 @@ app.all('/api/face/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/ap
 app.all('/api/tasks', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/tasks/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 
-// Patrons, Access, Kiosk, Camera routes
+// Patrons -> user-service (auth: login, register, password, me)
+app.all('/api/patrons/login', (req, res) => proxyRequest('/patrons/login', req, res, config.services.userService));
+app.all('/api/patrons/register', (req, res) => proxyRequest('/patrons/register', req, res, config.services.userService));
+app.all('/api/patrons/me', (req, res) => proxyRequest('/patrons/me', req, res, config.services.userService));
+app.all('/api/patrons/:id/password', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.userService));
+
+// Patron CRUD + face enrollment -> face-recognition-api
 app.all('/api/patrons', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/patrons/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/access', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));

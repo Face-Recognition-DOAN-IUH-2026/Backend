@@ -77,7 +77,7 @@ def _get_user_via_api(user_id: str) -> dict | None:
         conn = _get_pg_connection()
         try:
             with conn.cursor() as cur:
-                cur.execute("SELECT id, full_name, student_code, email, status FROM patrons WHERE id = %s", (user_id,))
+                cur.execute("SELECT id, full_name, student_code, email, status FROM users WHERE id = %s", (user_id,))
                 row = cur.fetchone()
                 if row:
                     result = {
@@ -223,29 +223,8 @@ def _get_user_info(user_id: str) -> dict | None:
 
 
 def _get_patron_id_by_user_id(user_id: str) -> str | None:
-    try:
-        user = _get_user_via_api(user_id)
-        if not user:
-            return None
-        email = user["email"]
-        conn = None
-        try:
-            conn = _get_pg_connection()
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT id::text FROM patrons WHERE email = %s LIMIT 1",
-                (email,),
-            )
-            patron_row = cur.fetchone()
-            cur.close()
-            if patron_row:
-                return patron_row[0]
-            return None
-        finally:
-            _close_pg_connection(conn)
-    except Exception as exc:
-        logger.warning("Failed to get patron_id for user_id %s: %s", user_id, exc)
-        return None
+    """After merging patrons into users, user_id IS the patron_id (same UUID)."""
+    return user_id
 
 
 def _process_from_minio(object_key: str):
@@ -366,16 +345,45 @@ def enroll_task(
         raise self.retry(exc=exc)
 
 
+def _rollback_enrolled_angles(patron_id: str, enrolled_angles: list[str]) -> None:
+    """Rollback all successfully enrolled angles (delete from Milvus, MinIO, DB)."""
+    for angle in enrolled_angles:
+        try:
+            _get_milvus().delete_by_user_id_and_angle(user_id=patron_id, angle=angle)
+        except Exception as exc:
+            logger.warning("Rollback: failed to delete Milvus for angle=%s: %s", angle, exc)
+        try:
+            _get_storage().delete_image(f"enrollments/{patron_id}_{angle}.jpg")
+        except Exception as exc:
+            logger.warning("Rollback: failed to delete MinIO for angle=%s: %s", angle, exc)
+        conn = None
+        try:
+            conn = _get_pg_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM patron_faces WHERE patron_id = %s AND angle = %s",
+                (patron_id, angle),
+            )
+            cur.close()
+        except Exception as exc:
+            logger.warning("Rollback: failed to delete patron_faces for angle=%s: %s", angle, exc)
+        finally:
+            _close_pg_connection(conn)
+
+
 @celery_app.task(bind=True, max_retries=0)
 def batch_enroll_task(self, user_id: str, object_keys: list[str] | None = None) -> dict:
+    """Enroll user with 4 angles. Atomic all-or-nothing: if any angle fails, rollback all."""
     angles = ["frontal", "right", "left", "down"]
     if not object_keys or len(object_keys) != len(angles):
         return {"status": "error", "error": "Expected 4 object_keys for frontal/right/left/down"}
     results = []
+    enrolled_angles: list[str] = []
+    patron_id = _get_patron_id_by_user_id(user_id) or user_id
     for idx, angle in enumerate(angles):
         try:
             _, img = _resolve_image(object_keys[idx], None)
-            quality = check_face_quality(img)
+            quality = check_face_quality(img, angle)
             if not quality.get("valid"):
                 results.append({"angle": angle, "status": "error", "error": quality.get("error")})
                 continue
@@ -391,12 +399,24 @@ def batch_enroll_task(self, user_id: str, object_keys: list[str] | None = None) 
                 results.append({"angle": angle, "status": "error", "error": "FACE_DETECTION_FAILED"})
                 continue
             norm_vec = l2_normalize(vec)
-            patron_id = _get_patron_id_by_user_id(user_id) or user_id
             _get_milvus().delete_by_user_id_and_angle(user_id=patron_id, angle=angle)
             _get_milvus().insert_embedding(user_id=patron_id, angle=angle, embedding=norm_vec)
             raw_data, _ = _resolve_image(object_keys[idx], None)
             encrypted = encrypt_data(raw_data)
             _get_storage().upload_image(f"enrollments/{patron_id}_{angle}.jpg", encrypted)
+            conn = None
+            try:
+                conn = _get_pg_connection()
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT INTO patron_faces (id, patron_id, angle, milvus_id, image_url, is_active) VALUES (%s, %s, %s, %s, %s, true)",
+                    (str(_uuid.uuid4()), patron_id, angle, "", f"enrollments/{patron_id}_{angle}.jpg"),
+                )
+                conn.commit()
+                cur.close()
+            finally:
+                _close_pg_connection(conn)
+            enrolled_angles.append(angle)
             results.append({"angle": angle, "status": "success", "quality_score": quality.get("score")})
         except Exception as exc:
             logger.exception("Batch enroll failed for angle=%s", angle)
@@ -408,7 +428,11 @@ def batch_enroll_task(self, user_id: str, object_keys: list[str] | None = None) 
                 pass
     errors = [r for r in results if r["status"] != "success"]
     if errors:
-        return {"status": "error", "error": f"{len(errors)} angle(s) failed", "results": results}
+        # Atomic rollback: delete all successfully enrolled angles
+        if enrolled_angles:
+            logger.warning("Batch enroll failed, rolling back %s enrolled angles: %s", len(enrolled_angles), enrolled_angles)
+            _rollback_enrolled_angles(patron_id, enrolled_angles)
+        return {"status": "error", "error": f"{len(errors)} angle(s) failed, all rolled back", "results": results}
     return {"status": "success", "results": results}
 
 
@@ -595,6 +619,24 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
         except Exception:
             pass
 
+        try:
+            _login_conn = _get_pg_connection()
+            _login_cur = _login_conn.cursor()
+            _login_cur.execute(
+                "UPDATE users SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = 'web_login', updated_at = NOW() WHERE id = %s",
+                (user_id,),
+            )
+            _login_cur.execute(
+                """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
+                (str(_uuid.uuid4()), user_id, "entry", "face_login", score, "web_login", "success"),
+            )
+            _login_conn.commit()
+            _login_cur.close()
+            _login_conn.close()
+        except Exception as _e:
+            logger.warning("Failed to update current_status on face login: %s", _e)
+
         return {
             "status": "success",
             "access_token": access_token,
@@ -754,7 +796,7 @@ def identify_patron(self, object_key: str) -> dict:
                 conn = _get_pg_connection()
                 cur = conn.cursor()
                 cur.execute(
-                    "SELECT full_name, student_code, membership_expiry, status FROM patrons WHERE id = %s",
+                    "SELECT full_name, student_code, membership_expiry, status FROM users WHERE id = %s",
                     (patron_id,),
                 )
                 row = cur.fetchone()
@@ -812,7 +854,7 @@ def _is_patron_inside(patron_id: str) -> bool:
         conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT current_status = 'inside' AND last_entry_at > NOW() - INTERVAL '%s hours' FROM patrons WHERE id = %s",
+            "SELECT current_status = 'inside' AND last_entry_at > NOW() - INTERVAL '%s hours' FROM users WHERE id = %s",
             (settings.max_entry_hours, patron_id),
         )
         row = cur.fetchone()
@@ -969,7 +1011,7 @@ def _process_single_face(
         conn = _get_pg_connection()
         cur = conn.cursor()
         cur.execute(
-            "SELECT full_name, student_code, membership_expiry, status, current_status, last_entry_at FROM patrons WHERE id = %s",
+            "SELECT full_name, student_code, membership_expiry, status, current_status, last_entry_at FROM users WHERE id = %s",
             (patron_id,),
         )
         row = cur.fetchone()
@@ -994,7 +1036,11 @@ def _process_single_face(
         # Phase 5: Direction check with Grace Period
         if camera_id == settings.entry_cam_id:
             if current_status == "inside":
-                is_recent = (last_entry_at and (datetime.now(timezone.utc).timestamp() - last_entry_at.timestamp()) < settings.direction_grace_seconds)
+                if last_entry_at:
+                    last_entry_ts = last_entry_at.replace(tzinfo=timezone.utc).timestamp()
+                    is_recent = (datetime.now(timezone.utc).timestamp() - last_entry_ts) < settings.direction_grace_seconds
+                else:
+                    is_recent = False
                 if is_recent:
                     logger.info("Grace period: %s (%s) still at entry — already_granted", full_name, student_code)
                     event = {"camera_id": camera_id, "status": "already_granted", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
@@ -1045,12 +1091,12 @@ def _process_single_face(
             )
             if access_type == "entry":
                 cur2.execute(
-                    "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = %s, updated_at = NOW() WHERE id = %s",
+                    "UPDATE users SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = %s, updated_at = NOW() WHERE id = %s",
                     (camera_id, patron_id),
                 )
             else:
                 cur2.execute(
-                    "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
+                    "UPDATE users SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
                     (patron_id,),
                 )
             conn2.commit()
@@ -1213,7 +1259,7 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
             conn = _get_pg_connection()
             cur = conn.cursor()
             cur.execute(
-                "SELECT full_name, student_code FROM patrons WHERE id = %s",
+                "SELECT full_name, student_code FROM users WHERE id = %s",
                 (patron_id,),
             )
             row = cur.fetchone()
@@ -1234,12 +1280,12 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
             )
             if access_type == "entry":
                 cur.execute(
-                    "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = 'kiosk', updated_at = NOW() WHERE id = %s",
+                    "UPDATE users SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = 'kiosk', updated_at = NOW() WHERE id = %s",
                     (patron_id,),
                 )
             else:
                 cur.execute(
-                    "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
+                    "UPDATE users SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
                     (patron_id,),
                 )
             conn.commit()

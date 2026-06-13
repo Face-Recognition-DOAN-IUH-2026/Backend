@@ -25,6 +25,19 @@ export class PatronController {
     }
   }
 
+  async getMe(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        res.status(401).json({ error: 'Not authenticated' });
+        return;
+      }
+      const patron = await patronService.getById(req.user.userId);
+      res.json(patron);
+    } catch (error: any) {
+      res.status(404).json({ error: error.message });
+    }
+  }
+
   async login(req: Request, res: Response) {
     try {
       const { student_code, password } = req.body;
@@ -162,6 +175,39 @@ export class PatronController {
       res.json(stats);
     } catch (error: any) {
       res.status(500).json({ error: 'Failed to fetch stats' });
+    }
+  }
+
+  async changePassword(req: AuthRequest, res: Response) {
+    try {
+      const id = req.params.id;
+      if (!id || id === 'undefined') {
+        res.status(400).json({ error: 'Invalid patron ID' });
+        return;
+      }
+      const currentUser = req.user;
+      if (!currentUser) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      const isAdminOrStaff = currentUser.role === 'admin' || currentUser.role === 'staff';
+      if (currentUser.userId !== id && !isAdminOrStaff) {
+        res.status(403).json({ error: 'You can only change your own password' });
+        return;
+      }
+      const { current_password, new_password } = req.body;
+      if (!new_password || new_password.length < 8) {
+        res.status(400).json({ error: 'New password must be at least 8 characters' });
+        return;
+      }
+      await patronService.changePassword(
+        id,
+        current_password ?? null,
+        new_password,
+      );
+      res.json({ success: true, message: 'Password changed successfully' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
     }
   }
 }
