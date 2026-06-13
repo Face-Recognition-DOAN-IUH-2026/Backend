@@ -73,32 +73,6 @@ def _get_user_via_api(user_id: str) -> dict | None:
             pass
         return result
 
-    try:
-        conn = _get_pg_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, full_name, student_code, email, status FROM users WHERE id = %s", (user_id,))
-                row = cur.fetchone()
-                if row:
-                    result = {
-                        "id": str(row[0]),
-                        "full_name": row[1],
-                        "email": row[3] or "",
-                        "role": "patron",
-                        "student_code": row[2],
-                    }
-                    try:
-                        from infra.redis_cache import redis_client as _rc
-                        import json
-                        _rc.setex(cache_key, 30, json.dumps(result))
-                    except Exception:
-                        pass
-                    return result
-        finally:
-            _close_pg_connection(conn)
-    except Exception:
-        pass
-
     return None
 
 

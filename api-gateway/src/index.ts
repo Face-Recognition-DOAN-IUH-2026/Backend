@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import cors from 'cors';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
 
 const app = express();
@@ -17,9 +18,238 @@ app.use((req, res, next) => {
   next();
 });
 
-const proxyRequest = (path: string, req: any, res: any, targetBase: string) => {
-  const targetUrl = new URL(path, targetBase);
+// ============================================================================
+// CLEAN PREFIX-BASED ROUTING
+// ============================================================================
+// Rules:
+//   /api/auth/*         → user-service (login, register, refresh)
+//   /api/patrons/login  → user-service (patron login)
+//   /api/patrons/register → user-service (patron register)
+//   /api/patrons/me     → user-service (current patron)
+//   /api/patrons/:id/password → user-service (change password)
+//   /users/me           → user-service (current user)
+//   /api/borrow/*       → borrow-service
+//   /api/face/*         → face-recognition-service
+//   /api/kiosk/*        → face-recognition-service
+//   /api/camera/*       → face-recognition-service
+//   /api/access/*       → face-recognition-service
+//   /api/tasks/*        → face-recognition-service
+//   /api/users/*        → face-recognition-service (admin: list/delete patrons)
+//   /api/patrons/*      → face-recognition-service (CRUD + face enrollment)
+//   /docs/*             → face-recognition-service (swagger docs)
+// ============================================================================
 
+// ---- USER-SERVICE (Auth, Patron Auth, User Info) ----
+
+// Auth routes: /api/auth/login, /api/auth/register, /api/auth/refresh
+app.use('/api/auth/login', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },  // /api/auth/login → /auth/login
+}));
+
+app.use('/api/auth/register', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+app.use('/api/auth/refresh', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+// Patron auth routes: login, register
+app.use('/api/patrons/login', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },  // → /patrons/login
+}));
+
+app.use('/api/patrons/register', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },  // → /patrons/register
+}));
+
+// Patron self-info routes: /patrons/me, /patrons/:id/password
+app.use('/api/patrons/me', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },  // → /patrons/me
+}));
+
+app.use('/api/patrons/:id/password', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },  // → /patrons/:id/password
+}));
+
+// User self-info: /users/me
+app.use('/users/me', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+}));
+
+// ---- BORROW-SERVICE ----
+app.use('/api/borrow', createProxyMiddleware({
+  target: config.services.borrowService,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },  // /api/borrow → /borrow
+}));
+
+app.use('/api/borrow/*', createProxyMiddleware({
+  target: config.services.borrowService,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },  // /api/borrow/* → /borrow/*
+}));
+
+// ---- FACE-RECOGNITION-SERVICE ----
+
+// Face-login (special route under /api/auth/)
+app.use('/api/auth/face-login', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },  // → /auth/face-login
+}));
+
+// Face operations
+app.use('/api/face', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+app.use('/api/face/*', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+// Kiosk operations
+app.use('/api/kiosk', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+app.use('/api/kiosk/*', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+// Camera operations
+app.use('/api/camera', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+app.use('/api/camera/*', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+// Access logs
+app.use('/api/access', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+app.use('/api/access/*', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+// Async tasks
+app.use('/api/tasks', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+app.use('/api/tasks/*', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+// Patron CRUD + face enrollment (must be after specific routes above)
+app.use('/api/patrons', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+app.use('/api/patrons/*', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+// Users admin routes (list/delete patrons with face status)
+app.use('/api/users', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+app.use('/api/users/*', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' },
+}));
+
+// Swagger docs
+app.use('/docs', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+}));
+
+app.use('/docs/*', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+}));
+
+app.use('/openapi.json', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+}));
+
+app.use('/redoc', createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+}));
+
+// ============================================================================
+// HEALTH CHECK & FRONTEND FALLBACK
+// ============================================================================
+
+app.get('/healthz', (req, res) => {
+  res.json({ status: 'ok', gateway: 'Node.js-API-Gateway', timestamp: new Date().toISOString() });
+});
+
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Face Recognition Platform API Gateway',
+    version: '1.0.0',
+    gateway: 'Node.js',
+    services: {
+      userService: config.services.userService,
+      faceRecognitionApi: config.services.faceRecognitionApi,
+      borrowService: config.services.borrowService,
+    },
+  });
+});
+
+// Frontend - proxy all other requests to Next.js dev server
+app.all('/*', (req, res) => {
+  const targetUrl = new URL(req.originalUrl, config.frontendUrl);
   const options: http.RequestOptions = {
     hostname: targetUrl.hostname,
     port: parseInt(targetUrl.port) || 80,
@@ -34,9 +264,6 @@ const proxyRequest = (path: string, req: any, res: any, targetBase: string) => {
       (options.headers as any)[key] = value;
     }
   }
-  
-  const headers = options.headers as Record<string, string>;
-  console.log(`  -> ${options.method} ${options.hostname}:${options.port}${options.path}`);
 
   const proxyReq = http.request({ ...options, timeout: 0 }, (proxyRes) => {
     res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
@@ -44,118 +271,33 @@ const proxyRequest = (path: string, req: any, res: any, targetBase: string) => {
   });
 
   proxyReq.on('error', (err) => {
-    console.error(`  Proxy error: ${err.message}`);
+    console.error(`  Frontend proxy error: ${err.message}`);
     if (!res.headersSent) {
       res.status(502).json({ error: 'Bad gateway', message: err.message });
     }
   });
 
-  proxyReq.on('timeout', () => {
-    console.error(`  Proxy timeout`);
-    proxyReq.destroy();
-    if (!res.headersSent) {
-      res.status(504).json({ error: 'Gateway timeout' });
-    }
-  });
-
   req.pipe(proxyReq, { end: true });
-};
-
-// ===== USER-SERVICE ROUTES =====
-
-// Auth routes (login, register, refresh) -> user-service
-app.all('/api/auth/login', (req, res) => proxyRequest('/auth/login', req, res, config.services.userService));
-app.all('/api/auth/register', (req, res) => proxyRequest('/auth/register', req, res, config.services.userService));
-app.all('/api/auth/refresh', (req, res) => proxyRequest('/auth/refresh', req, res, config.services.userService));
-app.all('/auth/login', (req, res) => proxyRequest('/auth/login', req, res, config.services.userService));
-app.all('/auth/register', (req, res) => proxyRequest('/auth/register', req, res, config.services.userService));
-app.all('/auth/refresh', (req, res) => proxyRequest('/auth/refresh', req, res, config.services.userService));
-
-// User info routes -> user-service
-app.all('/users/me', (req, res) => proxyRequest('/users/me', req, res, config.services.userService));
-
-// ===== FACE-RECOGNITION-API ROUTES =====
-
-// Face-login stays on face-recognition-api (needs Milvus + face processing)
-app.all('/api/auth/face-login', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-
-// Face API routes
-app.all('/api/face', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/face/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-
-// Tasks routes
-app.all('/api/tasks', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/tasks/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-
-// Patrons -> user-service (auth: login, register, password, me)
-app.all('/api/patrons/login', (req, res) => proxyRequest('/patrons/login', req, res, config.services.userService));
-app.all('/api/patrons/register', (req, res) => proxyRequest('/patrons/register', req, res, config.services.userService));
-app.all('/api/patrons/me', (req, res) => proxyRequest('/patrons/me', req, res, config.services.userService));
-app.all('/api/patrons/:id/password', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.userService));
-
-// Patron CRUD + face enrollment -> face-recognition-api
-app.all('/api/patrons', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/patrons/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/access', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/access/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/kiosk', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/kiosk/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/camera', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/camera/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-
-// Borrow/Return routes -> borrow-service
-app.all('/api/borrow', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.borrowService));
-app.all('/api/borrow/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api\//, '/') || '/', req, res, config.services.borrowService));
-
-// Users admin routes (list + delete with has_face status) — still on face-recognition-api
-app.all('/api/users', (req, res) => proxyRequest('/users', req, res, config.services.faceRecognitionApi));
-app.all('/api/users/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/users', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/users/*', (req, res) => {
-  // Skip users/me (already routed to user-service above)
-  if (req.path === '/users/me' || req.path.startsWith('/users/me/')) {
-    return proxyRequest('/users/me', req, res, config.services.userService);
-  }
-  proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi);
-});
-
-// Swagger docs
-app.all('/docs', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/docs/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/openapi.json', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/redoc', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-
-// Non-prefixed routes for Access, Kiosk, Camera
-app.all('/access', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/access/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/kiosk', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/kiosk/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/camera', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/camera/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/borrow', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.borrowService));
-app.all('/borrow/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.borrowService));
-
-// Auth catch-all for face-recognition-api (face-login, any other auth)
-app.all('/api/auth', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/auth/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/auth', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
-app.all('/auth/*', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
-
-// Generic API catch-all
-app.all('/api/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-
-app.get('/healthz', (req, res) => {
-  res.json({ status: 'ok', gateway: 'Node.js-API-Gateway', timestamp: new Date().toISOString() });
-});
-
-// Frontend - proxy all other requests to Next.js dev server
-app.all('/*', (req, res) => {
-  proxyRequest(req.originalUrl, req, res, config.frontendUrl);
 });
 
 const PORT = config.port;
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 API Gateway running on port ${PORT}`);
+  console.log('📋 Routing rules:');
+  console.log('   /api/auth/*          → user-service');
+  console.log('   /api/patrons/login   → user-service');
+  console.log('   /api/patrons/register → user-service');
+  console.log('   /api/patrons/me      → user-service');
+  console.log('   /api/patrons/:id/password → user-service');
+  console.log('   /users/me            → user-service');
+  console.log('   /api/borrow/*        → borrow-service');
+  console.log('   /api/face/*          → face-recognition-service');
+  console.log('   /api/kiosk/*         → face-recognition-service');
+  console.log('   /api/camera/*        → face-recognition-service');
+  console.log('   /api/access/*        → face-recognition-service');
+  console.log('   /api/tasks/*         → face-recognition-service');
+  console.log('   /api/patrons/*       → face-recognition-service');
+  console.log('   /api/users/*         → face-recognition-service');
 });
 
 server.timeout = 0;

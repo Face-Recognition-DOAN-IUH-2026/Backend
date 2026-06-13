@@ -1,58 +1,10 @@
 from __future__ import annotations
 
-import datetime as dt
-from typing import Literal
-
 from jose import jwt
 
+# Token verification only - token creation is handled by user-service
 
-def create_access_token(
-    *,
-    subject: str,
-    secret: str,
-    issuer: str,
-    audience: str,
-    expires_minutes: int,
-    roles: list[str],
-) -> str:
-    now = dt.datetime.now(dt.UTC)
-    exp = now + dt.timedelta(minutes=expires_minutes)
-    payload = {
-        "sub": subject,
-        "iss": issuer,
-        "aud": audience,
-        "exp": exp,
-        "roles": roles,
-        "typ": "access",
-        "iat": now,
-    }
-    return jwt.encode(payload, secret, algorithm="HS256")
-
-
-def create_refresh_token(
-    *,
-    subject: str,
-    secret: str,
-    issuer: str,
-    audience: str,
-    expires_days: int,
-    roles: list[str],
-) -> str:
-    now = dt.datetime.now(dt.UTC)
-    exp = now + dt.timedelta(days=expires_days)
-    payload = {
-        "sub": subject,
-        "iss": issuer,
-        "aud": audience,
-        "exp": exp,
-        "roles": roles,
-        "typ": "refresh",
-        "iat": now,
-    }
-    return jwt.encode(payload, secret, algorithm="HS256")
-
-
-TokenType = Literal["access", "refresh"]
+TokenType = str
 
 
 def decode_token(
@@ -63,8 +15,12 @@ def decode_token(
     audience: str,
     expected_type: TokenType,
 ) -> dict:
+    """Verify and decode a JWT token.
+    
+    Note: Only user-service has permission to CREATE (sign) tokens.
+    This function only verifies tokens that were created by user-service.
+    """
     payload = jwt.decode(token, secret, algorithms=["HS256"], issuer=issuer, audience=audience)
-    if payload.get("typ") != expected_type:
+    if expected_type and payload.get("typ") != expected_type:
         raise ValueError("Invalid token type")
     return payload
-
