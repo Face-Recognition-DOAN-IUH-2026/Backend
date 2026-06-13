@@ -56,7 +56,8 @@ class Settings(BaseSettings):
     camera_max_queue_depth: int = 50
 
     user_service_url: str = "http://user-service:3001"
+    internal_api_key: str = ""
+    user_service_jwt_secret: str = ""
 
 
-settings = Settings()  # type: ignore
-
+settings = Settings()

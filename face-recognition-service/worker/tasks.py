@@ -36,12 +36,15 @@ _storage: MinioStorage | None = None
 # =============================================================================
 # USER-SERVICE API CLIENT - HTTP calls instead of direct DB queries
 # =============================================================================
-_USER_SERVICE_URL = "http://user-service:3001"
+_USER_SERVICE_URL = settings.user_service_url
 
 def _call_user_service(method: str, path: str, **kwargs) -> dict | None:
     try:
+        headers = kwargs.pop("headers", {})
+        if settings.internal_api_key:
+            headers["x-internal-api-key"] = settings.internal_api_key
         with httpx.Client(base_url=_USER_SERVICE_URL, timeout=5.0) as client:
-            resp = client.request(method, path, **kwargs)
+            resp = client.request(method, path, headers=headers, **kwargs)
             if resp.status_code == 200:
                 return resp.json()
         return None
@@ -623,59 +626,26 @@ def liveness_task(self, object_key: str | None = None, image_data: str | None = 
         raise self.retry(exc=exc)
 
 
-@celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
 def delete_user_task(self, user_id: str) -> dict:
+    """Delete face embeddings and all enrollment images for a user.
+
+    Handles both single-angle (enrollments/{id}.jpg) and
+    multi-angle (enrollments/{id}_{angle}.jpg) storage patterns.
+    """
     logger.info("Deleting user %s embeddings and images", user_id)
     try:
-        try:
-            _get_storage().delete_image(f"enrollments/{user_id}.jpg")
-        except Exception:
-            logger.warning("No image found for user %s, skipping", user_id)
+        angles = ["", "_frontal", "_right", "_left", "_down"]
+        for suffix in angles:
+            try:
+                _get_storage().delete_image(f"enrollments/{user_id}{suffix}.jpg")
+            except Exception:
+                pass
         _get_milvus().delete_by_user_id(user_id=user_id)
         return {"status": "success", "user_id": user_id}
     except Exception as exc:
         logger.exception("Delete failed for %s", user_id)
         raise self.retry(exc=exc)
-
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=5)
-def full_delete_patron_task(self, patron_id: str) -> dict:
-    """Delete patron from all 3 databases: MinIO → Milvus → PostgreSQL.
-    Order ensures least orphan data if a step fails and retry is needed.
-    """
-    logger.info("Fully deleting patron %s from all databases", patron_id)
-    try:
-        try:
-            _get_storage().delete_image(f"patrons/{patron_id}.jpg")
-            _get_storage().delete_image(f"enrollments/{patron_id}.jpg")
-        except Exception:
-            logger.warning("No images found for patron %s, skipping MinIO cleanup", patron_id)
-        _get_milvus().delete_by_user_id(user_id=patron_id)
-        conn = None
-        try:
-            conn = _get_pg_connection()
-            cur = conn.cursor()
-            cur.execute(
-                "UPDATE access_logs SET patron_id = NULL WHERE patron_id = %s",
-                (patron_id,),
-            )
-            cur.execute(
-                "DELETE FROM patron_faces WHERE patron_id = %s",
-                (patron_id,),
-            )
-            cur.execute(
-                "DELETE FROM patrons WHERE id = %s",
-                (patron_id,),
-            )
-            conn.commit()
-            cur.close()
-        finally:
-            _close_pg_connection(conn)
-        logger.info("Full deletion completed for patron %s", patron_id)
-        return {"status": "success", "patron_id": patron_id}
-    except Exception as exc:
-        logger.exception("Full deletion failed for patron %s", patron_id)
-        raise self.retry(exc=exc)
-
 
 @celery_app.task(bind=True, name="enroll_face", max_retries=2, default_retry_delay=5)
 def enroll_face(self, patron_id: str, object_key: str, angle: str = "frontal") -> dict:

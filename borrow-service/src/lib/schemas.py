@@ -7,11 +7,22 @@ from pydantic import BaseModel, ConfigDict
 
 
 class BorrowRequest(BaseModel):
-    isbn: str
+    barcode: str
+    isbn: str | None = None
 
 
-class ReturnRequest(BaseModel):
-    isbn: str
+class StaffReturnRequest(BaseModel):
+    barcode: str
+
+
+class BookCopyResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    book_id: UUID
+    barcode: str
+    is_available: bool
+    shelf_location: str | None = None
 
 
 class BookResponse(BaseModel):
@@ -23,7 +34,7 @@ class BookResponse(BaseModel):
     author: str | None = None
     cover_url: str | None = None
     shelf_location: str | None = None
-    is_available: bool
+    copies: list[BookCopyResponse] = []
 
 
 class BorrowRecordResponse(BaseModel):
@@ -32,6 +43,7 @@ class BorrowRecordResponse(BaseModel):
     id: UUID
     patron_id: UUID
     book_id: UUID
+    copy_id: UUID | None = None
     borrow_at: datetime
     due_at: datetime
     return_at: datetime | None = None

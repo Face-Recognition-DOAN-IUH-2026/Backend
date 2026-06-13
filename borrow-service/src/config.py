@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     internal_api_key: str = os.getenv("INTERNAL_API_KEY", "internal-secret-key")
 
     max_borrow_days: int = 14
+    max_borrow_books: int = 3
 
     class Config:
         env_file = ".env"

@@ -1,0 +1,182 @@
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { User, UserRole } from '../entities/User.entity';
+import { UserRepository } from '../repositories/UserRepository';
+import { RedisService } from './RedisService';
+import { config } from '../config';
+import {
+  RegisterDto,
+  LoginDto,
+  AuthResponse,
+  TokenPayload,
+  UserPublicDto,
+} from '../dto';
+import { UnauthorizedError, ForbiddenError, ConflictError } from '../errors';
+
+export class AuthService {
+  constructor(
+    private userRepo: UserRepository,
+    private redis: RedisService,
+  ) {}
+
+  async register(dto: RegisterDto): Promise<AuthResponse> {
+    const existing = await this.userRepo.findByEmail(dto.email);
+    if (existing) throw new ConflictError('Email already registered');
+
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+
+    const userData: Partial<User> = {
+      email: dto.email,
+      passwordHash,
+      fullName: dto.fullName ?? null,
+      role: dto.role ?? 'user',
+    };
+
+    if (dto.role === UserRole.PATRON) {
+      const dupCode = dto.studentCode
+        ? await this.userRepo.findByStudentCode(dto.studentCode)
+        : null;
+      if (dupCode) throw new ConflictError('Student code already exists');
+
+      Object.assign(userData, {
+        studentCode: dto.studentCode ?? null,
+        className: dto.className ?? null,
+        cardNumber: dto.studentCode ? `THV-${dto.studentCode}` : null,
+        membershipExpiry: dto.membershipExpiry ?? '2099-12-31',
+        issueDate: new Date().toISOString().split('T')[0],
+      });
+    }
+
+    const user = await this.userRepo.create(userData);
+    return this.buildAuthResponse(user);
+  }
+
+  async login(dto: LoginDto): Promise<AuthResponse> {
+    let user: User | null = null;
+
+    if (dto.studentCode) {
+      user = await this.userRepo.findByStudentCode(dto.studentCode);
+    } else if (dto.email) {
+      user = await this.userRepo.findByEmail(dto.email);
+    }
+
+    if (!user) throw new UnauthorizedError('Invalid credentials');
+
+    const valid = await bcrypt.compare(dto.password, user.passwordHash);
+    if (!valid) throw new UnauthorizedError('Invalid credentials');
+
+    if (user.status !== 'active') throw new ForbiddenError('Account is disabled');
+
+    if (user.role === UserRole.PATRON && user.membershipExpiry) {
+      const expiry = new Date(user.membershipExpiry);
+      if (expiry < new Date()) throw new ForbiddenError('Membership has expired');
+    }
+
+    return this.buildAuthResponse(user);
+  }
+
+  async getUserById(id: string): Promise<UserPublicDto> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new UnauthorizedError('User not found');
+    return this.toPublic(user);
+  }
+
+  async refreshToken(refreshTokenStr: string): Promise<{ access_token: string; token_type: string }> {
+    const payload = this.verifyToken(refreshTokenStr, 'refresh');
+    const user = await this.userRepo.findById(payload.userId);
+    if (!user) throw new UnauthorizedError('User not found');
+    const accessToken = this.generateToken(
+      { userId: user.id, email: user.email, role: user.role, fullName: user.fullName },
+      'access',
+    );
+    return { access_token: accessToken, token_type: 'bearer' };
+  }
+
+  verifyToken(token: string, expectedType?: 'access' | 'refresh'): TokenPayload {
+    let secret = expectedType === 'refresh' ? config.jwtRefreshSecret : config.jwtSecret;
+    try {
+      const decoded: any = jwt.verify(token, secret);
+      if (expectedType && decoded.typ !== expectedType) {
+        throw new Error(`Invalid token type: expected ${expectedType}`);
+      }
+      return {
+        userId: decoded.sub,
+        email: decoded.email || '',
+        role: decoded.roles?.[0] || 'user',
+        fullName: decoded.full_name || null,
+      };
+    } catch (err: any) {
+      if (err.message?.includes('Invalid token type')) throw err;
+      secret = config.jwtRefreshSecret;
+      const decoded: any = jwt.verify(token, secret);
+      if (expectedType && decoded.typ !== expectedType) {
+        throw new Error(`Invalid token type: expected ${expectedType}`);
+      }
+      return {
+        userId: decoded.sub,
+        email: decoded.email || '',
+        role: decoded.roles?.[0] || 'user',
+        fullName: decoded.full_name || null,
+      };
+    }
+  }
+
+  private buildAuthResponse(user: User): AuthResponse {
+    const payload: TokenPayload = {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      fullName: user.fullName,
+    };
+    return {
+      access_token: this.generateToken(payload, 'access'),
+      refresh_token: this.generateToken(payload, 'refresh'),
+      token_type: 'bearer',
+      user: this.toPublic(user),
+    };
+  }
+
+  private generateToken(payload: TokenPayload, type: 'access' | 'refresh'): string {
+    const now = Math.floor(Date.now() / 1000);
+    const exp =
+      type === 'refresh'
+        ? now + config.jwtRefreshExpiresDays * 86400
+        : now + config.jwtAccessExpiresMinutes * 60;
+    const secret = type === 'refresh' ? config.jwtRefreshSecret : config.jwtSecret;
+
+    const jwtPayload: Record<string, any> = {
+      sub: payload.userId,
+      email: payload.email,
+      iss: config.jwtIssuer,
+      aud: config.jwtAudience,
+      exp,
+      iat: now,
+      roles: [payload.role],
+      typ: type,
+    };
+    if (payload.fullName) jwtPayload.full_name = payload.fullName;
+
+    return jwt.sign(jwtPayload, secret);
+  }
+
+  toPublic(user: User): UserPublicDto {
+    const dto: UserPublicDto = {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
+    };
+    if (user.studentCode) dto.studentCode = user.studentCode;
+    if (user.className) dto.className = user.className;
+    if (user.identityNumber) dto.identityNumber = user.identityNumber;
+    if (user.phone) dto.phone = user.phone;
+    if (user.cardNumber) dto.cardNumber = user.cardNumber;
+    if (user.issueDate) dto.issueDate = user.issueDate;
+    if (user.membershipExpiry) dto.membershipExpiry = user.membershipExpiry;
+    dto.status = user.status;
+    dto.currentStatus = user.currentStatus;
+    if (user.createdAt) dto.createdAt = user.createdAt.toISOString();
+    if (user.updatedAt) dto.updatedAt = user.updatedAt.toISOString();
+    return dto;
+  }
+}

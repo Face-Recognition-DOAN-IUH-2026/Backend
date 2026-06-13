@@ -123,8 +123,8 @@ class PatronPublic(BaseModel):
     membership_expiry: date
     status: str
     current_status: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     has_face: bool = False
 
 

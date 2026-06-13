@@ -18,4 +18,6 @@ export const config = {
     password: process.env.DB_PASSWORD || 'postgres',
   },
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['*'],
+  redisUrl: process.env.REDIS_URL || 'redis://redis:6379/0',
+  internalApiKey: process.env.INTERNAL_API_KEY || 'change-me-in-production',
 };

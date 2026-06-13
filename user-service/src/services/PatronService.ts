@@ -1,0 +1,156 @@
+import { PatronRepository } from '../repositories/PatronRepository';
+import { RedisService } from './RedisService';
+import {
+  PatronPublicDto,
+  CreatePatronDto,
+  UpdatePatronDto,
+  LookupResultDto,
+  SearchResultDto,
+} from '../dto';
+import { ConflictError, NotFoundError } from '../errors';
+
+export class PatronService {
+  constructor(
+    private patronRepo: PatronRepository,
+    private redis: RedisService,
+  ) {}
+
+  async search(
+    query?: string,
+    status?: string,
+    skip = 0,
+    limit = 20,
+  ): Promise<SearchResultDto> {
+    const [patrons, total] = await this.patronRepo.findPatrons({
+      query,
+      status,
+      skip,
+      limit,
+    });
+    return {
+      items: patrons.map((p) => this.toPatronPublic(p)),
+      total,
+    };
+  }
+
+  async lookup(
+    studentCode?: string,
+    cardNumber?: string,
+  ): Promise<LookupResultDto> {
+    let patron = studentCode
+      ? await this.patronRepo.findByStudentCode(studentCode)
+      : cardNumber
+        ? await this.patronRepo.findByCardNumber(cardNumber)
+        : null;
+
+    if (!patron) {
+      return { exists: false, patron: null, hasFace: false, isExpired: false };
+    }
+
+    const isExpired =
+      !!patron.membershipExpiry && new Date(patron.membershipExpiry) < new Date();
+
+    return {
+      exists: true,
+      patron: this.toPatronPublic(patron),
+      hasFace: false,
+      isExpired,
+    };
+  }
+
+  async getById(id: string): Promise<PatronPublicDto> {
+    const patron = await this.patronRepo.findById(id);
+    if (!patron) throw new NotFoundError('Patron not found');
+    return this.toPatronPublic(patron);
+  }
+
+  async create(dto: CreatePatronDto): Promise<PatronPublicDto> {
+    const dupCode = await this.patronRepo.findByStudentCode(dto.studentCode);
+    if (dupCode) throw new ConflictError('Student code already exists');
+
+    const dupCard = await this.patronRepo.findByCardNumber(
+      `THV-${dto.studentCode}`,
+    );
+    if (dupCard) throw new ConflictError('Student code already exists');
+
+    const patron = await this.patronRepo.create({
+      email: dto.email ?? `${dto.studentCode}@library.local`,
+      passwordHash: '',
+      fullName: dto.fullName,
+      role: 'patron',
+      studentCode: dto.studentCode,
+      className: dto.className ?? null,
+      cardNumber: `THV-${dto.studentCode}`,
+      membershipExpiry: dto.membershipExpiry,
+      issueDate: dto.issueDate ?? new Date().toISOString().split('T')[0],
+      phone: dto.phone ?? null,
+      status: 'active',
+      currentStatus: 'outside',
+    });
+
+    return this.toPatronPublic(patron);
+  }
+
+  async update(id: string, dto: UpdatePatronDto): Promise<PatronPublicDto> {
+    const patron = await this.patronRepo.findById(id);
+    if (!patron) throw new NotFoundError('Patron not found');
+
+    const updated = await this.patronRepo.update(id, {
+      fullName: dto.fullName,
+      className: dto.className,
+      identityNumber: dto.identityNumber,
+      email: dto.email,
+      phone: dto.phone,
+      membershipExpiry: dto.membershipExpiry,
+      status: dto.status as any,
+    });
+
+    return this.toPatronPublic(updated!);
+  }
+
+  async deletePatron(id: string): Promise<{ deleted: boolean; id: string }> {
+    const patron = await this.patronRepo.findById(id);
+    if (!patron) throw new NotFoundError('Patron not found');
+
+    await this.patronRepo.delete(id);
+    await this.redis.publishUserDeleted(id, patron.email);
+
+    return { deleted: true, id };
+  }
+
+  async getStats(): Promise<{
+    totalPatrons: number;
+    activePatrons: number;
+    todayEntries: number;
+    todayExits: number;
+  }> {
+    const totalPatrons = await this.patronRepo.countActivePatrons();
+    const activePatrons = await this.patronRepo.countActiveInside();
+    return { totalPatrons, activePatrons, todayEntries: 0, todayExits: 0 };
+  }
+
+  async getActivePatrons(): Promise<PatronPublicDto[]> {
+    const patrons = await this.patronRepo.getActivePatrons();
+    return patrons.map((p) => this.toPatronPublic(p));
+  }
+
+  private toPatronPublic(patron: any): PatronPublicDto {
+    return {
+      id: patron.id,
+      fullName: patron.fullName,
+      studentCode: patron.studentCode,
+      className: patron.className,
+      identityNumber: patron.identityNumber,
+      email: patron.email,
+      phone: patron.phone,
+      cardNumber: patron.cardNumber,
+      issueDate: patron.issueDate,
+      membershipExpiry: patron.membershipExpiry,
+      status: patron.status,
+      currentStatus: patron.currentStatus,
+      createdAt: patron.createdAt,
+      updatedAt: patron.updatedAt,
+      hasFace: false,
+    };
+  }
+}

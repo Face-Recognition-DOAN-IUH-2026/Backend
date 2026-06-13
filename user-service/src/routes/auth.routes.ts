@@ -1,10 +1,11 @@
 import { Router } from 'express';
-import { userController } from '../controllers/user.controller';
+import { authController } from '../controllers';
+import { requireRole } from '../middlewares';
 
 const router = Router();
 
-router.post('/register', (req, res) => userController.register(req, res));
-router.post('/login', (req, res) => userController.login(req, res));
-router.post('/refresh', (req, res) => userController.refresh(req, res));
+router.post('/register', requireRole('admin', 'staff'), (req, res) => authController.register(req, res));
+router.post('/login', (req, res) => authController.login(req, res));
+router.post('/refresh', (req, res) => authController.refresh(req, res));
 
 export default router;

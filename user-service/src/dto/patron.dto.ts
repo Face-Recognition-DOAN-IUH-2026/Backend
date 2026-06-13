@@ -1,0 +1,62 @@
+export interface PatronPublicDto {
+  id: string;
+  fullName: string;
+  studentCode: string;
+  className: string | null;
+  identityNumber: string | null;
+  email: string | null;
+  phone: string | null;
+  cardNumber: string;
+  issueDate: string | null;
+  membershipExpiry: string | null;
+  status: string;
+  currentStatus: string;
+  createdAt: Date;
+  updatedAt: Date;
+  hasFace: boolean;
+}
+
+export interface CreatePatronDto {
+  fullName: string;
+  studentCode: string;
+  className?: string;
+  membershipExpiry: string;
+  issueDate?: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface UpdatePatronDto {
+  fullName?: string;
+  className?: string;
+  identityNumber?: string;
+  email?: string;
+  phone?: string;
+  membershipExpiry?: string;
+  status?: string;
+}
+
+export interface PatronRegisterDto {
+  studentCode: string;
+  password: string;
+  fullName: string;
+  className?: string;
+  email?: string;
+}
+
+export interface PatronLoginDto {
+  studentCode: string;
+  password: string;
+}
+
+export interface LookupResultDto {
+  exists: boolean;
+  patron: PatronPublicDto | null;
+  hasFace: boolean;
+  isExpired: boolean;
+}
+
+export interface SearchResultDto {
+  items: PatronPublicDto[];
+  total: number;
+}

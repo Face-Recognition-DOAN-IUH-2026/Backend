@@ -13,11 +13,6 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 
 
 def _camera_callback_factory():
-    """Create a callback that caches camera frames to Redis and sends task to Celery.
-
-    Phase 3 (Backpressure): Drops frame if Celery queue is too deep.
-    Phase 4 (Lazy MinIO): Only Redis, no MinIO upload. Evidence uploaded on grant/spoof by worker.
-    """
     import logging
     _logger = logging.getLogger("uvicorn")
     from celery import Celery as _Celery
@@ -27,32 +22,27 @@ def _camera_callback_factory():
         import cv2, uuid as _uuid
         _logger.info("Camera %s received frame, caching to Redis...", camera_id)
         try:
-            # Phase 3: Backpressure check — drop if queue too deep
+            import redis as _redis
+            r = _redis.Redis.from_url(settings.celery_broker_url)
             try:
-                import redis as _redis
-                r = _redis.Redis.from_url(settings.celery_broker_url)
-                try:
-                    queue_key = f"camera_queue:{camera_id}"
-                    depth = r.incr(queue_key)
-                    if depth == 1:
-                        r.expire(queue_key, 60)
-                    if depth > settings.camera_max_queue_depth:
-                        _logger.warning("Camera %s queue depth %d > %d, dropping frame", camera_id, depth, settings.camera_max_queue_depth)
-                        return
-                finally:
-                    r.close()
-            except Exception:
-                pass
+                queue_key = f"camera_queue:{camera_id}"
+                depth = r.incr(queue_key)
+                if depth == 1:
+                    r.expire(queue_key, 60)
+                if depth > settings.camera_max_queue_depth:
+                    _logger.warning("Camera %s queue depth %d > %d, dropping frame", camera_id, depth, settings.camera_max_queue_depth)
+                    return
+            finally:
+                r.close()
+        except Exception:
+            pass
 
-            # Phase 4: Store frame only in Redis (no MinIO)
-            _, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
-            object_key = f"camera_frames/{camera_id}/{str(_uuid.uuid4())}.jpg"
-            from infra.redis_cache import redis_client as _rc
-            _rc.setex(f"temp_frame:{object_key}", 120, buf.tobytes())
-            _worker.send_task("process_camera_frame", kwargs={"camera_id": camera_id, "object_key": object_key})
-            _logger.info("Camera %s task queued (key=%s)", camera_id, object_key)
-        except Exception as e:
-            _logger.error("Camera %s failed to queue Celery task: %s", camera_id, e)
+        _, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+        object_key = f"camera_frames/{camera_id}/{str(_uuid.uuid4())}.jpg"
+        from infra.redis_cache import redis_client as _rc
+        _rc.setex(f"temp_frame:{object_key}", 120, buf.tobytes())
+        _worker.send_task("process_camera_frame", kwargs={"camera_id": camera_id, "object_key": object_key})
+        _logger.info("Camera %s task queued (key=%s)", camera_id, object_key)
 
     return _on_frame
 
@@ -64,31 +54,20 @@ async def lifespan(app: FastAPI):
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Migration: add full_name column if missing (v0.2.0)
+
         from sqlalchemy import text
+
         await conn.execute(
             text("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)")
         )
-        # Migration: add current_status tracking columns (v0.3.0)
         await conn.execute(
-            text("ALTER TABLE patrons ADD COLUMN IF NOT EXISTS current_status VARCHAR(10) NOT NULL DEFAULT 'outside'")
-        )
-        await conn.execute(
-            text("ALTER TABLE patrons ADD COLUMN IF NOT EXISTS last_entry_at TIMESTAMP")
-        )
-        await conn.execute(
-            text("ALTER TABLE patrons ADD COLUMN IF NOT EXISTS last_entry_camera VARCHAR(50)")
-        )
-        # Migration: multi-angle face enrollment (v0.4.0)
-        await conn.execute(
-            text("ALTER TABLE patron_faces DROP CONSTRAINT IF EXISTS patron_faces_patron_id_key")
+            text("ALTER TABLE patron_faces DROP CONSTRAINT IF EXISTS patron_faces_patron_id_fkey")
         )
         await conn.execute(
             text("ALTER TABLE patron_faces ADD COLUMN IF NOT EXISTS angle VARCHAR(20) NOT NULL DEFAULT 'frontal'")
         )
-        # Migration: add class_name column (v0.5.0)
         await conn.execute(
-            text("ALTER TABLE patrons ADD COLUMN IF NOT EXISTS class_name VARCHAR(100)")
+            text("DROP TABLE IF EXISTS patrons CASCADE")
         )
 
     entry = settings.entry_cam_url
@@ -120,6 +99,15 @@ async def lifespan(app: FastAPI):
         import logging
         logging.getLogger("uvicorn").warning("SSE bridge not started: %s", e)
 
+    _user_stop = None
+    try:
+        import asyncio
+        from infra.redis_pubsub import start_user_event_listener
+        _user_thread, _user_stop = start_user_event_listener(asyncio.get_running_loop())
+    except Exception as e:
+        import logging
+        logging.getLogger("uvicorn").warning("User event listener not started: %s", e)
+
     yield
 
     try:
@@ -133,6 +121,11 @@ async def lifespan(app: FastAPI):
             _sse_stop()
         except Exception as e:
             logging.getLogger("uvicorn").error("SSE bridge stop error: %s", e)
+    if _user_stop:
+        try:
+            _user_stop()
+        except Exception as e:
+            logging.getLogger("uvicorn").error("User event listener stop error: %s", e)
     await engine.dispose()
     cooldown = CooldownService()
     await cooldown.close()
@@ -141,7 +134,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Face Recognition Platform",
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
     )
 

@@ -7,6 +7,17 @@ export const setupProxy = (app: any) => {
     next();
   });
 
+  // Auth proxy - user-service handles email/password auth
+  app.use('/auth', createProxyMiddleware({
+    target: config.services.userService,
+    changeOrigin: true,
+    pathRewrite: (path: string, req: any) => {
+      const originalPath = req.originalUrl || req.url;
+      console.log(`  Auth proxy: ${originalPath}`);
+      return originalPath;
+    },
+  }));
+
   // User Service proxy - use originalUrl to preserve full path
   app.use('/users', createProxyMiddleware({
     target: config.services.userService,

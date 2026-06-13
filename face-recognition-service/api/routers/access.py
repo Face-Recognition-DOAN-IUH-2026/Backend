@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user, get_db_session
 from core.schemas import AccessLogPublic, ActivePatron, StatsResponse
-from infra.models import PatronModel
+from infra.models import UserModel
 from infra.patron_repository import PatronRepository
 from infra.sse_manager import sse_manager
 
@@ -51,34 +51,34 @@ async def test_broadcast(
     return {"ok": True, "event": test_event}
 
 
-async def _resolve_patron_map(db: AsyncSession, logs: list) -> dict[str, Any]:
-    patron_ids = [log.patron_id for log in logs if log.patron_id]
-    unique_ids = list({str(pid) for pid in patron_ids})
+async def _resolve_user_map(db: AsyncSession, logs: list) -> dict[str, Any]:
+    user_ids = [log.patron_id for log in logs if log.patron_id]
+    unique_ids = list({str(pid) for pid in user_ids})
     if not unique_ids:
         return {}
     result = await db.execute(
-        select(PatronModel).where(
-            PatronModel.id.in_([uuid.UUID(pid) for pid in unique_ids])
+        select(UserModel).where(
+            UserModel.id.in_([uuid.UUID(pid) for pid in unique_ids])
         )
     )
-    return {str(p.id): p for p in result.scalars().all()}
+    return {str(u.id): u for u in result.scalars().all()}
 
 
 @router.get("/recent")
 async def get_recent_logs(db: AsyncSession = Depends(get_db_session)):
     repo = PatronRepository(db)
     logs, _ = await repo.get_access_logs(limit=20)
-    patron_map = await _resolve_patron_map(db, logs)
+    user_map = await _resolve_user_map(db, logs)
 
     items = []
     for log in logs:
-        p = patron_map.get(str(log.patron_id)) if log.patron_id else None
+        u = user_map.get(str(log.patron_id)) if log.patron_id else None
         items.append(
             AccessLogPublic(
                 id=str(log.id),
                 patron_id=str(log.patron_id) if log.patron_id else None,
-                patron_name=p.full_name if p else None,
-                student_code=p.student_code if p else None,
+                patron_name=u.full_name if u else None,
+                student_code=u.student_code if u else None,
                 access_type=log.access_type,
                 verify_method=log.verify_method,
                 confidence=log.confidence,
@@ -107,7 +107,7 @@ async def get_logs(
 ):
     repo = PatronRepository(db)
     logs, total = await repo.get_access_logs(
-        patron_id=patron_id,
+        user_id=patron_id,
         camera_id=camera_id,
         status=status,
         access_type=access_type,
@@ -117,16 +117,16 @@ async def get_logs(
         skip=skip,
         limit=limit,
     )
-    patron_map = await _resolve_patron_map(db, logs)
+    user_map = await _resolve_user_map(db, logs)
     items = []
     for log in logs:
-        p = patron_map.get(str(log.patron_id)) if log.patron_id else None
+        u = user_map.get(str(log.patron_id)) if log.patron_id else None
         items.append(
             AccessLogPublic(
                 id=str(log.id),
                 patron_id=str(log.patron_id) if log.patron_id else None,
-                patron_name=p.full_name if p else None,
-                student_code=p.student_code if p else None,
+                patron_name=u.full_name if u else None,
+                student_code=u.student_code if u else None,
                 access_type=log.access_type,
                 verify_method=log.verify_method,
                 confidence=log.confidence,
@@ -144,10 +144,10 @@ async def get_active(
     _=Depends(get_current_user),
 ):
     repo = PatronRepository(db)
-    patrons = await repo.get_active_patrons()
+    users = await repo.get_active_users()
     face_map = {}
-    if patrons:
-        pids = [p.id for p in patrons]
+    if users:
+        pids = [u.id for u in users]
         from infra.models import PatronFaceModel
         faces = await db.execute(
             select(PatronFaceModel).where(
@@ -158,15 +158,15 @@ async def get_active(
         face_map = {str(f.patron_id): f for f in faces.scalars().all()}
 
     result = []
-    for p in patrons:
-        face = face_map.get(str(p.id))
+    for u in users:
+        face = face_map.get(str(u.id))
         result.append(
             ActivePatron(
-                id=str(p.id),
-                full_name=p.full_name,
-                student_code=p.student_code,
-                entered_at=p.last_entry_at or datetime.utcnow(),
-                camera_id=p.last_entry_camera or "",
+                id=str(u.id),
+                full_name=u.full_name or "",
+                student_code=u.student_code or "",
+                entered_at=u.last_entry_at or datetime.utcnow(),
+                camera_id=u.last_entry_camera or "",
                 image_url=face.image_url if face else None,
                 confidence=None,
             )

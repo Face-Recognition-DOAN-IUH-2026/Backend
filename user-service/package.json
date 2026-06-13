@@ -1,31 +1,39 @@
 {
   "name": "user-service",
-  "version": "1.0.0",
-  "description": "Node.js User Service for Face Recognition Platform",
+  "version": "2.0.0",
+  "description": "Unified User & Patron Service with TypeORM",
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js",
+    "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/data-source.ts",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/data-source.ts",
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts",
     "docker:build": "docker build -t user-service ."
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "pg": "^8.11.3",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
-    "dotenv": "^16.3.1",
     "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.11.3",
+    "reflect-metadata": "^0.2.2",
+    "tsconfig-paths": "^4.2.0",
+    "typeorm": "^0.3.30",
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^20.10.0",
     "@types/pg": "^8.10.9",
-    "@types/bcryptjs": "^2.4.6",
-    "@types/jsonwebtoken": "^9.0.5",
-    "@types/cors": "^2.8.17",
-    "typescript": "^5.3.2",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.2"
   }
 }

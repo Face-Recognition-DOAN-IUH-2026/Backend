@@ -89,7 +89,33 @@ def stop_sse_bridge() -> None:
     _running = False
 
 
-def start_sse_bridge(loop: asyncio.AbstractEventLoop) -> tuple[threading.Thread, callable]:
-    t = threading.Thread(target=_subscribe_loop, args=(CHANNEL, loop), daemon=True)
+USER_CHANNEL = "user.events"
+
+def _user_event_loop(loop: asyncio.AbstractEventLoop) -> None:
+    global _running
+    r = _get_redis()
+    pubsub = r.pubsub()
+    pubsub.subscribe(USER_CHANNEL)
+    logger.info("Subscribed to %s", USER_CHANNEL)
+    for msg in pubsub.listen():
+        if not _running:
+            break
+        if msg["type"] != "message":
+            continue
+        try:
+            data = json.loads(msg["data"])
+            if data.get("event") == "USER_DELETED":
+                user_id = data.get("user_id")
+                logger.info("USER_DELETED event for %s, queuing face cleanup", user_id)
+                from worker.tasks import delete_user_task
+                delete_user_task.delay(user_id=user_id)
+        except Exception as e:
+            logger.warning("User event handler error: %s", e)
+    pubsub.unsubscribe()
+    pubsub.close()
+
+
+def start_user_event_listener(loop: asyncio.AbstractEventLoop) -> tuple[threading.Thread, callable]:
+    t = threading.Thread(target=_user_event_loop, args=(loop,), daemon=True)
     t.start()
     return t, stop_sse_bridge

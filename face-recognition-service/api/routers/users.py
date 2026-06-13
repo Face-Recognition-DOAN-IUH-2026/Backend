@@ -11,6 +11,10 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 USER_SERVICE_URL = settings.user_service_url or "http://user-service:3001"
 
+_INTERNAL_HEADERS: dict[str, str] = {}
+if settings.internal_api_key:
+    _INTERNAL_HEADERS["x-internal-api-key"] = settings.internal_api_key
+
 
 class UserResponse(BaseModel):
     id: str
@@ -75,7 +79,7 @@ async def list_users(
         )
 
     async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
-        resp = await client.get("/users")
+        resp = await client.get("/users", headers=_INTERNAL_HEADERS)
         if resp.status_code != 200:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -112,7 +116,7 @@ async def delete_user(
         )
 
     async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
-        resp = await client.delete(f"/users/{user_id}")
+        resp = await client.delete(f"/users/{user_id}", headers=_INTERNAL_HEADERS)
         if resp.status_code == 404:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

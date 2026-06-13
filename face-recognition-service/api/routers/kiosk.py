@@ -4,6 +4,7 @@ import uuid as _uuid
 from datetime import date
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +13,7 @@ from celery import Celery as _Celery
 from api.dependencies import get_db_session
 from core.schemas import KioskEnrollRequest, KioskEnterRequest, KioskResult, PatronPublic
 from infra.config import settings
-from infra.models import PatronModel
+from infra.models import UserModel
 from infra.patron_repository import PatronRepository
 from infra.sse_manager import sse_manager
 from worker.celery_app import celery_app as _celery_app
@@ -20,6 +21,10 @@ from worker.tasks import _upload_temp_frame
 from infra.minio_client import MinioStorage as _MinioStorage
 from infra.milvus_client import MilvusClient as _MilvusClient
 from infra.redis_cache import redis_client as _redis_client
+
+USER_SERVICE = settings.user_service_url
+INTERNAL_KEY = settings.internal_api_key
+
 
 def _get_milvus_client() -> _MilvusClient:
     return _MilvusClient(
@@ -39,24 +44,45 @@ async def _store_temp_frame(raw: bytes) -> str:
     return object_key
 
 
-async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> PatronPublic:
-    face = await repo.get_active_face(patron.id)
+async def _patron_to_public(user: UserModel, repo: PatronRepository) -> PatronPublic:
+    face = await repo.get_active_face(user.id)
     return PatronPublic(
-        id=str(patron.id),
-        full_name=patron.full_name,
-        student_code=patron.student_code,
-        class_name=patron.class_name,
-        identity_number=patron.identity_number,
-        email=patron.email,
-        phone=patron.phone,
-        card_number=patron.card_number,
-        issue_date=patron.issue_date,
-        membership_expiry=patron.membership_expiry,
-        status=patron.status,
-        created_at=patron.created_at,
-        updated_at=patron.updated_at,
+        id=str(user.id),
+        full_name=user.full_name or "",
+        student_code=user.student_code or "",
+        class_name=user.class_name,
+        identity_number=user.identity_number,
+        email=user.email,
+        phone=user.phone,
+        card_number=user.card_number or "",
+        issue_date=user.issue_date,
+        membership_expiry=user.membership_expiry or date(2099, 12, 31),
+        status=user.status or "active",
+        current_status=user.current_status,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
         has_face=face is not None,
     )
+
+
+async def _proxy_create_user(body: dict) -> dict:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        headers = {}
+        if INTERNAL_KEY:
+            headers["X-Internal-Api-Key"] = INTERNAL_KEY
+        resp = await client.post(f"{USER_SERVICE}/patrons", json=body, headers=headers)
+        if resp.status_code >= 400:
+            detail = resp.json().get("error", "Failed to create patron")
+            raise HTTPException(status_code=resp.status_code, detail=detail)
+        return resp.json()
+
+
+async def _proxy_delete_user(user_id: str) -> None:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        headers = {}
+        if INTERNAL_KEY:
+            headers["X-Internal-Api-Key"] = INTERNAL_KEY
+        await client.delete(f"{USER_SERVICE}/patrons/{user_id}", headers=headers)
 
 
 @router.post("/lookup")
@@ -66,18 +92,18 @@ async def kiosk_lookup(
     db: AsyncSession = Depends(get_db_session),
 ):
     repo = PatronRepository(db)
-    patron = None
+    user = None
     if student_code:
-        patron = await repo.get_by_student_code(student_code)
+        user = await repo.get_by_student_code(student_code)
     elif card_number:
-        patron = await repo.get_by_card_number(card_number)
-    if not patron:
+        user = await repo.get_by_card_number(card_number)
+    if not user:
         return {"exists": False, "patron": None, "has_face": False, "is_expired": False}
-    is_expired = patron.membership_expiry and patron.membership_expiry < date.today()
+    is_expired = user.membership_expiry and user.membership_expiry < date.today()
     return {
         "exists": True,
-        "patron": (await _patron_to_public(patron, repo)).model_dump(),
-        "has_face": await repo.get_active_face(patron.id) is not None,
+        "patron": (await _patron_to_public(user, repo)).model_dump(),
+        "has_face": await repo.get_active_face(user.id) is not None,
         "is_expired": bool(is_expired),
     }
 
@@ -98,32 +124,27 @@ async def kiosk_enroll(
     if await repo.get_by_student_code(student_code):
         raise HTTPException(409, "Student code already exists")
 
-    card_number = f"THV-{student_code}"
-    if await repo.get_by_card_number(card_number):
-        raise HTTPException(409, "Student code already exists")
-
     raw = await image.read()
     object_key = await _store_temp_frame(raw)
 
-    patron = await repo.create_patron(
-        full_name=full_name,
-        student_code=student_code,
-        class_name=class_name,
-        card_number=card_number,
-        membership_expiry=date.fromisoformat(membership_expiry),
-        issue_date=date.fromisoformat(issue_date) if issue_date else None,
-    )
-    await db.commit()
+    user_data = await _proxy_create_user({
+        "full_name": full_name,
+        "student_code": student_code,
+        "class_name": class_name,
+        "membership_expiry": membership_expiry,
+        "issue_date": issue_date or str(date.today()),
+    })
 
     task = celery_app.send_task(
         "enroll_face",
-        kwargs={"patron_id": str(patron.id), "object_key": object_key, "angle": angle},
+        kwargs={"patron_id": user_data["id"], "object_key": object_key, "angle": angle},
     )
 
+    user = await repo.get_by_id(_uuid.UUID(user_data["id"]))
     return KioskResult(
         success=True,
         message="Patron created. Face enrollment in progress.",
-        patron=await _patron_to_public(patron, repo),
+        patron=await _patron_to_public(user, repo) if user else PatronPublic(**user_data),
         job_id=task.id,
     )
 
@@ -136,14 +157,14 @@ async def kiosk_enter(
 ):
     repo = PatronRepository(db)
 
-    patron = await repo.get_by_student_code(student_code)
-    if not patron:
+    user = await repo.get_by_student_code(student_code)
+    if not user:
         raise HTTPException(404, "Patron not found")
 
-    if patron.membership_expiry and patron.membership_expiry < date.today():
+    if user.membership_expiry and user.membership_expiry < date.today():
         return KioskResult(success=False, message="Membership has expired")
 
-    face = await repo.get_active_face(patron.id)
+    face = await repo.get_active_face(user.id)
     if not face:
         return KioskResult(success=False, message="Patron has no enrolled face")
 
@@ -152,13 +173,13 @@ async def kiosk_enter(
 
     task = celery_app.send_task(
         "verify_face",
-        kwargs={"patron_id": str(patron.id), "object_key": object_key},
+        kwargs={"patron_id": str(user.id), "object_key": object_key},
     )
 
     return KioskResult(
         success=True,
         message="Face verification in progress",
-        patron=await _patron_to_public(patron, repo),
+        patron=await _patron_to_public(user, repo),
         job_id=task.id,
     )
 
@@ -181,11 +202,6 @@ async def kiosk_batch_enroll(
     if await repo.get_by_student_code(student_code):
         raise HTTPException(409, "Student code already exists")
 
-    card_number = f"THV-{student_code}"
-    if await repo.get_by_card_number(card_number):
-        raise HTTPException(409, "Student code already exists")
-
-    # Read all 4 images
     raws = {
         "frontal": await image_frontal.read(),
         "right": await image_right.read(),
@@ -193,28 +209,23 @@ async def kiosk_batch_enroll(
         "down": await image_down.read(),
     }
 
-    # Upload all 4 to temp storage
     keys = {}
     for angle, raw in raws.items():
         keys[angle] = await _store_temp_frame(raw)
 
-    # Create patron in DB (commit so Celery tasks can see it)
-    patron = await repo.create_patron(
-        full_name=full_name,
-        student_code=student_code,
-        class_name=class_name,
-        card_number=card_number,
-        membership_expiry=date.fromisoformat(membership_expiry),
-        issue_date=date.fromisoformat(issue_date) if issue_date else None,
-    )
-    await db.commit()
+    user_data = await _proxy_create_user({
+        "full_name": full_name,
+        "student_code": student_code,
+        "class_name": class_name,
+        "membership_expiry": membership_expiry,
+        "issue_date": issue_date or str(date.today()),
+    })
 
-    # Enroll all 4 faces (sequential, wait per angle)
     errors = []
     for angle in ["frontal", "right", "left", "down"]:
         task = celery_app.send_task(
             "enroll_face",
-            kwargs={"patron_id": str(patron.id), "object_key": keys[angle], "angle": angle},
+            kwargs={"patron_id": user_data["id"], "object_key": keys[angle], "angle": angle},
         )
         try:
             result = await run_in_threadpool(task.get, timeout=60)
@@ -226,27 +237,24 @@ async def kiosk_batch_enroll(
             break
 
     if errors:
-        # Rollback: clean up Milvus vectors already inserted
         try:
-            _get_milvus_client().delete_by_user_id(user_id=str(patron.id))
+            _get_milvus_client().delete_by_user_id(user_id=user_data["id"])
         except Exception:
             pass
-        # Clean up MinIO patron images (best-effort)
         try:
             sto = _MinioStorage()
             for angle in ["frontal", "right", "left", "down"]:
-                sto.delete_image(f"patrons/{patron.id}_{angle}.jpg")
+                sto.delete_image(f"enrollments/{user_data['id']}_{angle}.jpg")
         except Exception:
             pass
-        # Delete patron from PostgreSQL
-        await repo.delete_patron(patron.id)
-        await db.commit()
+        await _proxy_delete_user(user_data["id"])
         raise HTTPException(400, f"Đăng ký thất bại. Lỗi các góc: {'; '.join(errors)}")
 
+    user = await repo.get_by_id(_uuid.UUID(user_data["id"]))
     return KioskResult(
         success=True,
         message="Đã tạo độc giả với đầy đủ 4 góc khuôn mặt.",
-        patron=await _patron_to_public(patron, repo),
+        patron=await _patron_to_public(user, repo) if user else PatronPublic(**user_data),
     )
 
 
@@ -258,8 +266,8 @@ async def kiosk_enroll_face(
     db: AsyncSession = Depends(get_db_session),
 ):
     repo = PatronRepository(db)
-    patron = await repo.get_by_id(patron_id)
-    if not patron:
+    user = await repo.get_by_id(patron_id)
+    if not user:
         raise HTTPException(404, "Patron not found")
 
     raw = await image.read()

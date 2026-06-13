@@ -16,23 +16,39 @@ async def get_db_session() -> AsyncSession:
         yield session
 
 
+def _try_decode_token(token: str, secrets: list[tuple[str, str]]) -> dict | None:
+    for secret, expected_type in secrets:
+        try:
+            return decode_token(
+                token=token,
+                secret=secret,
+                issuer=settings.jwt_issuer,
+                audience=settings.jwt_audience,
+                expected_type=expected_type,
+            )
+        except Exception:
+            continue
+    return None
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
     token = credentials.credentials
-    try:
-        payload = decode_token(
-            token=token,
-            secret=settings.jwt_access_secret,
-            issuer=settings.jwt_issuer,
-            audience=settings.jwt_audience,
-            expected_type="access",
-        )
-    except Exception:
+
+    secrets = [
+        (settings.jwt_access_secret, "access"),
+    ]
+    if settings.user_service_jwt_secret:
+        secrets.insert(0, (settings.user_service_jwt_secret, "access"))
+
+    payload = _try_decode_token(token, secrets)
+    if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
+
     return {
         "id": payload["sub"],
         "email": payload.get("email", ""),

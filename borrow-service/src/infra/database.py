@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
@@ -36,6 +37,11 @@ async def get_db_session() -> AsyncSession:
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("""
+            ALTER TABLE borrow_records
+            ADD COLUMN IF NOT EXISTS copy_id UUID REFERENCES book_copies(id)
+        """))
+
 
 
 async def close_db():
