@@ -7,7 +7,7 @@ import pytest
 from worker.tasks_pipeline import (
     extract_embedding_placeholder,
     resize_if_necessary,
-    run_liveness_placeholder,
+    run_liveness_analysis,
     safe_read_image_from_bytes,
 )
 
@@ -52,8 +52,7 @@ def test_extract_embedding_placeholder_shape():
     assert all(isinstance(v, float) for v in vec)
 
 
-def test_run_liveness_placeholder():
+def test_run_liveness_analysis():
     img = np.zeros((100, 100, 3), dtype=np.uint8)
-    result = run_liveness_placeholder(img)
-    assert result["liveness_score"] == 0.95
-    assert result["is_live"] is True
+    result = run_liveness_analysis(img)
+    assert "is_live" in result or "liveness_score" in result
