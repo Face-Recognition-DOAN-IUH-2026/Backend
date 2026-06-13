@@ -19,6 +19,18 @@ export const setupProxy = (app: any) => {
     },
   }));
 
+  // Borrow Service proxy - must be before /api to catch /api/borrow first
+  app.use('/api/borrow', createProxyMiddleware({
+    target: config.services.borrowService,
+    changeOrigin: true,
+    pathRewrite: (path: string, req: any) => {
+      const originalUrl = req.originalUrl || req.url;
+      const newPath = '/borrow/' + (originalUrl.includes('?') ? '?' + originalUrl.split('?')[1] : '');
+      console.log(`  Borrow pathRewrite: originalUrl=${originalUrl}, newPath=${newPath}`);
+      return newPath;
+    },
+  }));
+
   // Face API proxy
   app.use('/api', createProxyMiddleware({
     target: config.services.faceRecognitionApi,

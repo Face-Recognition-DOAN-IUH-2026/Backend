@@ -8,6 +8,7 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./borrow-service/init.sql:/docker-entrypoint-initdb.d/02-borrowdb.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -146,9 +147,37 @@ services:
     depends_on:
       - face-recognition-api
       - user-service
+      - borrow-service
     networks:
       - face-network
     restart: unless-stopped
+
+  borrow-service:
+    build:
+      context: borrow-service
+      dockerfile: Dockerfile
+    container_name: borrow-service
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      POSTGRES_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/borrowdb
+      USER_SERVICE_URL: http://user-service:3001
+      FACE_RECOGNITION_API: http://face-recognition-api:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-borrow-internal-secret-key-change-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    networks:
+      - face-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   pgdata:

@@ -51,6 +51,7 @@ api-gateway/src/index.ts
 api-gateway/src/proxy.ts
 api-gateway/tsconfig.json
 docker-compose.yml
+face-recognition-service/.dockerignore
 face-recognition-service/.env.example
 face-recognition-service/api/__init__.py
 face-recognition-service/api/app.py
@@ -82,7 +83,6 @@ face-recognition-service/infra/patron_repository.py
 face-recognition-service/infra/redis_cache.py
 face-recognition-service/infra/redis_pubsub.py
 face-recognition-service/infra/sse_manager.py
-face-recognition-service/infra/user_repository.py
 face-recognition-service/models/MobileNetSSD_deploy.caffemodel
 face-recognition-service/models/MobileNetSSD_deploy.prototxt
 face-recognition-service/pyproject.toml
@@ -97,6 +97,7 @@ face-recognition-service/tests/test_pipeline.py
 face-recognition-service/TODO.md
 face-recognition-service/worker/anti_spoofing.py
 face-recognition-service/worker/celery_app.py
+face-recognition-service/worker/check_index_sig.py
 face-recognition-service/worker/face_model.py
 face-recognition-service/worker/human_detector.py
 face-recognition-service/worker/stream_service.py
@@ -112,6 +113,7 @@ user-service/src/config.ts
 user-service/src/controllers/user.controller.ts
 user-service/src/db.ts
 user-service/src/index.ts
+user-service/src/routes/auth.routes.ts
 user-service/src/routes/user.routes.ts
 user-service/src/services/user.service.ts
 user-service/tsconfig.json
@@ -120,112 +122,33 @@ user-service/tsconfig.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="face-recognition-service/scripts/migration_v0.3.0.sql">
--- =============================================================================
--- Migration v0.3.0: Add current_status tracking + access_logs partitioning
--- =============================================================================
+<file path="face-recognition-service/.dockerignore">
+__pycache__
+*.pyc
+.pytest_cache
+.git
+.venv
+poetry.lock
+</file>
 
--- Step 1: Add current_status columns to patrons table
-ALTER TABLE patrons
-  ADD COLUMN IF NOT EXISTS current_status VARCHAR(10) NOT NULL DEFAULT 'outside',
-  ADD COLUMN IF NOT EXISTS last_entry_at TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS last_entry_camera VARCHAR(50);
+<file path="face-recognition-service/worker/check_index_sig.py">
+from pymilvus import MilvusClient
+import inspect
+print(inspect.signature(MilvusClient.create_index))
+print(MilvusClient.create_index.__doc__[:300] if MilvusClient.create_index.__doc__ else "No doc")
+</file>
 
--- Create index for fast active-patron queries
-CREATE INDEX IF NOT EXISTS idx_patrons_current_status ON patrons (current_status, status)
-  WHERE current_status = 'inside' AND status = 'active';
+<file path="user-service/src/routes/auth.routes.ts">
+import { Router } from 'express';
+import { userController } from '../controllers/user.controller';
 
--- Step 2: Backfill current_status for patrons currently inside
--- This is a one-time reconciliation based on access_logs
-UPDATE patrons p
-SET current_status = 'inside',
-    last_entry_at = sub.latest_entry,
-    last_entry_camera = sub.entry_camera
-FROM (
-    SELECT
-        al.patron_id,
-        MAX(al.access_time) AS latest_entry,
-        (SELECT al2.camera_id FROM access_logs al2
-         WHERE al2.patron_id = al.patron_id
-           AND al2.access_type = 'entry'
-           AND al2.status = 'success'
-         ORDER BY al2.access_time DESC LIMIT 1) AS entry_camera
-    FROM access_logs al
-    WHERE al.access_type = 'entry'
-      AND al.status = 'success'
-      AND al.access_time > NOW() - INTERVAL '24 hours'
-    GROUP BY al.patron_id
-    HAVING MAX(al.access_time) > COALESCE(
-        (SELECT MAX(al3.access_time) FROM access_logs al3
-         WHERE al3.patron_id = al.patron_id
-           AND al3.access_type = 'exit'
-           AND al3.status = 'success'),
-        '1970-01-01'
-    )
-) sub
-WHERE p.id = sub.patron_id;
+const router = Router();
 
--- Step 3: Create partitioned access_logs table (for new deployments)
--- For existing deployments, use pg_partman or manual partitioning
+router.post('/register', (req, res) => userController.register(req, res));
+router.post('/login', (req, res) => userController.login(req, res));
+router.post('/refresh', (req, res) => userController.refresh(req, res));
 
--- Option A: Using PostgreSQL native partitioning (requires new table)
--- CREATE TABLE access_logs_new (
---   id UUID NOT NULL,
---   patron_id UUID,
---   access_type VARCHAR(10) NOT NULL,
---   verify_method VARCHAR(20) NOT NULL,
---   confidence FLOAT,
---   camera_id VARCHAR(50) NOT NULL,
---   image_url TEXT,
---   access_time TIMESTAMP NOT NULL DEFAULT NOW(),
---   status VARCHAR(20) NOT NULL,
---   PRIMARY KEY (id, access_time)
--- ) PARTITION BY RANGE (access_time);
-
--- CREATE TABLE access_logs_2026_01 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
--- CREATE TABLE access_logs_2026_02 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
--- CREATE TABLE access_logs_2026_03 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-03-01') TO ('2026-04-01');
--- CREATE TABLE access_logs_2026_04 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-04-01') TO ('2026-05-01');
--- CREATE TABLE access_logs_2026_05 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
--- CREATE TABLE access_logs_2026_06 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
--- CREATE TABLE access_logs_2026_07 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
--- CREATE TABLE access_logs_2026_08 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
--- CREATE TABLE access_logs_2026_09 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-09-01') TO ('2026-10-01');
--- CREATE TABLE access_logs_2026_10 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
--- CREATE TABLE access_logs_2026_11 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');
--- CREATE TABLE access_logs_2026_12 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-12-01') TO ('2027-01-01');
--- CREATE TABLE access_logs_future PARTITION OF access_logs_new
---   FOR VALUES FROM ('2027-01-01') TO ('9999-12-31');
-
--- Create local indexes on each partition
--- CREATE INDEX idx_access_logs_patron_id ON access_logs_new (patron_id, access_time DESC);
-
--- Option B: Auto-create partitions monthly via pg_partman
--- CREATE EXTENSION IF NOT EXISTS pg_partman;
--- SELECT partman.create_parent(
---   p_parent_table := 'public.access_logs',
---   p_control := 'access_time',
---   p_type := 'native',
---   p_interval := '1 month',
---   p_premake := 3
--- );
-
--- Step 4: Add index for time-range queries (useful even without partitioning)
-CREATE INDEX IF NOT EXISTS idx_access_logs_access_time ON access_logs (access_time DESC);
-CREATE INDEX IF NOT EXISTS idx_access_logs_type_time ON access_logs (access_type, access_time DESC)
-  WHERE status = 'success';
+export default router;
 </file>
 
 <file path="api-gateway/.dockerignore">
@@ -624,7 +547,7 @@ class CooldownService:
             )
         return self._redis
 
-    async def acquire(self, key: str, cooldown_seconds: int = 5) -> bool:
+    async def acquire(self, key: str, cooldown_seconds: int = 1) -> bool:
         r = await self._get_redis()
         exists = await r.exists(f"cooldown:{key}")
         if exists:
@@ -3862,6 +3785,7 @@ python-multipart = "^0.0.9"
 
 httpx = "^0.27.2"
 
+
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.2"
 pytest-asyncio = "^0.24.0"
@@ -4001,6 +3925,114 @@ final response = await request.send();
 final body = await response.stream.bytesToString();
 final jobId = jsonDecode(body)['job_id'];
 ```
+</file>
+
+<file path="face-recognition-service/scripts/migration_v0.3.0.sql">
+-- =============================================================================
+-- Migration v0.3.0: Add current_status tracking + access_logs partitioning
+-- =============================================================================
+
+-- Step 1: Add current_status columns to patrons table
+ALTER TABLE patrons
+  ADD COLUMN IF NOT EXISTS current_status VARCHAR(10) NOT NULL DEFAULT 'outside',
+  ADD COLUMN IF NOT EXISTS last_entry_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS last_entry_camera VARCHAR(50);
+
+-- Create index for fast active-patron queries
+CREATE INDEX IF NOT EXISTS idx_patrons_current_status ON patrons (current_status, status)
+  WHERE current_status = 'inside' AND status = 'active';
+
+-- Step 2: Backfill current_status for patrons currently inside
+-- This is a one-time reconciliation based on access_logs
+UPDATE patrons p
+SET current_status = 'inside',
+    last_entry_at = sub.latest_entry,
+    last_entry_camera = sub.entry_camera
+FROM (
+    SELECT
+        al.patron_id,
+        MAX(al.access_time) AS latest_entry,
+        (SELECT al2.camera_id FROM access_logs al2
+         WHERE al2.patron_id = al.patron_id
+           AND al2.access_type = 'entry'
+           AND al2.status = 'success'
+         ORDER BY al2.access_time DESC LIMIT 1) AS entry_camera
+    FROM access_logs al
+    WHERE al.access_type = 'entry'
+      AND al.status = 'success'
+      AND al.access_time > NOW() - INTERVAL '24 hours'
+    GROUP BY al.patron_id
+    HAVING MAX(al.access_time) > COALESCE(
+        (SELECT MAX(al3.access_time) FROM access_logs al3
+         WHERE al3.patron_id = al.patron_id
+           AND al3.access_type = 'exit'
+           AND al3.status = 'success'),
+        '1970-01-01'
+    )
+) sub
+WHERE p.id = sub.patron_id;
+
+-- Step 3: Create partitioned access_logs table (for new deployments)
+-- For existing deployments, use pg_partman or manual partitioning
+
+-- Option A: Using PostgreSQL native partitioning (requires new table)
+-- CREATE TABLE access_logs_new (
+--   id UUID NOT NULL,
+--   patron_id UUID,
+--   access_type VARCHAR(10) NOT NULL,
+--   verify_method VARCHAR(20) NOT NULL,
+--   confidence FLOAT,
+--   camera_id VARCHAR(50) NOT NULL,
+--   image_url TEXT,
+--   access_time TIMESTAMP NOT NULL DEFAULT NOW(),
+--   status VARCHAR(20) NOT NULL,
+--   PRIMARY KEY (id, access_time)
+-- ) PARTITION BY RANGE (access_time);
+
+-- CREATE TABLE access_logs_2026_01 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
+-- CREATE TABLE access_logs_2026_02 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
+-- CREATE TABLE access_logs_2026_03 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-03-01') TO ('2026-04-01');
+-- CREATE TABLE access_logs_2026_04 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-04-01') TO ('2026-05-01');
+-- CREATE TABLE access_logs_2026_05 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
+-- CREATE TABLE access_logs_2026_06 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
+-- CREATE TABLE access_logs_2026_07 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
+-- CREATE TABLE access_logs_2026_08 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
+-- CREATE TABLE access_logs_2026_09 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-09-01') TO ('2026-10-01');
+-- CREATE TABLE access_logs_2026_10 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
+-- CREATE TABLE access_logs_2026_11 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');
+-- CREATE TABLE access_logs_2026_12 PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2026-12-01') TO ('2027-01-01');
+-- CREATE TABLE access_logs_future PARTITION OF access_logs_new
+--   FOR VALUES FROM ('2027-01-01') TO ('9999-12-31');
+
+-- Create local indexes on each partition
+-- CREATE INDEX idx_access_logs_patron_id ON access_logs_new (patron_id, access_time DESC);
+
+-- Option B: Auto-create partitions monthly via pg_partman
+-- CREATE EXTENSION IF NOT EXISTS pg_partman;
+-- SELECT partman.create_parent(
+--   p_parent_table := 'public.access_logs',
+--   p_control := 'access_time',
+--   p_type := 'native',
+--   p_interval := '1 month',
+--   p_premake := 3
+-- );
+
+-- Step 4: Add index for time-range queries (useful even without partitioning)
+CREATE INDEX IF NOT EXISTS idx_access_logs_access_time ON access_logs (access_time DESC);
+CREATE INDEX IF NOT EXISTS idx_access_logs_type_time ON access_logs (access_type, access_time DESC)
+  WHERE status = 'success';
 </file>
 
 <file path="face-recognition-service/tests/conftest.py">
@@ -4795,8 +4827,12 @@ dotenv.config();
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
-  jwtSecret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '24h',
+  jwtSecret: process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET || 'your-secret-key-change-in-production',
+  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+  jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
+  jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
+  jwtAccessExpiresMinutes: parseInt(process.env.JWT_ACCESS_EXPIRES_MINUTES || '15', 10),
+  jwtRefreshExpiresDays: parseInt(process.env.JWT_REFRESH_EXPIRES_DAYS || '30', 10),
   db: {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432', 10),
@@ -4844,11 +4880,25 @@ export class UserController {
       }
 
       const token = authHeader.split(' ')[1];
-      const payload = userService.verifyToken(token);
+      const payload = userService.verifyToken(token, 'access');
       const user = await userService.getUserById(payload.userId);
       res.json(user);
     } catch (error: any) {
       res.status(401).json({ error: 'Invalid token' });
+    }
+  }
+
+  async refresh(req: Request, res: Response) {
+    try {
+      const { refresh_token } = req.body;
+      if (!refresh_token) {
+        res.status(400).json({ error: 'refresh_token required' });
+        return;
+      }
+      const result = await userService.refreshToken(refresh_token);
+      res.json(result);
+    } catch (error: any) {
+      res.status(401).json({ error: 'Invalid refresh token' });
     }
   }
 
@@ -4858,6 +4908,20 @@ export class UserController {
       res.json(users);
     } catch (error: any) {
       res.status(500).json({ error: 'Failed to fetch users' });
+    }
+  }
+
+  async getById(req: Request, res: Response) {
+    try {
+      const id = req.params.id;
+      if (!id || id === 'undefined') {
+        res.status(400).json({ error: 'Invalid user ID' });
+        return;
+      }
+      const user = await userService.getUserById(id);
+      res.json(user);
+    } catch (error: any) {
+      res.status(404).json({ error: error.message });
     }
   }
 
@@ -4931,6 +4995,7 @@ import cors from 'cors';
 import { config } from './config';
 import { initDb } from './db';
 import userRoutes from './routes/user.routes';
+import authRoutes from './routes/auth.routes';
 
 const app = express();
 
@@ -4946,6 +5011,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/users', userRoutes);
+app.use('/auth', authRoutes);
 
 async function start() {
   try {
@@ -4975,6 +5041,7 @@ router.post('/register', (req, res) => userController.register(req, res));
 router.post('/login', (req, res) => userController.login(req, res));
 router.get('/me', (req, res) => userController.getMe(req, res));
 router.get('/', (req, res) => userController.getAll(req, res));
+router.get('/:id', (req, res) => userController.getById(req, res));
 router.delete('/:id', (req, res) => userController.delete(req, res));
 
 export default router;
@@ -4983,6 +5050,7 @@ export default router;
 <file path="user-service/src/services/user.service.ts">
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { pool } from '../db';
 import { config } from '../config';
 import { z } from 'zod';
@@ -4991,6 +5059,7 @@ export const RegisterSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   full_name: z.string().optional(),
+  role: z.string().optional(),
 });
 
 export const LoginSchema = z.object({
@@ -5012,11 +5081,12 @@ export interface TokenPayload {
   userId: string;
   email: string;
   role: string;
+  full_name?: string | null;
 }
 
 export class UserService {
-  async register(data: { email: string; password: string; full_name?: string }) {
-    const { email, password, full_name } = data;
+  async register(data: { email: string; password: string; full_name?: string; role?: string }) {
+    const { email, password, full_name, role } = data;
 
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows.length > 0) {
@@ -5024,17 +5094,21 @@ export class UserService {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    const id = crypto.randomUUID();
+    const userRole = role || 'user';
     const result = await pool.query(
-      `INSERT INTO users (email, password_hash, full_name) 
-       VALUES ($1, $2, $3) 
+      `INSERT INTO users (id, email, password_hash, full_name, role) 
+       VALUES ($1, $2, $3, $4, $5) 
        RETURNING id, email, full_name, role, created_at`,
-      [email, passwordHash, full_name || null]
+      [id, email, passwordHash, full_name || null, userRole]
     );
 
     const user = result.rows[0];
-    const token = this.generateToken({ userId: String(user.id), email: user.email, role: user.role });
+    const payload = { userId: String(user.id), email: user.email, role: user.role, full_name: user.full_name };
+    const access_token = this.generateToken(payload, 'access');
+    const refresh_token = this.generateToken(payload, 'refresh');
 
-    return { user, token };
+    return { id: String(user.id), email: user.email, full_name: user.full_name, role: user.role, access_token, refresh_token };
   }
 
   async login(data: { email: string; password: string }) {
@@ -5051,18 +5125,20 @@ export class UserService {
       throw new Error('Invalid credentials');
     }
 
-    const token = this.generateToken({ userId: String(user.id), email: user.email, role: user.role });
+    const payload = { userId: String(user.id), email: user.email, role: user.role, full_name: user.full_name };
+    const access_token = this.generateToken(payload, 'access');
+    const refresh_token = this.generateToken(payload, 'refresh');
 
     return {
-      user: { id: user.id, email: user.email, full_name: user.full_name, role: user.role },
-      access_token: token,
-      refresh_token: token,
+      access_token,
+      refresh_token,
+      token_type: 'bearer',
     };
   }
 
   async getUserById(id: string) {
     const result = await pool.query(
-      'SELECT id, email, full_name, role, created_at FROM users WHERE id = $1',
+      'SELECT id::text, email, full_name, role, created_at FROM users WHERE id = $1',
       [id]
     );
     if (result.rows.length === 0) {
@@ -5073,7 +5149,7 @@ export class UserService {
 
   async getAllUsers() {
     const result = await pool.query(
-      'SELECT id, email, full_name, role, created_at FROM users ORDER BY created_at DESC'
+      'SELECT id::text, email, full_name, role, created_at FROM users ORDER BY created_at DESC'
     );
     return result.rows;
   }
@@ -5086,24 +5162,55 @@ export class UserService {
     return { deleted: true, id };
   }
 
-  private generateToken(payload: TokenPayload): string {
-    const now = Math.floor(Date.now() / 1000);
-    const jwtPayload = {
-      sub: payload.userId,
-      email: payload.email,
-      iss: 'face-recognition',
-      aud: 'face-recognition-users',
-      exp: now + 86400,
-      iat: now,
-      roles: [payload.role],
-      typ: 'access',
-    };
-    return jwt.sign(jwtPayload, config.jwtSecret);
+  async refreshToken(refreshTokenStr: string) {
+    const payload = this.verifyToken(refreshTokenStr, 'refresh');
+    const user = await this.getUserById(payload.userId);
+    const newPayload = { userId: String(user.id), email: user.email, role: user.role, full_name: user.full_name };
+    const access_token = this.generateToken(newPayload, 'access');
+    return { access_token, token_type: 'bearer' };
   }
 
-  verifyToken(token: string): any {
-    const decoded: any = jwt.verify(token, config.jwtSecret);
-    return { userId: decoded.sub, email: '', role: decoded.roles?.[0] || 'user' };
+  private generateToken(payload: TokenPayload, type: 'access' | 'refresh' = 'access'): string {
+    const now = Math.floor(Date.now() / 1000);
+    const exp = type === 'refresh'
+      ? now + config.jwtRefreshExpiresDays * 86400
+      : now + config.jwtAccessExpiresMinutes * 60;
+    const secret = type === 'refresh' ? config.jwtRefreshSecret : config.jwtSecret;
+    const jwtPayload: Record<string, any> = {
+      sub: payload.userId,
+      email: payload.email,
+      iss: config.jwtIssuer,
+      aud: config.jwtAudience,
+      exp,
+      iat: now,
+      roles: [payload.role],
+      typ: type,
+    };
+    if (payload.full_name) {
+      jwtPayload.full_name = payload.full_name;
+    }
+    return jwt.sign(jwtPayload, secret);
+  }
+
+  verifyToken(token: string, expectedType?: 'access' | 'refresh'): any {
+    // Try access secret first, then refresh secret
+    let secret = config.jwtSecret;
+    try {
+      const decoded: any = jwt.verify(token, secret);
+      if (expectedType && decoded.typ !== expectedType) {
+        throw new Error(`Invalid token type: expected ${expectedType}, got ${decoded.typ}`);
+      }
+      return { userId: decoded.sub, email: decoded.email || '', role: decoded.roles?.[0] || 'user', full_name: decoded.full_name || null };
+    } catch (err: any) {
+      if (err.message?.includes('Invalid token type')) throw err;
+      // Try refresh secret
+      secret = config.jwtRefreshSecret;
+      const decoded: any = jwt.verify(token, secret);
+      if (expectedType && decoded.typ !== expectedType) {
+        throw new Error(`Invalid token type: expected ${expectedType}, got ${decoded.typ}`);
+      }
+      return { userId: decoded.sub, email: decoded.email || '', role: decoded.roles?.[0] || 'user', full_name: decoded.full_name || null };
+    }
   }
 }
 
@@ -5173,7 +5280,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.security import decode_token
 from infra.config import settings
 from infra.database import async_session_factory
-from infra.user_repository import PostgresUserRepository
 
 security = HTTPBearer()
 
@@ -5185,7 +5291,6 @@ async def get_db_session() -> AsyncSession:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db_session),
 ) -> dict:
     token = credentials.credentials
     try:
@@ -5201,15 +5306,12 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
         )
-    repo = PostgresUserRepository(db)
-    user_id = payload["sub"]
-    user = await repo.get_user_by_id(user_id)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-        )
-    return {"id": str(user.id), "email": user.email, "full_name": user.full_name, "role": user.role}
+    return {
+        "id": payload["sub"],
+        "email": payload.get("email", ""),
+        "full_name": payload.get("full_name"),
+        "role": (payload.get("roles") or [""])[0],
+    }
 
 
 def require_role(required_role: str):
@@ -5331,6 +5433,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .
+
+# Upgrade pip then install insightface + onnxruntime (needed for face login sync path)
+RUN pip install --upgrade pip && pip install --no-cache-dir insightface onnxruntime gevent
+
 RUN pip install --no-cache-dir poetry && \
     poetry config virtualenvs.create false && \
     poetry install --only main --no-root --no-interaction --no-ansi
@@ -5340,64 +5446,6 @@ COPY . .
 EXPOSE 8000
 
 CMD ["uvicorn", "api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
-</file>
-
-<file path="face-recognition-service/infra/config.py">
-from __future__ import annotations
-
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
-
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    app_name: str = "face-recognition-platform"
-    env: str = "dev"
-    log_level: str = "INFO"
-
-    jwt_issuer: str
-    jwt_audience: str
-    jwt_access_secret: str
-    jwt_refresh_secret: str
-    jwt_access_expires_minutes: int = 15
-    jwt_refresh_expires_days: int = 30
-
-    redis_url: str
-
-    postgres_url: str
-
-    minio_endpoint: str
-    minio_access_key: str
-    minio_secret_key: str
-    minio_bucket: str
-
-    milvus_host: str
-    milvus_port: int = 19530
-    milvus_collection: str = "face_embeddings"
-
-    use_cuda: bool = False
-    max_image_width: int = 1280
-    max_image_height: int = 1280
-    max_image_pixels: int = 2073600
-
-    celery_broker_url: str
-    celery_result_backend: str
-
-    data_encryption_key: str
-
-    entry_cam_id: str = "entry_gate"
-    exit_cam_id: str = "exit_gate"
-    entry_cam_url: str = ""
-    exit_cam_url: str = ""
-    relay_api_url: str = ""
-    face_match_threshold: float = 0.5
-    access_cooldown_seconds: int = 10
-    max_entry_hours: int = 24
-    enable_person_detection: bool = True
-    enable_multi_angle: bool = True
-
-
-settings = Settings()  # type: ignore
 </file>
 
 <file path="face-recognition-service/infra/database.py">
@@ -5570,58 +5618,6 @@ class SSEManager:
 sse_manager = SSEManager()
 </file>
 
-<file path="face-recognition-service/infra/user_repository.py">
-from __future__ import annotations
-
-import uuid
-
-from passlib.context import CryptContext
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from infra.models import UserModel
-
-pwd_context = CryptContext(schemes=["bcrypt"])
-
-
-class PostgresUserRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self.session = session
-
-    async def create_user(self, email: str, password_hash: str, role: str, full_name: str | None = None) -> str:
-        user = UserModel(
-            id=uuid.uuid4(),
-            email=email,
-            password_hash=password_hash,
-            full_name=full_name,
-            role=role,
-        )
-        self.session.add(user)
-        await self.session.commit()
-        return str(user.id)
-
-    async def get_user_by_email(self, email: str) -> UserModel | None:
-        result = await self.session.execute(
-            select(UserModel).where(UserModel.email == email)
-        )
-        return result.scalar_one_or_none()
-
-    async def get_user_by_id(self, user_id: str) -> UserModel | None:
-        result = await self.session.execute(
-            select(UserModel).where(UserModel.id == uuid.UUID(user_id))
-        )
-        return result.scalar_one_or_none()
-
-    async def delete_user(self, user_id: str) -> None:
-        result = await self.session.execute(
-            select(UserModel).where(UserModel.id == uuid.UUID(user_id))
-        )
-        user = result.scalar_one_or_none()
-        if user:
-            await self.session.delete(user)
-            await self.session.commit()
-</file>
-
 <file path="face-recognition-service/scripts/recover_milvus.py">
 from __future__ import annotations
 
@@ -5789,6 +5785,14 @@ class FaceModel:
             self._spoof_available = False
         self._cv_analyzer = AntiSpoofingAnalyzer()
 
+    @staticmethod
+    def enhance_illumination(img: cv2.Mat) -> cv2.Mat:
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        cl = clahe.apply(l)
+        return cv2.cvtColor(cv2.merge((cl, a, b)), cv2.COLOR_LAB2BGR)
+
     def extract_embedding(self, img: cv2.Mat) -> list[float]:
         faces = self.app.get(img)
         if len(faces) == 0:
@@ -5798,7 +5802,37 @@ class FaceModel:
             return [0.0] * 512
         return (faces[0].embedding / norm).tolist()
 
+    def detect_all_faces(self, img: cv2.Mat, min_face_size: int = 80) -> list[dict]:
+        faces = self.app.get(img)
+        if not faces:
+            return []
+        results = []
+        for face in faces:
+            bbox = face.bbox.astype(np.int32)
+            fw = bbox[2] - bbox[0]
+            fh = bbox[3] - bbox[1]
+            if fw < min_face_size or fh < min_face_size:
+                continue
+            norm = np.linalg.norm(face.embedding)
+            embedding = (face.embedding / norm).tolist() if norm > 0 else [0.0] * 512
+            results.append({
+                "embedding": embedding,
+                "face": face,
+                "det_score": float(face.det_score),
+                "bbox": bbox,
+            })
+        return results
+
+    def estimate_blur(self, img: cv2.Mat, threshold: float = 50.0) -> dict:
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+        is_blurry = lap_var < threshold
+        return {"is_blurry": is_blurry, "laplacian_variance": lap_var, "threshold": threshold}
+
     def get_face_quality(self, img: cv2.Mat) -> dict:
+        blur = self.estimate_blur(img)
+        if blur["is_blurry"]:
+            return {"valid": False, "error": "MOTION_BLUR", "score": blur["laplacian_variance"]}
         faces = self.app.get(img)
         if len(faces) == 0:
             return {"valid": False, "error": "NO_FACE_DETECTED", "score": 0.0}
@@ -5902,12 +5936,28 @@ def detect_face_once(img: cv2.Mat) -> dict:
 
 def liveness_from_face(img: cv2.Mat, face) -> dict:
     return get_model().liveness_from_face(img, face)
+
+
+def enhance_illumination(img: cv2.Mat) -> cv2.Mat:
+    return FaceModel.enhance_illumination(img)
+
+
+def detect_all_faces(img: cv2.Mat, min_face_size: int = 80) -> list[dict]:
+    return get_model().detect_all_faces(img, min_face_size=min_face_size)
+
+
+def estimate_blur(img: cv2.Mat, threshold: float = 100.0) -> dict:
+    return get_model().estimate_blur(img, threshold)
+
+
+def check_motion_blur(img: cv2.Mat, threshold: float = 50.0) -> bool:
+    return get_model().estimate_blur(img, threshold)["is_blurry"]
 </file>
 
 <file path="face-recognition-service/worker/stream_service.py">
 from __future__ import annotations
 
-import base64
+import concurrent.futures
 import logging
 import threading
 import time
@@ -5946,8 +5996,9 @@ class CameraStream:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._last_process_time: float = 0
-        self._cooldown: float = settings.access_cooldown_seconds
+        self._cooldown: float = max(settings.frame_process_interval, 0.5)
         self._lock = threading.Lock()
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self.status = CameraStatus(camera_id, url)
 
     def start(self):
@@ -5960,6 +6011,7 @@ class CameraStream:
 
     def stop(self):
         self._running = False
+        self._executor.shutdown(wait=False)
         if self._thread:
             self._thread.join(timeout=5)
         with self._lock:
@@ -5994,26 +6046,14 @@ class CameraStream:
 
             retry_delay = INITIAL_RETRY_DELAY
 
-            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            cap.set(cv2.CAP_PROP_FPS, 15)
-
             now = time.time()
             if now - self._last_process_time >= self._cooldown:
                 self._last_process_time = now
                 try:
-                    self.on_frame(self.camera_id, frame)
-                    with self._lock:
-                        self.status.connected = True
-                        self.status.frames_processed += 1
-                        self.status.last_frame_time = datetime.now().isoformat(timespec="seconds")
-                        self.status.last_error = None
-                        self.status.retry_count = 0
-                        self.status.next_retry_in = None
+                    # Offload callback to thread pool so frame read is not blocked
+                    self._executor.submit(self._run_callback, self.camera_id, frame.copy())
                 except Exception as e:
                     logger.error("Camera %s callback error: %s", self.camera_id, e)
-                    with self._lock:
-                        self.status.last_error = str(e)
 
         if cap:
             cap.release()
@@ -6021,9 +6061,29 @@ class CameraStream:
             self.status.running = False
             self.status.connected = False
 
+    def _run_callback(self, camera_id: str, frame: np.ndarray):
+        try:
+            self.on_frame(camera_id, frame)
+            with self._lock:
+                self.status.connected = True
+                self.status.frames_processed += 1
+                self.status.last_frame_time = datetime.now().isoformat(timespec="seconds")
+                self.status.last_error = None
+                self.status.retry_count = 0
+                self.status.next_retry_in = None
+        except Exception as e:
+            logger.error("Camera %s callback error: %s", camera_id, e)
+            with self._lock:
+                self.status.last_error = str(e)
+
     def _open_camera_or_wait(self) -> Optional[cv2.VideoCapture]:
         cap = cv2.VideoCapture(self.url)
         if cap.isOpened():
+            # Set properties ONCE on open (not on every frame — causes lag)
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            cap.set(cv2.CAP_PROP_FPS, 15)
             with self._lock:
                 self.status.running = True
                 self.status.connected = True
@@ -6118,7 +6178,17 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
-from worker.face_model import check_face_quality, extract_embedding, check_liveness, detect_face_once, liveness_from_face
+from worker.face_model import (
+    check_face_quality,
+    check_motion_blur,
+    detect_all_faces,
+    detect_face_once,
+    enhance_illumination,
+    estimate_blur,
+    extract_embedding,
+    check_liveness,
+    liveness_from_face,
+)
 
 
 def safe_read_image_from_bytes(data: bytes) -> "cv2.Mat":
@@ -6217,9 +6287,298 @@ CLAUDE.md
 AGENTS.md
 </file>
 
+<file path="face-recognition-service/api/routers/users.py">
+from __future__ import annotations
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+
+from api.dependencies import get_current_user
+from infra.config import settings
+
+router = APIRouter(prefix="/users", tags=["users"])
+
+USER_SERVICE_URL = settings.user_service_url or "http://user-service:3001"
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    full_name: str | None = None
+    role: str
+    has_face: bool = False
+
+
+class UserListResponse(BaseModel):
+    users: list[UserResponse]
+    total: int
+
+
+async def _get_milvus_client():
+    from infra.milvus_client import MilvusClient
+    return MilvusClient(
+        host=settings.milvus_host,
+        port=settings.milvus_port,
+        collection_name=settings.milvus_collection,
+        dim=512,
+    )
+
+
+async def _get_face_user_ids() -> set[str]:
+    try:
+        mc = await _get_milvus_client()
+        all_rows = mc.client.query(mc.collection_name, filter='user_id != ""', output_fields=["user_id"], limit=10000)
+        return {r["user_id"] for r in all_rows}
+    except Exception:
+        return set()
+
+
+async def _check_has_face(user_id: str) -> bool:
+    return user_id in await _get_face_user_ids()
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_current_user_info(
+    current_user: dict = Depends(get_current_user),
+):
+    has_face = await _check_has_face(current_user["id"])
+    return UserResponse(
+        id=current_user["id"],
+        email=current_user["email"],
+        full_name=current_user.get("full_name"),
+        role=current_user["role"],
+        has_face=has_face,
+    )
+
+
+@router.get("", response_model=UserListResponse)
+async def list_users(
+    current_user: dict = Depends(get_current_user),
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+
+    async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
+        resp = await client.get("/users")
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to fetch users from user-service",
+            )
+        users_data = resp.json()
+
+    face_user_ids = await _get_face_user_ids()
+
+    return UserListResponse(
+        users=[
+            UserResponse(
+                id=str(u["id"]),
+                email=u["email"],
+                full_name=u.get("full_name"),
+                role=u["role"],
+                has_face=str(u["id"]) in face_user_ids,
+            )
+            for u in users_data
+        ],
+        total=len(users_data),
+    )
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+
+    async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
+        resp = await client.delete(f"/users/{user_id}")
+        if resp.status_code == 404:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Failed to delete user from user-service",
+            )
+</file>
+
+<file path="face-recognition-service/infra/config.py">
+from __future__ import annotations
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    app_name: str = "face-recognition-platform"
+    env: str = "dev"
+    log_level: str = "INFO"
+
+    jwt_issuer: str
+    jwt_audience: str
+    jwt_access_secret: str
+    jwt_refresh_secret: str
+    jwt_access_expires_minutes: int = 15
+    jwt_refresh_expires_days: int = 30
+
+    redis_url: str
+
+    postgres_url: str
+
+    minio_endpoint: str
+    minio_access_key: str
+    minio_secret_key: str
+    minio_bucket: str
+
+    milvus_host: str
+    milvus_port: int = 19530
+    milvus_collection: str = "face_embeddings"
+
+    use_cuda: bool = False
+    max_image_width: int = 1280
+    max_image_height: int = 1280
+    max_image_pixels: int = 2073600
+
+    celery_broker_url: str
+    celery_result_backend: str
+
+    data_encryption_key: str
+
+    entry_cam_id: str = "entry_gate"
+    exit_cam_id: str = "exit_gate"
+    entry_cam_url: str = ""
+    exit_cam_url: str = ""
+    relay_api_url: str = ""
+    face_match_threshold: float = 0.5
+    access_cooldown_seconds: int = 10
+    max_entry_hours: int = 24
+    enable_person_detection: bool = True
+    enable_multi_angle: bool = True
+    min_face_size: int = 80
+    frame_process_interval: float = 1.0
+    direction_grace_seconds: int = 120
+    camera_max_queue_depth: int = 50
+
+    user_service_url: str = "http://user-service:3001"
+
+
+settings = Settings()  # type: ignore
+</file>
+
+<file path="face-recognition-service/infra/redis_pubsub.py">
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import threading
+from typing import Any
+
+from infra.config import settings
+from infra.sse_manager import sse_manager
+
+logger = logging.getLogger(__name__)
+
+CHANNEL = "camera:events"
+
+_running = True
+
+_redis_client = None
+_redis_lock = threading.Lock()
+
+
+def _get_redis():
+    """Reuse a single Redis client per process to avoid socket churn."""
+    global _redis_client
+    if _redis_client is None:
+        with _redis_lock:
+            if _redis_client is None:
+                import redis as _redis
+
+                _redis_client = _redis.Redis.from_url(
+                    settings.celery_broker_url,
+                    decode_responses=True,
+                    socket_keepalive=True,
+                    socket_timeout=5,
+                    retry_on_timeout=True,
+                )
+    return _redis_client
+
+
+def publish(channel: str, data: dict[str, Any]) -> None:
+    try:
+        r = _get_redis()
+        r.publish(channel, json.dumps(data, default=str))
+    except Exception as e:
+        logger.error("Redis publish failed: %s - data=%s", e, data)
+
+
+
+def _subscribe_loop(channel: str, loop: asyncio.AbstractEventLoop) -> None:
+    global _running
+    pubsub = None
+    r = None
+    try:
+        r = _get_redis()
+        pubsub = r.pubsub()
+        pubsub.subscribe(channel)
+        logger.info("Redis subscribed to %s", channel)
+        for msg in pubsub.listen():
+            if not _running:
+                break
+            if msg["type"] != "message":
+                continue
+            try:
+                data = json.loads(msg["data"])
+                logger.info("Redis message received on %s: %s", channel, data.get("status", "unknown"))
+                future = asyncio.run_coroutine_threadsafe(
+                    sse_manager.broadcast("camera_event", data), loop
+                )
+                future.add_done_callback(
+                    lambda f: logger.info("SSE broadcast completed for status=%s", data.get("status"))
+                    if not f.exception() else logger.error("SSE broadcast failed: %s", f.exception())
+                )
+            except Exception as e:
+                logger.warning("SSE broadcast error: %s", e)
+    except Exception as e:
+        logger.warning("Redis subscribe error: %s", e)
+    finally:
+        if pubsub:
+            try:
+                pubsub.unsubscribe()
+                pubsub.close()
+            except Exception:
+                pass
+        _running = False
+
+
+def stop_sse_bridge() -> None:
+    global _running
+    _running = False
+
+
+def start_sse_bridge(loop: asyncio.AbstractEventLoop) -> tuple[threading.Thread, callable]:
+    t = threading.Thread(target=_subscribe_loop, args=(CHANNEL, loop), daemon=True)
+    t.start()
+    return t, stop_sse_bridge
+</file>
+
 <file path="face-recognition-service/api/routers/face.py">
 from __future__ import annotations
 
+import asyncio
 import base64
 import uuid as _uuid
 
@@ -6242,6 +6601,7 @@ from worker.tasks import (
     identify_task,
     liveness_task,
     verify_task,
+    batch_enroll_task,
 )
 
 router = APIRouter(prefix="/face", tags=["face"])
@@ -6266,7 +6626,7 @@ async def enroll(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
         )
-    if not await cooldown.acquire(f"enroll:{current_user['id']}"):
+    if not await cooldown.acquire(f"enroll:{current_user['id']}:{angle}"):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
         )
@@ -6277,6 +6637,36 @@ async def enroll(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to store temp frame: {exc}")
 
     task = enroll_task.delay(user_id=current_user["id"], object_key=object_key, angle=angle)
+    return EnrollmentResult(job_id=task.id)
+
+
+@router.post("/enroll-batch", response_model=EnrollmentResult, status_code=status.HTTP_202_ACCEPTED)
+async def enroll_batch(
+    frontal: UploadFile = File(...),
+    right: UploadFile = File(...),
+    left: UploadFile = File(...),
+    down: UploadFile = File(...),
+    consent_given: bool = Form(True),
+    current_user: dict = Depends(get_current_user),
+):
+    if not consent_given:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Consent not given"
+        )
+    raw_frontal = await frontal.read()
+    raw_right = await right.read()
+    raw_left = await left.read()
+    raw_down = await down.read()
+    try:
+        keys = await asyncio.gather(
+            _store_temp_frame(raw_frontal),
+            _store_temp_frame(raw_right),
+            _store_temp_frame(raw_left),
+            _store_temp_frame(raw_down),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to store temp frames: {exc}")
+    task = batch_enroll_task.delay(user_id=current_user["id"], object_keys=keys)
     return EnrollmentResult(job_id=task.id)
 
 
@@ -6348,115 +6738,6 @@ async def delete_face(
 ):
     task = delete_user_task.delay(user_id=user_id)
     return {"job_id": task.id}
-</file>
-
-<file path="face-recognition-service/api/routers/users.py">
-from __future__ import annotations
-
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from api.dependencies import get_current_user
-from infra.database import async_session_factory
-from infra.models import UserModel
-
-router = APIRouter(prefix="/users", tags=["users"])
-
-
-class UserResponse(BaseModel):
-    id: str
-    email: str
-    full_name: str | None = None
-    role: str
-    has_face: bool = False
-
-
-class UserListResponse(BaseModel):
-    users: list[UserResponse]
-    total: int
-
-
-async def _get_db():
-    async with async_session_factory() as session:
-        yield session
-
-
-async def _check_has_face(user_id: str) -> bool:
-    try:
-        from infra.milvus_client import MilvusClient
-        from infra.config import settings
-        mc = MilvusClient(
-            host=settings.milvus_host,
-            port=settings.milvus_port,
-            collection_name=settings.milvus_collection,
-            dim=512,
-        )
-        results = mc.search(embedding=[0.0] * 512, top_k=1)
-        return any(r["user_id"] == user_id for r in results)
-    except Exception:
-        return False
-
-
-@router.get("/me", response_model=UserResponse)
-async def get_current_user_info(
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(_get_db),
-):
-    has_face = await _check_has_face(current_user["id"])
-    return UserResponse(
-        id=current_user["id"],
-        email=current_user["email"],
-        full_name=current_user.get("full_name"),
-        role=current_user["role"],
-        has_face=has_face,
-    )
-
-
-@router.get("", response_model=UserListResponse)
-async def list_users(
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(_get_db),
-):
-    if current_user["role"] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-        )
-
-    result = await db.execute(select(UserModel))
-    users = result.scalars().all()
-
-    return UserListResponse(
-        users=[UserResponse(id=str(u.id), email=u.email, full_name=u.full_name, role=u.role) for u in users],
-        total=len(users),
-    )
-
-
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(
-    user_id: str,
-    current_user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(_get_db),
-):
-    if current_user["role"] != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-        )
-
-    result = await db.execute(select(UserModel).where(UserModel.id == user_id))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-
-    await db.delete(user)
-    await db.commit()
 </file>
 
 <file path="face-recognition-service/core/schemas.py">
@@ -6662,38 +6943,148 @@ class CameraStatusResponse(BaseModel):
     next_retry_in: Optional[float] = None
 </file>
 
+<file path="face-recognition-service/docker-compose.yml">
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: face_recognition
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - face-network
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - face-network
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - face-network
+
+  milvus:
+    image: milvusdb/milvus:v2.4.0
+    command: milvus run standalone
+    restart: unless-stopped
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvusdata:/var/lib/milvus
+    environment:
+      ETCD_USE_EMBED: "true"
+      ETCD_DATA_DIR: /var/lib/milvus/etcd
+      COMMON_STORAGETYPE: local
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - face-network
+
+  face-recognition-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: face-recognition-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    networks:
+      - face-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    volumes:
+      - insightface_models:/root/.insightface/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    networks:
+      - face-network
+
+volumes:
+  pgdata:
+  miniodata:
+  milvusdata:
+  insightface_models:
+
+networks:
+  face-network:
+    name: face-network
+    driver: bridge
+</file>
+
 <file path="face-recognition-service/infra/models.py">
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 
 from infra.database import Base
-
-
-class UserModel(Base):
-    __tablename__ = "users"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
-    full_name = Column(String(255), nullable=True)
-    role = Column(String(50), default="user", nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-
-class AuditLogModel(Base):
-    __tablename__ = "audit_logs"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=True)
-    event_type = Column(String(100), nullable=False)
-    details = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class PatronModel(Base):
@@ -7085,11 +7476,10 @@ class PatronRepository:
         return result.scalar() or 0
 
     async def count_today_access(self, access_type: str) -> int:
-        today = date.today()
         result = await self.db.execute(
             select(func.count(AccessLogModel.id)).where(
                 AccessLogModel.access_type == access_type,
-                cast(AccessLogModel.access_time, Date) == today,
+                cast(AccessLogModel.access_time, Date) == func.current_date(),
                 AccessLogModel.status == "success",
             )
         )
@@ -7103,102 +7493,29 @@ class PatronRepository:
         )
 </file>
 
-<file path="face-recognition-service/infra/redis_pubsub.py">
+<file path="face-recognition-service/worker/celery_app.py">
 from __future__ import annotations
 
-import asyncio
-import json
-import logging
-import threading
-from typing import Any
+from celery import Celery
 
 from infra.config import settings
-from infra.sse_manager import sse_manager
-
-logger = logging.getLogger(__name__)
-
-CHANNEL = "camera:events"
-
-_running = True
-
-_redis_client = None
-_redis_lock = threading.Lock()
 
 
-def _get_redis():
-    """Reuse a single Redis client per process to avoid socket churn."""
-    global _redis_client
-    if _redis_client is None:
-        with _redis_lock:
-            if _redis_client is None:
-                import redis as _redis
+celery_app = Celery(
+    "face_recognition",
+    broker=settings.celery_broker_url,
+    backend=settings.celery_result_backend,
+)
 
-                _redis_client = _redis.Redis.from_url(
-                    settings.celery_broker_url,
-                    decode_responses=True,
-                    socket_keepalive=True,
-                    socket_timeout=5,
-                    retry_on_timeout=True,
-                )
-    return _redis_client
-
-
-def publish(channel: str, data: dict[str, Any]) -> None:
-    try:
-        r = _get_redis()
-        r.publish(channel, json.dumps(data, default=str))
-    except Exception as e:
-        logger.error("Redis publish failed: %s - data=%s", e, data)
-
-
-
-def _subscribe_loop(channel: str, loop: asyncio.AbstractEventLoop) -> None:
-    global _running
-    pubsub = None
-    r = None
-    try:
-        r = _get_redis()
-        pubsub = r.pubsub()
-        pubsub.subscribe(channel)
-        logger.info("Redis subscribed to %s", channel)
-        for msg in pubsub.listen():
-            if not _running:
-                break
-            if msg["type"] != "message":
-                continue
-            try:
-                data = json.loads(msg["data"])
-                logger.info("Redis message received on %s: %s", channel, data.get("status", "unknown"))
-                future = asyncio.run_coroutine_threadsafe(
-                    sse_manager.broadcast("camera_event", data), loop
-                )
-                future.add_done_callback(
-                    lambda f: logger.info("SSE broadcast completed for status=%s", data.get("status"))
-                    if not f.exception() else logger.error("SSE broadcast failed: %s", f.exception())
-                )
-            except Exception as e:
-                logger.warning("SSE broadcast error: %s", e)
-    except Exception as e:
-        logger.warning("Redis subscribe error: %s", e)
-    finally:
-        if pubsub:
-            try:
-                pubsub.unsubscribe()
-                pubsub.close()
-            except Exception:
-                pass
-        _running = False
-
-
-def stop_sse_bridge() -> None:
-    global _running
-    _running = False
-
-
-def start_sse_bridge(loop: asyncio.AbstractEventLoop) -> tuple[threading.Thread, callable]:
-    t = threading.Thread(target=_subscribe_loop, args=(CHANNEL, loop), daemon=True)
-    t.start()
-    return t, stop_sse_bridge
+celery_app.conf.update(
+    task_serializer="json",
+    result_serializer="json",
+    accept_content=["json"],
+    timezone="UTC",
+    task_soft_time_limit=300,
+    task_time_limit=360,
+    worker_max_tasks_per_child=1000,
+)
 </file>
 
 <file path="api-gateway/src/index.ts">
@@ -7240,7 +7557,6 @@ const proxyRequest = (path: string, req: any, res: any, targetBase: string) => {
   }
   
   const headers = options.headers as Record<string, string>;
-  console.log(`  Headers: content-type=${headers['content-type']}, content-length=${headers['content-length']}`);
   console.log(`  -> ${options.method} ${options.hostname}:${options.port}${options.path}`);
 
   const proxyReq = http.request({ ...options, timeout: 0 }, (proxyRes) => {
@@ -7266,41 +7582,61 @@ const proxyRequest = (path: string, req: any, res: any, targetBase: string) => {
   req.pipe(proxyReq, { end: true });
 };
 
-// Face Recognition API routes - strip /api prefix
-app.all('/api/auth', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/auth/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/auth', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
-app.all('/auth/*', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
+// ===== USER-SERVICE ROUTES =====
 
-// Users routes (admin user management) -> face-recognition-api
-app.all('/api/users', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/users/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/users', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/users/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+// Auth routes (login, register, refresh) -> user-service
+app.all('/api/auth/login', (req, res) => proxyRequest('/auth/login', req, res, config.services.userService));
+app.all('/api/auth/register', (req, res) => proxyRequest('/auth/register', req, res, config.services.userService));
+app.all('/api/auth/refresh', (req, res) => proxyRequest('/auth/refresh', req, res, config.services.userService));
+app.all('/auth/login', (req, res) => proxyRequest('/auth/login', req, res, config.services.userService));
+app.all('/auth/register', (req, res) => proxyRequest('/auth/register', req, res, config.services.userService));
+app.all('/auth/refresh', (req, res) => proxyRequest('/auth/refresh', req, res, config.services.userService));
 
-// Face API routes - strip /api prefix (for face operations only, not auth)
+// User info routes -> user-service
+app.all('/users/me', (req, res) => proxyRequest('/users/me', req, res, config.services.userService));
+
+// ===== FACE-RECOGNITION-API ROUTES =====
+
+// Face-login stays on face-recognition-api (needs Milvus + face processing)
+app.all('/api/auth/face-login', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+
+// Face API routes
 app.all('/api/face', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/face/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 
-// Tasks routes - proxy to face-recognition-api
+// Tasks routes
 app.all('/api/tasks', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/tasks/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 
-// Swagger docs - no prefix stripping needed
-app.all('/docs', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/docs/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/openapi.json', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-app.all('/redoc', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
-
-// New routes: Patrons, Access, Kiosk, Camera - proxy to face-recognition-api
+// Patrons, Access, Kiosk, Camera routes
 app.all('/api/patrons', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/patrons/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/access', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/access/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/kiosk', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/kiosk/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/camera', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/camera/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 
-// Non-prefixed routes for Access, Kiosk, Camera - proxy directly
+// Users admin routes (list + delete with has_face status) — still on face-recognition-api
+app.all('/api/users', (req, res) => proxyRequest('/users', req, res, config.services.faceRecognitionApi));
+app.all('/api/users/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/users', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/users/*', (req, res) => {
+  // Skip users/me (already routed to user-service above)
+  if (req.path === '/users/me' || req.path.startsWith('/users/me/')) {
+    return proxyRequest('/users/me', req, res, config.services.userService);
+  }
+  proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi);
+});
+
+// Swagger docs
+app.all('/docs', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/docs/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/openapi.json', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/redoc', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+
+// Non-prefixed routes for Access, Kiosk, Camera
 app.all('/access', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 app.all('/access/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 app.all('/kiosk', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
@@ -7308,11 +7644,13 @@ app.all('/kiosk/*', (req, res) => proxyRequest(req.originalUrl, req, res, config
 app.all('/camera', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 app.all('/camera/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 
-// Camera routes - proxy to face-recognition-api (with /api prefix)
-app.all('/api/camera', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
-app.all('/api/camera/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+// Auth catch-all for face-recognition-api (face-login, any other auth)
+app.all('/api/auth', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/api/auth/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
+app.all('/auth', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
+app.all('/auth/*', (req, res) => proxyRequest(req.originalUrl || '/', req, res, config.services.faceRecognitionApi));
 
-// Generic API catch-all - any remaining /api/* -> face-recognition-api
+// Generic API catch-all
 app.all('/api/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 
 app.get('/healthz', (req, res) => {
@@ -7331,6 +7669,30 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 
 server.timeout = 0;
 server.keepAliveTimeout = 0;
+</file>
+
+<file path="face-recognition-service/api/routers/auth.py">
+from __future__ import annotations
+
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
+
+from worker.tasks import _sync_face_login
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.post("/face-login")
+async def face_login(file: UploadFile = File(...)):
+    raw = await file.read()
+    result = await run_in_threadpool(_sync_face_login, raw)
+    if result.get("status") != "success":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.get("error", "Face login failed"))
+    return {
+        "access_token": result["access_token"],
+        "refresh_token": result.get("refresh_token"),
+        "token_type": result.get("token_type", "bearer"),
+    }
 </file>
 
 <file path="face-recognition-service/api/routers/kiosk.py">
@@ -7355,6 +7717,7 @@ from worker.celery_app import celery_app as _celery_app
 from worker.tasks import _upload_temp_frame
 from infra.minio_client import MinioStorage as _MinioStorage
 from infra.milvus_client import MilvusClient as _MilvusClient
+from infra.redis_cache import redis_client as _redis_client
 
 def _get_milvus_client() -> _MilvusClient:
     return _MilvusClient(
@@ -7366,6 +7729,12 @@ def _get_milvus_client() -> _MilvusClient:
 
 router = APIRouter(prefix="/kiosk", tags=["kiosk"])
 celery_app = _celery_app
+
+
+async def _store_temp_frame(raw: bytes) -> str:
+    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+    _redis_client.setex(f"temp_frame:{object_key}", 120, raw)
+    return object_key
 
 
 async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> PatronPublic:
@@ -7432,7 +7801,7 @@ async def kiosk_enroll(
         raise HTTPException(409, "Student code already exists")
 
     raw = await image.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+    object_key = await _store_temp_frame(raw)
 
     patron = await repo.create_patron(
         full_name=full_name,
@@ -7477,7 +7846,7 @@ async def kiosk_enter(
         return KioskResult(success=False, message="Patron has no enrolled face")
 
     raw = await image.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+    object_key = await _store_temp_frame(raw)
 
     task = celery_app.send_task(
         "verify_face",
@@ -7525,7 +7894,7 @@ async def kiosk_batch_enroll(
     # Upload all 4 to temp storage
     keys = {}
     for angle, raw in raws.items():
-        keys[angle] = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+        keys[angle] = await _store_temp_frame(raw)
 
     # Create patron in DB (commit so Celery tasks can see it)
     patron = await repo.create_patron(
@@ -7592,7 +7961,7 @@ async def kiosk_enroll_face(
         raise HTTPException(404, "Patron not found")
 
     raw = await image.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
+    object_key = await _store_temp_frame(raw)
 
     task = celery_app.send_task(
         "enroll_face",
@@ -7607,161 +7976,32 @@ async def kiosk_enroll_face(
     return {"success": True, "message": f"Face enrolled at angle '{angle}'"}
 </file>
 
-<file path="face-recognition-service/docker-compose.yml">
-version: "3.9"
+<file path="face-recognition-service/Dockerfile.worker">
+FROM python:3.12-slim
 
-services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: face_recognition
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - face-network
+WORKDIR /app
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - face-network
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-  minio:
-    image: minio/minio:latest
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - miniodata:/data
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - face-network
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 && \
+    rm -rf /var/lib/apt/lists/*
 
-  milvus:
-    image: milvusdb/milvus:v2.4.0
-    command: milvus run standalone
-    restart: unless-stopped
-    ports:
-      - "19530:19530"
-      - "9091:9091"
-    volumes:
-      - milvusdata:/var/lib/milvus
-    environment:
-      ETCD_USE_EMBED: "true"
-      ETCD_DATA_DIR: /var/lib/milvus/etcd
-      COMMON_STORAGETYPE: local
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - face-network
+COPY pyproject.toml .
 
-  face-recognition-api:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
-    container_name: face-recognition-api
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    env_file:
-      - ../.env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      milvus:
-        condition: service_healthy
-    networks:
-      - face-network
+# Upgrade pip first to avoid hash mismatch issues, then install insightface + onnxruntime
+RUN pip install --upgrade pip && pip install --no-cache-dir insightface onnxruntime gevent
 
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
-    restart: unless-stopped
-    env_file:
-      - ../.env
-    volumes:
-      - insightface_models:/root/.insightface/models
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      milvus:
-        condition: service_healthy
-    networks:
-      - face-network
+RUN pip install --no-cache-dir poetry && \
+    poetry config virtualenvs.create false && \
+    poetry install --only main --no-root --no-interaction --no-ansi
 
-volumes:
-  pgdata:
-  miniodata:
-  milvusdata:
-  insightface_models:
+# Model files are downloaded at runtime and cached in the 'insightface_models' volume
 
-networks:
-  face-network:
-    name: face-network
-    driver: bridge
-</file>
+COPY . .
 
-<file path="face-recognition-service/worker/celery_app.py">
-from __future__ import annotations
-
-from celery import Celery
-
-from infra.config import settings
-
-
-celery_app = Celery(
-    "face_recognition",
-    broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend,
-)
-
-celery_app.conf.update(
-    task_serializer="json",
-    result_serializer="json",
-    accept_content=["json"],
-    timezone="UTC",
-    task_soft_time_limit=300,
-    task_time_limit=360,
-    worker_max_tasks_per_child=1000,
-)
+CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=2", "--include=worker.tasks"]
 </file>
 
 <file path="face-recognition-service/api/routers/access.py">
@@ -7967,128 +8207,6 @@ async def get_stats(
     )
 </file>
 
-<file path="face-recognition-service/api/routers/auth.py">
-from __future__ import annotations
-
-import asyncio
-import uuid as _uuid
-
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.concurrency import run_in_threadpool
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from core.schemas import (
-    LoginRequest,
-    RefreshRequest,
-    TokenResponse,
-    UserCreate,
-    UserPublic,
-)
-from core.security import create_access_token, create_refresh_token, decode_token
-from infra.config import settings
-from infra.database import async_session_factory
-from infra.user_repository import PostgresUserRepository, pwd_context
-from worker.celery_app import celery_app
-from worker.tasks import _upload_temp_frame
-
-router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-async def _get_db() -> AsyncSession:
-    async with async_session_factory() as session:
-        yield session
-
-
-async def _hash_password(password: str) -> str:
-    return await run_in_threadpool(pwd_context.hash, password)
-
-
-async def _verify_password(plain_password: str, hashed_password: str) -> bool:
-    return await run_in_threadpool(pwd_context.verify, plain_password, hashed_password)
-
-
-@router.post("/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
-async def register(body: UserCreate, db: AsyncSession = Depends(_get_db)):
-    repo = PostgresUserRepository(db)
-    existing = await repo.get_user_by_email(body.email)
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
-        )
-    password_hash = await _hash_password(body.password)
-    user_id = await repo.create_user(body.email, password_hash, body.role, body.full_name)
-    return UserPublic(id=user_id, email=body.email, full_name=body.full_name, role=body.role)
-
-
-@router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(_get_db)):
-    repo = PostgresUserRepository(db)
-    user = await repo.get_user_by_email(body.email)
-    if not user or not await _verify_password(body.password, user.password_hash):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
-        )
-    access_token = create_access_token(
-        subject=str(user.id),
-        secret=settings.jwt_access_secret,
-        issuer=settings.jwt_issuer,
-        audience=settings.jwt_audience,
-        expires_minutes=settings.jwt_access_expires_minutes,
-        roles=[user.role],
-    )
-    refresh_token = create_refresh_token(
-        subject=str(user.id),
-        secret=settings.jwt_refresh_secret,
-        issuer=settings.jwt_issuer,
-        audience=settings.jwt_audience,
-        expires_days=settings.jwt_refresh_expires_days,
-        roles=[user.role],
-    )
-    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
-
-
-@router.post("/refresh", response_model=TokenResponse)
-async def refresh(body: RefreshRequest, db: AsyncSession = Depends(_get_db)):
-    try:
-        payload = decode_token(
-            token=body.refresh_token,
-            secret=settings.jwt_refresh_secret,
-            issuer=settings.jwt_issuer,
-            audience=settings.jwt_audience,
-            expected_type="refresh",
-        )
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token"
-        )
-    repo = PostgresUserRepository(db)
-    user = await repo.get_user_by_id(payload["sub"])
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-    access_token = create_access_token(
-        subject=str(user.id),
-        secret=settings.jwt_access_secret,
-        issuer=settings.jwt_issuer,
-        audience=settings.jwt_audience,
-        expires_minutes=settings.jwt_access_expires_minutes,
-        roles=[user.role],
-    )
-    return TokenResponse(access_token=access_token)
-
-
-@router.post("/face-login", status_code=status.HTTP_202_ACCEPTED)
-async def face_login(
-    email: str = Form(...),
-    file: UploadFile = File(...),
-):
-    raw = await file.read()
-    object_key = await run_in_threadpool(_upload_temp_frame, raw, str(_uuid.uuid4()))
-    task = celery_app.send_task("worker.tasks.face_login_task", kwargs={"email": email, "object_key": object_key})
-    return {"job_id": task.id}
-</file>
-
 <file path="face-recognition-service/api/routers/patrons.py">
 from __future__ import annotations
 
@@ -8284,43 +8402,16 @@ async def enroll_patron_face(
     return {"success": True, "message": "Face enrolled successfully", "patron_id": str(patron_id)}
 </file>
 
-<file path="face-recognition-service/Dockerfile.worker">
-FROM python:3.12-slim
-
-WORKDIR /app
-
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 libglib2.0-0 && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY pyproject.toml .
-RUN pip install --no-cache-dir poetry && \
-    poetry config virtualenvs.create false && \
-    poetry install --only main --no-root --no-interaction --no-ansi
-
-# Install insightface + onnxruntime via pip (faster than poetry, avoids dependency resolution timeout)
-RUN pip install --no-cache-dir insightface onnxruntime gevent
-
-# Pre-download buffalo_l model and bake it into the image layer (not BuildKit cache)
-RUN python -c "import insightface; from insightface.app import FaceAnalysis; app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640)); print('buffalo_l model cached')"
-
-# Pre-download MobileNet SSD model for person detection (fail silently, will retry at runtime)
-RUN python -c "import urllib.request,os; os.makedirs('/app/models',exist_ok=True); urllib.request.urlretrieve('https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/mobilenet_iter_73000.caffemodel', '/app/models/MobileNetSSD_deploy.caffemodel'); print('MobileNet SSD caffemodel pre-downloaded')" 2>&1 || echo "MobileNet SSD caffemodel download failed (will retry at runtime)"
-
-COPY . .
-
-CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=2", "--include=worker.tasks"]
-</file>
-
 <file path="face-recognition-service/infra/milvus_client.py">
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from pymilvus import CollectionSchema, DataType, FieldSchema, MilvusClient as _MilvusClient
+from pymilvus.milvus_client.index import IndexParams
+
+logger = logging.getLogger(__name__)
 
 
 class MilvusClient:
@@ -8341,6 +8432,7 @@ class MilvusClient:
 
         self.client = _MilvusClient(uri=f"http://{host}:{port}")
         self._get_or_create_collection()
+        self._ensure_index()
 
     def _get_or_create_collection(self) -> None:
         if self.client.has_collection(self.collection_name):
@@ -8357,20 +8449,53 @@ class MilvusClient:
             collection_name=self.collection_name,
             schema=schema,
         )
+        self._create_index()
+
+    def _create_index(self) -> None:
+        index_params = IndexParams()
+        index_params.add_index(
+            field_name="embedding",
+            metric_type=self.metric_type,
+            index_type="IVF_FLAT",
+            params={"nlist": 128},
+        )
         self.client.create_index(
             collection_name=self.collection_name,
-            index_params={
-                "field_name": "embedding",
-                "metric_type": self.metric_type,
-                "index_type": "IVF_FLAT",
-                "params": {"nprobe": 16},
-            },
+            index_params=index_params,
         )
+        self.client.load_collection(self.collection_name)
+
+    def _ensure_index(self) -> None:
+        try:
+            info = self.client.describe_index(self.collection_name, "embedding")
+            mt = info.get("metric_type", "")
+            if mt and mt.upper() != self.metric_type.upper():
+                self.client.release_collection(self.collection_name)
+                self.client.drop_index(self.collection_name, "embedding")
+                logger.info("Dropped index with mismatched metric_type=%s, recreating with %s", mt, self.metric_type)
+                self._create_index()
+        except Exception:
+            logger.warning("No existing index found, creating...")
+            self._create_index()
 
     def insert_embedding(self, *, user_id: str, angle: str, embedding: list[float]) -> int:
         data = [{"user_id": user_id, "angle": angle, "embedding": embedding}]
         result = self.client.insert(self.collection_name, data)
-        return result.primary_keys[0] if result else 0
+        # pymilvus's return type varies by version/config.
+        # Sometimes it returns a dict-like object without `primary_keys`.
+        if not result:
+            return 0
+        if hasattr(result, "primary_keys"):
+            return result.primary_keys[0] if result.primary_keys else 0
+        # Fallback: try common dict keys
+        if isinstance(result, dict):
+            for key in ("primary_keys", "primary_key", "ids", "id"):
+                v = result.get(key)
+                if isinstance(v, (list, tuple)) and v:
+                    return int(v[0])
+                if isinstance(v, (int, str)):
+                    return int(v)
+        return 0
 
     def get_embeddings_by_user_id(self, user_id: str) -> list[dict[str, Any]]:
         results = self.client.query(
@@ -8379,6 +8504,20 @@ class MilvusClient:
             output_fields=["id", "angle", "embedding"],
         )
         return results or []
+
+    # Compatibility helpers (older code expects this name)
+    def get_embedding_by_user_id(self, user_id: str) -> list[float] | None:
+        """Return one embedding vector for a user.
+
+        Existing code (worker/tasks.py) expects a single embedding vector.
+        We pick the first stored angle embedding.
+        """
+        rows = self.get_embeddings_by_user_id(user_id)
+        if not rows:
+            return None
+        # rows[i]["embedding"] is expected to be a list[float]
+        return rows[0].get("embedding")
+
 
     def search(self, *, embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
         results = self.client.search(
@@ -8401,7 +8540,10 @@ class MilvusClient:
         return hits
 
     def delete_by_user_id(self, *, user_id: str) -> None:
-        self.client.delete(self.collection_name, f'user_id == "{user_id}"')
+        self.client.delete(self.collection_name, filter=f'user_id == "{user_id}"')
+
+    def delete_by_user_id_and_angle(self, *, user_id: str, angle: str) -> None:
+        self.client.delete(self.collection_name, filter=f'user_id == "{user_id}" and angle == "{angle}"')
 </file>
 
 <file path="docker-compose.yml">
@@ -8477,6 +8619,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env
+    volumes:
+      - insightface_models:/root/.insightface/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -8583,21 +8727,44 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 
 
 def _camera_callback_factory():
-    """Create a callback that uploads camera frames to MinIO and sends task to Celery."""
+    """Create a callback that caches camera frames to Redis and sends task to Celery.
+
+    Phase 3 (Backpressure): Drops frame if Celery queue is too deep.
+    Phase 4 (Lazy MinIO): Only Redis, no MinIO upload. Evidence uploaded on grant/spoof by worker.
+    """
     import logging
     _logger = logging.getLogger("uvicorn")
     from celery import Celery as _Celery
     _worker = _Celery("face_recognition", broker=settings.celery_broker_url, backend=settings.celery_result_backend)
-    from worker.tasks import _upload_temp_frame
 
     def _on_frame(camera_id: str, frame):
         import cv2, uuid as _uuid
-        _logger.info("Camera %s received frame, uploading to MinIO...", camera_id)
+        _logger.info("Camera %s received frame, caching to Redis...", camera_id)
         try:
+            # Phase 3: Backpressure check — drop if queue too deep
+            try:
+                import redis as _redis
+                r = _redis.Redis.from_url(settings.celery_broker_url)
+                try:
+                    queue_key = f"camera_queue:{camera_id}"
+                    depth = r.incr(queue_key)
+                    if depth == 1:
+                        r.expire(queue_key, 60)
+                    if depth > settings.camera_max_queue_depth:
+                        _logger.warning("Camera %s queue depth %d > %d, dropping frame", camera_id, depth, settings.camera_max_queue_depth)
+                        return
+                finally:
+                    r.close()
+            except Exception:
+                pass
+
+            # Phase 4: Store frame only in Redis (no MinIO)
             _, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
-            object_key = _upload_temp_frame(buf.tobytes(), str(_uuid.uuid4()))
+            object_key = f"camera_frames/{camera_id}/{str(_uuid.uuid4())}.jpg"
+            from infra.redis_cache import redis_client as _rc
+            _rc.setex(f"temp_frame:{object_key}", 120, buf.tobytes())
             _worker.send_task("process_camera_frame", kwargs={"camera_id": camera_id, "object_key": object_key})
-            _logger.info("Camera %s task queued successfully (key=%s)", camera_id, object_key)
+            _logger.info("Camera %s task queued (key=%s)", camera_id, object_key)
         except Exception as e:
             _logger.error("Camera %s failed to queue Celery task: %s", camera_id, e)
 
@@ -8749,10 +8916,10 @@ def create_app() -> FastAPI:
 from __future__ import annotations
 
 import logging
-import threading
 import urllib.parse
 import uuid as _uuid
 
+import httpx
 import numpy as np
 import psycopg
 from jose import jwt
@@ -8765,7 +8932,10 @@ from infra.minio_client import MinioStorage
 from worker.celery_app import celery_app
 from worker.tasks_pipeline import (
     check_face_quality,
+    check_motion_blur,
+    detect_all_faces,
     detect_face_once,
+    enhance_illumination,
     extract_embedding_placeholder,
     liveness_from_face,
     resize_if_necessary,
@@ -8777,44 +8947,68 @@ logger = logging.getLogger(__name__)
 
 _milvus: MilvusClient | None = None
 _storage: MinioStorage | None = None
-_pg_connection_cache: dict[int, psycopg.Connection] = {}
-_pg_lock = threading.Lock()
 
 # =============================================================================
-# THREAD-LOCAL CONNECTION POOL - Reuse connections per thread
+# USER-SERVICE API CLIENT - HTTP calls instead of direct DB queries
+# =============================================================================
+_USER_SERVICE_URL = "http://user-service:3001"
+
+def _call_user_service(method: str, path: str, **kwargs) -> dict | None:
+    try:
+        with httpx.Client(base_url=_USER_SERVICE_URL, timeout=5.0) as client:
+            resp = client.request(method, path, **kwargs)
+            if resp.status_code == 200:
+                return resp.json()
+        return None
+    except Exception as exc:
+        logger.warning("user-service call failed %s %s: %s", method, path, exc)
+        return None
+
+
+def _get_user_via_api(user_id: str) -> dict | None:
+    try:
+        from infra.redis_cache import redis_client as _rc
+        cache_key = f"user:{user_id}"
+        cached = _rc.get(cache_key)
+        if cached:
+            import json
+            return json.loads(cached)
+    except Exception:
+        pass
+    result = _call_user_service("GET", f"/users/{user_id}")
+    if result:
+        try:
+            from infra.redis_cache import redis_client as _rc
+            import json
+            _rc.setex(cache_key, 30, json.dumps(result))
+        except Exception:
+            pass
+    return result
+
+
+# =============================================================================
+# PG CONNECTION - Create per-call, always close after use
 # =============================================================================
 def _get_pg_connection() -> psycopg.Connection:
-    """Get or create a thread-local PostgreSQL connection (autocommit mode)."""
-    thread_id = threading.current_thread().ident
-    if thread_id not in _pg_connection_cache or _pg_connection_cache[thread_id].closed:
-        parsed = urllib.parse.urlparse(settings.postgres_url)
-        conn = psycopg.connect(
-            host=parsed.hostname,
-            port=parsed.port or 5432,
-            dbname=parsed.path.lstrip("/"),
-            user=parsed.username,
-            password=parsed.password,
-            autocommit=True,
-        )
-        _pg_connection_cache[thread_id] = conn
-        logger.debug("Created new PG connection for thread %s", thread_id)
-    else:
+    """Create a fresh PostgreSQL connection (autocommit mode)."""
+    parsed = urllib.parse.urlparse(settings.postgres_url)
+    return psycopg.connect(
+        host=parsed.hostname,
+        port=parsed.port or 5432,
+        dbname=parsed.path.lstrip("/"),
+        user=parsed.username,
+        password=parsed.password,
+        autocommit=True,
+    )
+
+
+def _close_pg_connection(conn: psycopg.Connection | None) -> None:
+    """Close PG connection safely."""
+    if conn is not None and not conn.closed:
         try:
-            _pg_connection_cache[thread_id].execute("SELECT 1")
+            conn.close()
         except Exception:
-            _pg_connection_cache[thread_id].close()
-            parsed = urllib.parse.urlparse(settings.postgres_url)
-            conn = psycopg.connect(
-                host=parsed.hostname,
-                port=parsed.port or 5432,
-                dbname=parsed.path.lstrip("/"),
-                user=parsed.username,
-                password=parsed.password,
-                autocommit=True,
-            )
-            _pg_connection_cache[thread_id] = conn
-            logger.debug("Recreated stale PG connection for thread %s", thread_id)
-    return _pg_connection_cache[thread_id]
+            pass
 
 # =============================================================================
 # TEMP FRAME STORAGE - Upload to MinIO, pass key instead of base64 via Redis
@@ -8897,21 +9091,14 @@ def _get_storage() -> MinioStorage:
 
 def _get_user_info(user_id: str) -> dict | None:
     try:
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id::text, email, full_name, role, created_at FROM users WHERE id = %s",
-            (user_id,),
-        )
-        row = cur.fetchone()
-        cur.close()
-        if row:
+        data = _get_user_via_api(user_id)
+        if data:
             return {
-                "id": row[0],
-                "email": row[1],
-                "full_name": row[2],
-                "role": row[3],
-                "created_at": str(row[4]) if row[4] else None,
+                "id": str(data["id"]),
+                "email": data["email"],
+                "full_name": data.get("full_name"),
+                "role": data["role"],
+                "created_at": str(data["created_at"]) if data.get("created_at") else None,
             }
         return None
     except Exception as exc:
@@ -8921,26 +9108,25 @@ def _get_user_info(user_id: str) -> dict | None:
 
 def _get_patron_id_by_user_id(user_id: str) -> str | None:
     try:
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT u.email FROM users u WHERE u.id = %s",
-            (user_id,),
-        )
-        row = cur.fetchone()
-        if not row:
-            cur.close()
+        user = _get_user_via_api(user_id)
+        if not user:
             return None
-        email = row[0]
-        cur.execute(
-            "SELECT id::text FROM patrons WHERE email = %s LIMIT 1",
-            (email,),
-        )
-        patron_row = cur.fetchone()
-        cur.close()
-        if patron_row:
-            return patron_row[0]
-        return None
+        email = user["email"]
+        conn = None
+        try:
+            conn = _get_pg_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id::text FROM patrons WHERE email = %s LIMIT 1",
+                (email,),
+            )
+            patron_row = cur.fetchone()
+            cur.close()
+            if patron_row:
+                return patron_row[0]
+            return None
+        finally:
+            _close_pg_connection(conn)
     except Exception as exc:
         logger.warning("Failed to get patron_id for user_id %s: %s", user_id, exc)
         return None
@@ -9042,7 +9228,8 @@ def enroll_task(
             float(np.linalg.norm(vec_arr)),
         )
 
-        _get_milvus().upsert_embeddings(user_id=patron_id, embedding=norm_vec)
+        _get_milvus().delete_by_user_id_and_angle(user_id=patron_id, angle=angle)
+        _get_milvus().insert_embedding(user_id=patron_id, angle=angle, embedding=norm_vec)
         encrypted = encrypt_data(raw_data)
         _get_storage().upload_image(f"enrollments/{patron_id}.jpg", encrypted)
 
@@ -9057,8 +9244,56 @@ def enroll_task(
             "quality_score": quality.get("score"),
         }
     except Exception as exc:
+        # NOTE: Do NOT delete temp frame here.
+        # When Celery retries, the next attempt still needs to read the same MinIO key.
         logger.exception("Enroll failed for %s (angle=%s)", user_id, angle)
         raise self.retry(exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=0)
+def batch_enroll_task(self, user_id: str, object_keys: list[str] | None = None) -> dict:
+    angles = ["frontal", "right", "left", "down"]
+    if not object_keys or len(object_keys) != len(angles):
+        return {"status": "error", "error": "Expected 4 object_keys for frontal/right/left/down"}
+    results = []
+    for idx, angle in enumerate(angles):
+        try:
+            _, img = _resolve_image(object_keys[idx], None)
+            quality = check_face_quality(img)
+            if not quality.get("valid"):
+                results.append({"angle": angle, "status": "error", "error": quality.get("error")})
+                continue
+            if angle == "frontal":
+                liveness = run_liveness_analysis(img)
+                if not liveness.get("is_live", False):
+                    results.append({"angle": angle, "status": "error", "error": "LIVENESS_FAILED", "liveness_score": liveness.get("liveness_score")})
+                    continue
+            vec = extract_embedding_placeholder(img)
+            vec_arr = np.array(vec, dtype=np.float32)
+            vec_sum = float(np.sum(np.abs(vec_arr)))
+            if vec_sum < 0.1:
+                results.append({"angle": angle, "status": "error", "error": "FACE_DETECTION_FAILED"})
+                continue
+            norm_vec = l2_normalize(vec)
+            patron_id = _get_patron_id_by_user_id(user_id) or user_id
+            _get_milvus().delete_by_user_id_and_angle(user_id=patron_id, angle=angle)
+            _get_milvus().insert_embedding(user_id=patron_id, angle=angle, embedding=norm_vec)
+            raw_data, _ = _resolve_image(object_keys[idx], None)
+            encrypted = encrypt_data(raw_data)
+            _get_storage().upload_image(f"enrollments/{patron_id}_{angle}.jpg", encrypted)
+            results.append({"angle": angle, "status": "success", "quality_score": quality.get("score")})
+        except Exception as exc:
+            logger.exception("Batch enroll failed for angle=%s", angle)
+            results.append({"angle": angle, "status": "error", "error": str(exc)})
+        finally:
+            try:
+                _delete_temp_frame(object_keys[idx])
+            except Exception:
+                pass
+    errors = [r for r in results if r["status"] != "success"]
+    if errors:
+        return {"status": "error", "error": f"{len(errors)} angle(s) failed", "results": results}
+    return {"status": "success", "results": results}
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
@@ -9090,7 +9325,7 @@ def verify_task(self, user_id: str, object_key: str | None = None, image_data: s
                     float(np.linalg.norm(vec_arr)),
                     float(np.linalg.norm(enrolled_arr)))
         if object_key: _delete_temp_frame(object_key)
-        return {"status": "success", "verified": score > 0.6, "score": score}
+        return {"status": "success", "verified": score > settings.face_match_threshold, "score": score}
     except Exception as exc:
         logger.exception("Verify failed for %s", user_id)
         raise self.retry(exc=exc)
@@ -9119,58 +9354,99 @@ def identify_task(self, object_key: str | None = None, image_data: str | None = 
         if object_key: _delete_temp_frame(object_key)
         return {"status": "success", "matches": matches}
     except Exception as exc:
-        if object_key: _delete_temp_frame(object_key)
+        # Do NOT delete temp frame here — retry still needs the same MinIO key.
         logger.exception("Identify failed")
         raise self.retry(exc=exc)
 
 
-@celery_app.task(bind=True, max_retries=1, default_retry_delay=5)
-def face_login_task(self, email: str, object_key: str) -> dict:
-    logger.info("Face login for %s", email)
-    try:
-        user_info = None
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id::text, email, role FROM users WHERE email = %s",
-            (email,),
-        )
-        row = cur.fetchone()
-        cur.close()
-        if row:
-            user_info = {"id": row[0], "email": row[1], "role": row[2]}
-        if not user_info:
-            _delete_temp_frame(object_key)
-            return {"status": "error", "error": "User not found"}
+def _sync_face_login(raw_bytes: bytes) -> dict:
+    """Passwordless face login — search Milvus across ALL users, return JWT tokens.
 
-        _, img = _process_from_minio(object_key)
-        vec = extract_embedding_placeholder(img)
+    This is a synchronous function (NOT a Celery task) so FastAPI can call it
+    directly via run_in_threadpool, eliminating async polling.
+    """
+    object_key = _upload_temp_frame(raw_bytes, str(_uuid.uuid4()))
+    try:
+        img = safe_read_image_from_bytes(raw_bytes)
+        img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
+        img = enhance_illumination(img)
+
+        face_data = detect_face_once(img)
+        if not face_data.get("valid"):
+            return {"status": "error", "error": "Không phát hiện khuôn mặt", "detail": face_data.get("error")}
+
+        vec = face_data["embedding"]
         norm_vec = l2_normalize(vec)
-        norm_vec_arr = np.array(norm_vec, dtype=np.float32)
-        enrolled_emb = _get_milvus().get_embedding_by_user_id(user_info["id"])
-        if not enrolled_emb:
-            _delete_temp_frame(object_key)
-            return {"status": "error", "error": "Face not enrolled. Please enroll first."}
-        enrolled_arr = np.array(enrolled_emb, dtype=np.float32)
-        score = float(np.dot(norm_vec_arr, enrolled_arr))
-        if score < 0.6:
-            _delete_temp_frame(object_key)
-            return {"status": "error", "error": "Face does not match", "score": score}
+
+        results = _get_milvus().search(embedding=norm_vec, top_k=10)
+        best = _resolve_best_match(results, settings.face_match_threshold)
+        if not best:
+            return {"status": "error", "error": "Khuôn mặt không khớp với tài khoản nào"}
+
+        matched_user_id = best["user_id"]
+        score = round(best["score"], 4)
+
+        user_data = _get_user_via_api(matched_user_id)
+        if not user_data:
+            return {"status": "error", "error": "Tài khoản không có quyền truy cập Dashboard"}
+
+        user_id = str(user_data["id"])
+        user_email = user_data["email"]
+        user_role = user_data["role"]
+
+        try:
+            import redis as _redis
+            r = _redis.Redis.from_url(settings.celery_broker_url)
+            lockout_key = f"face_login_lockout:{user_id}"
+            locked = r.get(lockout_key)
+            if locked:
+                ttl = r.ttl(lockout_key)
+                r.close()
+                return {"status": "error", "error": f"Đăng nhập khuôn mặt tạm thời bị khóa ({ttl}s). Vui lòng dùng mật khẩu."}
+            r.close()
+        except Exception:
+            pass
 
         liveness = run_liveness_analysis(img)
         is_live = liveness.get("is_live", False)
         if not is_live:
-            _delete_temp_frame(object_key)
-            return {"status": "error", "error": "Liveness check failed", "liveness_score": liveness.get("liveness_score")}
+            logger.warning("Spoof attempt detected for user %s (%s)", user_email, user_id)
+            try:
+                conn2 = _get_pg_connection()
+                try:
+                    cur2 = conn2.cursor()
+                    cur2.execute(
+                        """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
+                        (str(_uuid.uuid4()), user_id, "entry", "face_login", score, "web_login", "spoof_attempt"),
+                    )
+                    conn2.commit()
+                    cur2.close()
+                finally:
+                    _close_pg_connection(conn2)
+            except Exception:
+                pass
+            try:
+                import redis as _redis
+                r = _redis.Redis.from_url(settings.celery_broker_url)
+                fail_key = f"face_login_fail:{user_id}"
+                fail_count = r.incr(fail_key)
+                if fail_count == 1:
+                    r.expire(fail_key, 900)
+                r.close()
+            except Exception:
+                pass
+            return {"status": "error", "error": "Phát hiện giả mạo — đã ghi log bảo mật"}
 
         import datetime as dt
         access_token = jwt.encode(
             {
-                "sub": user_info["id"],
+                "sub": user_id,
+                "email": user_email,
                 "iss": settings.jwt_issuer,
                 "aud": settings.jwt_audience,
                 "exp": dt.datetime.now(dt.UTC) + dt.timedelta(minutes=settings.jwt_access_expires_minutes),
-                "roles": [user_info["role"]],
+                "roles": [user_role],
                 "typ": "access",
                 "iat": dt.datetime.now(dt.UTC),
             },
@@ -9179,18 +9455,26 @@ def face_login_task(self, email: str, object_key: str) -> dict:
         )
         refresh_token = jwt.encode(
             {
-                "sub": user_info["id"],
+                "sub": user_id,
                 "iss": settings.jwt_issuer,
                 "aud": settings.jwt_audience,
                 "exp": dt.datetime.now(dt.UTC) + dt.timedelta(days=settings.jwt_refresh_expires_days),
-                "roles": [user_info["role"]],
+                "roles": [user_role],
                 "typ": "refresh",
                 "iat": dt.datetime.now(dt.UTC),
             },
             settings.jwt_refresh_secret,
             algorithm="HS256",
         )
-        _delete_temp_frame(object_key)
+
+        try:
+            import redis as _redis
+            r = _redis.Redis.from_url(settings.celery_broker_url)
+            r.delete(f"face_login_fail:{user_id}")
+            r.close()
+        except Exception:
+            pass
+
         return {
             "status": "success",
             "access_token": access_token,
@@ -9199,9 +9483,13 @@ def face_login_task(self, email: str, object_key: str) -> dict:
             "score": score,
         }
     except Exception as exc:
-        _delete_temp_frame(object_key)
-        logger.exception("Face login failed for %s", email)
+        logger.exception("Face login failed")
         return {"status": "error", "error": str(exc)}
+    finally:
+        try:
+            _delete_temp_frame(object_key)
+        except Exception:
+            pass
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
@@ -9213,7 +9501,7 @@ def liveness_task(self, object_key: str | None = None, image_data: str | None = 
         if object_key: _delete_temp_frame(object_key)
         return {"status": "success", **result}
     except Exception as exc:
-        if object_key: _delete_temp_frame(object_key)
+        # Do NOT delete temp frame here — retry still needs the same MinIO key.
         logger.exception("Liveness check failed")
         raise self.retry(exc=exc)
 
@@ -9245,22 +9533,26 @@ def full_delete_patron_task(self, patron_id: str) -> dict:
         except Exception:
             logger.warning("No images found for patron %s, skipping MinIO cleanup", patron_id)
         _get_milvus().delete_by_user_id(user_id=patron_id)
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE access_logs SET patron_id = NULL WHERE patron_id = %s",
-            (patron_id,),
-        )
-        cur.execute(
-            "DELETE FROM patron_faces WHERE patron_id = %s",
-            (patron_id,),
-        )
-        cur.execute(
-            "DELETE FROM patrons WHERE id = %s",
-            (patron_id,),
-        )
-        conn.commit()
-        cur.close()
+        conn = None
+        try:
+            conn = _get_pg_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE access_logs SET patron_id = NULL WHERE patron_id = %s",
+                (patron_id,),
+            )
+            cur.execute(
+                "DELETE FROM patron_faces WHERE patron_id = %s",
+                (patron_id,),
+            )
+            cur.execute(
+                "DELETE FROM patrons WHERE id = %s",
+                (patron_id,),
+            )
+            conn.commit()
+            cur.close()
+        finally:
+            _close_pg_connection(conn)
         logger.info("Full deletion completed for patron %s", patron_id)
         return {"status": "success", "patron_id": patron_id}
     except Exception as exc:
@@ -9294,41 +9586,46 @@ def enroll_face(self, patron_id: str, object_key: str, angle: str = "frontal") -
                 }
 
         norm_vec = l2_normalize(face_result["embedding"])
+        _get_milvus().delete_by_user_id_and_angle(user_id=patron_id, angle=angle)
         milvus_id = str(_get_milvus().insert_embedding(user_id=patron_id, angle=angle, embedding=norm_vec))
         encrypted = encrypt_data(raw_data)
         image_url = f"patrons/{patron_id}_{angle}.jpg"
         _get_storage().upload_image(image_url, encrypted)
 
         # Insert PatronFaceModel record (append, not upsert)
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO patron_faces (id, patron_id, angle, milvus_id, image_url, is_active) VALUES (%s, %s, %s, %s, %s, true)",
-            (str(_uuid.uuid4()), patron_id, angle, milvus_id, image_url),
-        )
-        conn.commit()
-        cur.close()
+        conn = None
+        try:
+            conn = _get_pg_connection()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO patron_faces (id, patron_id, angle, milvus_id, image_url, is_active) VALUES (%s, %s, %s, %s, %s, true)",
+                (str(_uuid.uuid4()), patron_id, angle, milvus_id, image_url),
+            )
+            conn.commit()
+            cur.close()
+        finally:
+            _close_pg_connection(conn)
         _delete_temp_frame(object_key)
         return {"status": "success", "patron_id": patron_id, "angle": angle, "quality_score": face_result.get("score")}
     except Exception as exc:
-        _delete_temp_frame(object_key)
+        # Do NOT delete temp frame on retry; retry still needs the same MinIO key.
         logger.exception("Enroll face failed for %s (angle=%s)", patron_id, angle)
         raise self.retry(exc=exc)
 
 
 def _resolve_best_match(results: list[dict], threshold: float) -> dict | None:
     from collections import Counter
+    if not results:
+        return None
     counts: Counter[str] = Counter()
     scores: dict[str, float] = {}
     for r in results:
         pid = r["user_id"]
         counts[pid] += 1
-        scores[pid] = max(scores.get(pid, 0), r["score"])
-    best_pid = max(scores, key=lambda pid: (scores[pid], counts[pid]))
-    if scores[best_pid] >= threshold and counts[best_pid] >= 2:
+        scores[pid] = max(scores.get(pid, 0.0), r["score"])
+    best_pid = max(scores, key=lambda pid: (counts[pid], scores[pid]))
+    if scores[best_pid] >= threshold:
         return {"user_id": best_pid, "score": scores[best_pid], "votes": counts[best_pid]}
-    if scores.get(best_pid, 0) >= threshold:
-        return {"user_id": best_pid, "score": scores[best_pid], "votes": 1}
     return None
 
 
@@ -9339,50 +9636,79 @@ def identify_patron(self, object_key: str) -> dict:
         raw = _get_temp_frame(object_key)
         img = safe_read_image_from_bytes(raw)
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
-        vec = extract_embedding_placeholder(img)
-        norm_vec = l2_normalize(vec)
-        results = _get_milvus().search(embedding=norm_vec, top_k=3)
-        best = _resolve_best_match(results, settings.face_match_threshold)
-        if not best:
+
+        # Enhance illumination (CLAHE) to handle backlight / low light
+        img = enhance_illumination(img)
+
+        # Filter motion-blurred frames before embedding extraction
+        if check_motion_blur(img):
+            logger.info("Frame too blurry for identification, skipping")
             _delete_temp_frame(object_key)
-            return {"status": "no_match"}
-        patron_id = best["user_id"]
-        score = round(best["score"], 4)
+            return {"status": "low_quality"}
 
-        # Lookup patron info from Postgres
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT full_name, student_code, membership_expiry, status FROM patrons WHERE id = %s",
-            (patron_id,),
-        )
-        row = cur.fetchone()
-        cur.close()
-
-        if not row:
-            _get_milvus().delete_by_user_id(user_id=patron_id)
-            logger.warning("Orphaned embedding cleaned up for %s", patron_id)
+        all_faces = detect_all_faces(img, min_face_size=settings.min_face_size)
+        if not all_faces:
             _delete_temp_frame(object_key)
             return {"status": "no_match"}
 
-        full_name, student_code, membership_expiry, status = row
+        matches = []
+        for face_data in all_faces:
+            norm_vec = l2_normalize(face_data["embedding"])
+            results = _get_milvus().search(embedding=norm_vec, top_k=3)
+            best = _resolve_best_match(results, settings.face_match_threshold)
+            if not best:
+                continue
 
-        # Check membership
-        from datetime import date
-        is_expired = membership_expiry and membership_expiry < date.today()
-        if is_expired or status != "active":
-            _delete_temp_frame(object_key)
-            return {"status": "expired", "patron_id": patron_id, "full_name": full_name, "student_code": student_code}
+            patron_id = best["user_id"]
+            score = round(best["score"], 4)
+
+            conn = None
+            try:
+                conn = _get_pg_connection()
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT full_name, student_code, membership_expiry, status FROM patrons WHERE id = %s",
+                    (patron_id,),
+                )
+                row = cur.fetchone()
+                cur.close()
+            finally:
+                _close_pg_connection(conn)
+
+            if not row:
+                _get_milvus().delete_by_user_id(user_id=patron_id)
+                logger.warning("Orphaned embedding cleaned up for %s", patron_id)
+                continue
+
+            full_name, student_code, membership_expiry, status = row
+
+            from datetime import date
+            is_expired = membership_expiry and membership_expiry < date.today()
+            if is_expired or status != "active":
+                matches.append({
+                    "status": "expired",
+                    "patron_id": patron_id,
+                    "full_name": full_name,
+                    "student_code": student_code,
+                    "score": score,
+                })
+                continue
+
+            matches.append({
+                "status": "matched",
+                "patron_id": patron_id,
+                "full_name": full_name,
+                "student_code": student_code,
+                "score": score,
+                "votes": best["votes"],
+            })
 
         _delete_temp_frame(object_key)
-        return {
-            "status": "matched",
-            "patron_id": patron_id,
-            "full_name": full_name,
-            "student_code": student_code,
-            "score": score,
-            "votes": best["votes"],
-        }
+
+        if not matches:
+            return {"status": "no_match"}
+
+        return {"status": "success", "matches": matches}
     except Exception as exc:
         _delete_temp_frame(object_key)
         logger.exception("Identify patron failed")
@@ -9394,6 +9720,7 @@ def _is_patron_inside(patron_id: str) -> bool:
     Uses current_status column from patrons table for fast reads.
     Auto-expires after max_entry_hours to prevent stuck 'inside' status.
     """
+    conn = None
     try:
         conn = _get_pg_connection()
         cur = conn.cursor()
@@ -9407,13 +9734,19 @@ def _is_patron_inside(patron_id: str) -> bool:
     except Exception as e:
         logger.warning("Failed to check patron inside status for %s: %s", patron_id, e)
         return False
+    finally:
+        _close_pg_connection(conn)
 
 
 def _publish_camera_event(data: dict) -> None:
     try:
         camera_id = data.get("camera_id", "unknown")
         status_val = data.get("status", "unknown")
-        throttle_key = f"cam_throttle:{camera_id}:{status_val}"
+        patron_id = data.get("patron_id")
+        if status_val == "granted" and patron_id:
+            throttle_key = f"cam_throttle:{camera_id}:{status_val}:{patron_id}"
+        else:
+            throttle_key = f"cam_throttle:{camera_id}:{status_val}"
 
         r = _get_redis_throttle()
         if r is None:
@@ -9446,13 +9779,258 @@ def _get_redis_throttle():
         logger.warning("Redis throttle unavailable: %s", e)
         return None
 
+def _upload_evidence_frame(raw_bytes: bytes, log_id: str, prefix: str = "") -> None:
+    """Upload frame evidence to MinIO for audit purposes.
+    Called only for granted/spoof/expired events (lazy upload).
+    """
+    try:
+        object_key = f"access_logs/{prefix}{log_id}.jpg"
+        _get_storage().upload_image(object_key, raw_bytes)
+        logger.debug("Uploaded evidence frame: %s", object_key)
+    except Exception as e:
+        logger.warning("Failed to upload evidence frame: %s", e)
+
+
+def _check_redis_cooldown(patron_id: str, access_type: str) -> bool:
+    """Check Redis cooldown — returns True if still in cooldown (skip)."""
+    try:
+        import redis as _redis
+        r = _redis.Redis.from_url(settings.celery_broker_url)
+        try:
+            key = f"cooldown:{access_type}:{patron_id}"
+            if r.get(key):
+                return True
+            r.setex(key, settings.access_cooldown_seconds, "1")
+            return False
+        finally:
+            r.close()
+    except Exception:
+        return False
+
+
+def _scale_bbox_landmarks(
+    bbox: list | None,
+    landmarks: list | None,
+    scale_x: float,
+    scale_y: float,
+) -> tuple[list | None, list | None]:
+    """Scale bbox and landmarks from resized frame to original frame coordinates."""
+    if bbox is not None and (scale_x != 1.0 or scale_y != 1.0):
+        bbox = [round(b * scale_x if i % 2 == 0 else b * scale_y) for i, b in enumerate(bbox)]
+    if landmarks is not None and (scale_x != 1.0 or scale_y != 1.0):
+        landmarks = [[round(x * scale_x), round(y * scale_y)] for x, y in landmarks]
+    return bbox, landmarks
+
+
+def _process_single_face(
+    camera_id: str,
+    img,  # cv2.Mat — avoid runtime cv2 import
+    face_data: dict,
+    raw_bytes: bytes | None = None,
+    orig_scale: tuple[float, float] | None = None,
+) -> dict | None:
+    """Process one detected face through the full access pipeline.
+
+    Pipeline order (optimized):
+      1. Embedding + Milvus search
+      2. Stranger alert (unknown face)
+      3. Redis cooldown check (before expensive operations)
+      4. DB lookup + expiry check
+      5. Direction check with grace period
+      6. Liveness (7 classifiers)
+      7. INSERT access_log + UPDATE patron status + lazy MinIO upload
+
+    Returns an event dict if access is granted, or None otherwise.
+    Non-granted statuses (spoof, expired, wrong_direction, unknown) published via SSE.
+    """
+    norm_vec = l2_normalize(face_data["embedding"])
+    face = face_data["face"]
+    bbox = face.bbox.tolist() if hasattr(face, "bbox") and face.bbox is not None else None
+    landmarks = face.kps.tolist() if hasattr(face, "kps") and face.kps is not None else None
+    if orig_scale:
+        bbox, landmarks = _scale_bbox_landmarks(bbox, landmarks, orig_scale[0], orig_scale[1])
+    results = _get_milvus().search(embedding=norm_vec, top_k=5)
+    best = _resolve_best_match(results, settings.face_match_threshold)
+    if not best:
+        event = {
+            "camera_id": camera_id, "status": "unknown",
+            "bbox": bbox, "landmarks": landmarks,
+        }
+        _publish_camera_event(event)
+        return None
+
+    patron_id = best["user_id"]
+    score = round(best["score"], 4)
+
+    # Determine access type before DB (based on camera_id)
+    if camera_id == settings.entry_cam_id:
+        access_type = "entry"
+    elif camera_id == settings.exit_cam_id:
+        access_type = "exit"
+    else:
+        logger.warning("Unknown camera_id: %s — skipping frame", camera_id)
+        return None
+
+    # Phase 2: Redis cooldown check (O(1), before expensive ops)
+    if _check_redis_cooldown(patron_id, access_type):
+        logger.debug("Cooldown hit for %s %s on %s", patron_id, access_type, camera_id)
+        return None
+
+    # DB lookup — single connection for all queries
+    conn = None
+    try:
+        conn = _get_pg_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT full_name, student_code, membership_expiry, status, current_status, last_entry_at FROM patrons WHERE id = %s",
+            (patron_id,),
+        )
+        row = cur.fetchone()
+
+        if not row:
+            _get_milvus().delete_by_user_id(user_id=patron_id)
+            logger.warning("Orphaned embedding cleaned up for %s from camera %s", patron_id, camera_id)
+            return None
+
+        full_name, student_code, membership_expiry, status, current_status, last_entry_at = row
+        from datetime import date, datetime, timezone
+
+        # Expiry check
+        is_expired = membership_expiry and membership_expiry < date.today()
+        if is_expired or status != "active":
+            event = {"camera_id": camera_id, "status": "expired", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "bbox": bbox, "landmarks": landmarks}
+            _publish_camera_event(event)
+            if raw_bytes:
+                _upload_evidence_frame(raw_bytes, patron_id, prefix="expired_")
+            return None
+
+        # Phase 5: Direction check with Grace Period
+        if camera_id == settings.entry_cam_id:
+            if current_status == "inside":
+                is_recent = (last_entry_at and (datetime.now(timezone.utc).timestamp() - last_entry_at.timestamp()) < settings.direction_grace_seconds)
+                if is_recent:
+                    logger.info("Grace period: %s (%s) still at entry — already_granted", full_name, student_code)
+                    event = {"camera_id": camera_id, "status": "already_granted", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
+                    _publish_camera_event(event)
+                    return None
+                else:
+                    logger.info("Wrong direction at entry for %s (%s) — already inside", full_name, student_code)
+                    event = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
+                    _publish_camera_event(event)
+                    if raw_bytes:
+                        _upload_evidence_frame(raw_bytes, patron_id, prefix="wrong_dir_")
+                    return None
+        elif camera_id == settings.exit_cam_id:
+            if current_status != "inside":
+                logger.info("Wrong direction at exit for %s (%s) — not inside library", full_name, student_code)
+                event = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
+                _publish_camera_event(event)
+                if raw_bytes:
+                    _upload_evidence_frame(raw_bytes, patron_id, prefix="wrong_dir_")
+                return None
+
+        cur.close()
+
+        # Phase 2 (cont): Liveness check (expensive — after all fast checks passed)
+        liveness = liveness_from_face(img, face)
+        if not liveness.get("is_live", False):
+            event = {
+                "camera_id": camera_id, "status": "spoof",
+                "patron_id": patron_id, "full_name": full_name, "student_code": student_code,
+                "score": score, "liveness_score": liveness.get("liveness_score"),
+                "bbox": bbox, "landmarks": landmarks,
+            }
+            _publish_camera_event(event)
+            if raw_bytes:
+                _upload_evidence_frame(raw_bytes, patron_id, prefix="spoof_")
+            return None
+
+        # All checks passed — write access log + update patron status
+        conn2 = None
+        try:
+            conn2 = _get_pg_connection()
+            cur2 = conn2.cursor()
+            log_id = str(_uuid.uuid4())
+            cur2.execute(
+                """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
+                (log_id, patron_id, access_type, "face", score, camera_id, "success"),
+            )
+            if access_type == "entry":
+                cur2.execute(
+                    "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = %s, updated_at = NOW() WHERE id = %s",
+                    (camera_id, patron_id),
+                )
+            else:
+                cur2.execute(
+                    "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
+                    (patron_id,),
+                )
+            conn2.commit()
+            cur2.close()
+        finally:
+            _close_pg_connection(conn2)
+
+        # Phase 4: Upload evidence to MinIO (lazy — only on grant)
+        if raw_bytes:
+            _upload_evidence_frame(raw_bytes, log_id)
+
+        logger.info("Access %s: %s (%s) at %s", access_type, full_name, student_code, camera_id)
+        event = {
+            "camera_id": camera_id,
+            "status": "granted",
+            "patron_id": patron_id,
+            "full_name": full_name,
+            "student_code": student_code,
+            "score": score,
+            "access_type": access_type,
+            "is_live": True,
+            "bbox": bbox,
+            "landmarks": landmarks,
+        }
+        return event
+
+    except Exception:
+        logger.exception("Failed to process face for camera %s", camera_id)
+        return None
+    finally:
+        _close_pg_connection(conn)
+
+
 @celery_app.task(bind=True, name="process_camera_frame", max_retries=1, default_retry_delay=5)
 def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
     logger.info("Processing camera frame from %s", camera_id)
+    # Decrement backpressure counter (Phase 3)
     try:
-        raw = _get_temp_frame(object_key)
-        img = safe_read_image_from_bytes(raw)
-        img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
+        import redis as _redis
+        r = _redis.Redis.from_url(settings.celery_broker_url)
+        try:
+            r.decr(f"camera_queue:{camera_id}")
+        finally:
+            r.close()
+    except Exception:
+        pass
+    try:
+        # Phase 4: Camera frames are Redis-only (no MinIO fallback)
+        import time
+        raw = None
+        for attempt in range(3):
+            try:
+                from infra.redis_cache import redis_client as _rc
+                cached = _rc.get(f"temp_frame:{object_key}")
+                if cached:
+                    _rc.delete(f"temp_frame:{object_key}")
+                    raw = cached
+                    break
+            except Exception:
+                pass
+            if attempt < 2:
+                time.sleep(0.3)
+        if raw is None:
+            raise FileNotFoundError(f"Camera frame {object_key} expired from Redis")
+        img_original = safe_read_image_from_bytes(raw)
+        orig_h, orig_w = img_original.shape[:2]
+        img = resize_if_necessary(img_original, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
 
         # Step 0: Person presence check
         if settings.enable_person_detection:
@@ -9462,147 +10040,54 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
                     logger.info("No person detected in frame from %s — skipping", camera_id)
                     result = {"camera_id": camera_id, "status": "no_match"}
                     _publish_camera_event(result)
-                    _delete_temp_frame(object_key)
                     return result
             except Exception as pe:
                 logger.warning("Person detection failed (will proceed anyway): %s", pe)
 
-        # Step 1: Detect face once
-        face_result = detect_face_once(img)
-        if not face_result.get("valid") or face_result.get("face") is None:
+        # Step 1: Lightweight CLAHE on full frame for better detection
+        img = enhance_illumination(img)
+
+        # Step 2: Filter motion-blurred frames before detection
+        if check_motion_blur(img):
+            logger.info("Frame from %s too blurry — skipping", camera_id)
             result = {"camera_id": camera_id, "status": "no_match"}
             _publish_camera_event(result)
-            _delete_temp_frame(object_key)
             return result
 
-        face = face_result["face"]
-        norm_vec = l2_normalize(face_result["embedding"])
-        results = _get_milvus().search(embedding=norm_vec, top_k=5)
-        best = _resolve_best_match(results, settings.face_match_threshold)
-        if not best:
+        # Step 3: Detect all faces (filtered by min_face_size)
+        resized_h, resized_w = img.shape[:2]
+        all_faces = detect_all_faces(img, min_face_size=settings.min_face_size)
+        if not all_faces:
             result = {"camera_id": camera_id, "status": "no_match"}
             _publish_camera_event(result)
-            _delete_temp_frame(object_key)
             return result
 
-        patron_id = best["user_id"]
-        score = round(best["score"], 4)
+        # Step 4: Process each face independently (pass raw_bytes for lazy MinIO)
+        scale_x = orig_w / resized_w if resized_w else 1.0
+        scale_y = orig_h / resized_h if resized_h else 1.0
+        granted_events = []
+        for face_data in all_faces:
+            event = _process_single_face(camera_id, img, face_data, raw_bytes=raw, orig_scale=(scale_x, scale_y))
+            if event is not None:
+                granted_events.append(event)
 
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT full_name, student_code, membership_expiry, status FROM patrons WHERE id = %s",
-            (patron_id,),
-        )
-        row = cur.fetchone()
-        cur.close()
+        # Publish granted events (non-granted statuses already published inside _process_single_face)
+        for event in granted_events:
+            _publish_camera_event(event)
 
-        if not row:
-            _get_milvus().delete_by_user_id(user_id=patron_id)
-            logger.warning("Orphaned embedding cleaned up for %s from camera %s", patron_id, camera_id)
-            result = {"camera_id": camera_id, "status": "no_match"}
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
+        if not granted_events:
+            return {"camera_id": camera_id, "status": "no_match"}
 
-        full_name, student_code, membership_expiry, status = row
-        from datetime import date
-        is_expired = membership_expiry and membership_expiry < date.today()
-        if is_expired or status != "active":
-            result = {"camera_id": camera_id, "status": "expired", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score}
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
-
-        # Step 2: Liveness
-        liveness = liveness_from_face(img, face)
-        if not liveness.get("is_live", False):
-            result = {
-                "camera_id": camera_id, "status": "spoof",
-                "patron_id": patron_id, "full_name": full_name, "student_code": student_code,
-                "score": score, "liveness_score": liveness.get("liveness_score"),
-            }
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
-
-        # Step 3: Determine access type
-        if camera_id == settings.entry_cam_id:
-            access_type = "entry"
-            if _is_patron_inside(patron_id):
-                logger.info("Wrong direction at entry for %s (%s) — already inside", full_name, student_code)
-                result = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type}
-                _publish_camera_event(result)
-                _delete_temp_frame(object_key)
-                return result
-        elif camera_id == settings.exit_cam_id:
-            access_type = "exit"
-            if not _is_patron_inside(patron_id):
-                logger.info("Wrong direction at exit for %s (%s) — not inside library", full_name, student_code)
-                result = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type}
-                _publish_camera_event(result)
-                _delete_temp_frame(object_key)
-                return result
-        else:
-            logger.warning("Unknown camera_id: %s — skipping frame", camera_id)
-            result = {"camera_id": camera_id, "status": "no_match"}
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
-
-        # Step 4: Create access log
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT EXTRACT(EPOCH FROM (NOW() - access_time)) FROM access_logs WHERE patron_id = %s AND access_type = %s AND status = 'success' ORDER BY access_time DESC LIMIT 1",
-            (patron_id, access_type),
-        )
-        row = cur.fetchone()
-        if row and row[0] < settings.access_cooldown_seconds:
-            cur.close()
-            logger.info("Skipping duplicate %s for %s (%s) — last %s was %.0fs ago", access_type, full_name, student_code, access_type, row[0])
-            result = {"camera_id": camera_id, "status": "no_match", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score}
-            _publish_camera_event(result)
-            _delete_temp_frame(object_key)
-            return result
-        log_id = str(_uuid.uuid4())
-        cur.execute(
-            """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
-            (log_id, patron_id, access_type, "face", score, camera_id, "success"),
-        )
-        if access_type == "entry":
-            cur.execute(
-                "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = %s, updated_at = NOW() WHERE id = %s",
-                (camera_id, patron_id),
-            )
-        else:
-            cur.execute(
-                "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
-                (patron_id,),
-            )
-        conn.commit()
-        cur.close()
-
-        logger.info("Access %s: %s (%s) at %s", access_type, full_name, student_code, camera_id)
-        result = {
+        return {
             "camera_id": camera_id,
             "status": "granted",
-            "patron_id": patron_id,
-            "full_name": full_name,
-            "student_code": student_code,
-            "score": score,
-            "access_type": access_type,
-            "is_live": True,
+            "count": len(granted_events),
+            "events": granted_events,
         }
-        _publish_camera_event(result)
-        _delete_temp_frame(object_key)
-        return result
     except Exception as exc:
         logger.exception("Camera frame processing failed")
         result = {"camera_id": camera_id, "status": "error", "error": str(exc)}
         _publish_camera_event(result)
-        _delete_temp_frame(object_key)
         return result
 
 
@@ -9615,11 +10100,18 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
         vec = extract_embedding_placeholder(img)
         norm_vec = l2_normalize(vec)
-        enrolled_emb = _get_milvus().get_embedding_by_user_id(patron_id)
-        if not enrolled_emb:
+        all_embeddings = _get_milvus().get_embeddings_by_user_id(patron_id)
+        if not all_embeddings:
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face not enrolled"}
-        score = float(np.dot(np.array(norm_vec, dtype=np.float32), np.array(enrolled_emb, dtype=np.float32)))
+        score = 0.0
+        for row in all_embeddings:
+            stored_emb = row.get("embedding")
+            if stored_emb:
+                s = float(np.dot(np.array(norm_vec, dtype=np.float32), np.array(stored_emb, dtype=np.float32)))
+                if s > score:
+                    score = s
+        score = round(score, 4)
         if score < settings.face_match_threshold:
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face does not match", "score": score}
@@ -9629,40 +10121,44 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
             return {"status": "error", "error": "Liveness check failed", "is_live": False}
 
         # Lookup patron info for access log
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT full_name, student_code FROM patrons WHERE id = %s",
-            (patron_id,),
-        )
-        row = cur.fetchone()
-        full_name = row[0] if row else "Unknown"
-        student_code = row[1] if row else ""
-        cur.close()
-
-        # Determine entry/exit based on inside status
-        access_type = "exit" if _is_patron_inside(patron_id) else "entry"
-
-        # Create access log
-        log_id = str(_uuid.uuid4())
-        cur = conn.cursor()
-        cur.execute(
-            """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
-            (log_id, patron_id, access_type, "face", score, "kiosk", "success"),
-        )
-        if access_type == "entry":
+        conn = None
+        try:
+            conn = _get_pg_connection()
+            cur = conn.cursor()
             cur.execute(
-                "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = 'kiosk', updated_at = NOW() WHERE id = %s",
+                "SELECT full_name, student_code FROM patrons WHERE id = %s",
                 (patron_id,),
             )
-        else:
+            row = cur.fetchone()
+            full_name = row[0] if row else "Unknown"
+            student_code = row[1] if row else ""
+            cur.close()
+
+            # Determine entry/exit based on inside status
+            access_type = "exit" if _is_patron_inside(patron_id) else "entry"
+
+            # Create access log
+            log_id = str(_uuid.uuid4())
+            cur = conn.cursor()
             cur.execute(
-                "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
-                (patron_id,),
+                """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
+                (log_id, patron_id, access_type, "face", score, "kiosk", "success"),
             )
-        conn.commit()
-        cur.close()
+            if access_type == "entry":
+                cur.execute(
+                    "UPDATE patrons SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = 'kiosk', updated_at = NOW() WHERE id = %s",
+                    (patron_id,),
+                )
+            else:
+                cur.execute(
+                    "UPDATE patrons SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
+                    (patron_id,),
+                )
+            conn.commit()
+            cur.close()
+        finally:
+            _close_pg_connection(conn)
 
         logger.info("Access %s: %s (%s) at kiosk", access_type, full_name, student_code)
         result = {

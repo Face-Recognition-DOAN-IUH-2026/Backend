@@ -97,6 +97,10 @@ app.all('/api/kiosk/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/a
 app.all('/api/camera', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 app.all('/api/camera/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
 
+// Borrow/Return routes -> borrow-service
+app.all('/api/borrow', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.borrowService));
+app.all('/api/borrow/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api\//, '/') || '/', req, res, config.services.borrowService));
+
 // Users admin routes (list + delete with has_face status) — still on face-recognition-api
 app.all('/api/users', (req, res) => proxyRequest('/users', req, res, config.services.faceRecognitionApi));
 app.all('/api/users/*', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));
@@ -122,6 +126,8 @@ app.all('/kiosk', (req, res) => proxyRequest(req.originalUrl, req, res, config.s
 app.all('/kiosk/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 app.all('/camera', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
 app.all('/camera/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.faceRecognitionApi));
+app.all('/borrow', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.borrowService));
+app.all('/borrow/*', (req, res) => proxyRequest(req.originalUrl, req, res, config.services.borrowService));
 
 // Auth catch-all for face-recognition-api (face-login, any other auth)
 app.all('/api/auth', (req, res) => proxyRequest(req.originalUrl.replace(/^\/api/, '') || '/', req, res, config.services.faceRecognitionApi));

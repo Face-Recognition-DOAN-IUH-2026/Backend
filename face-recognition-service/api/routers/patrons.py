@@ -1,19 +1,22 @@
 from __future__ import annotations
 
 import uuid
-from typing import Optional
+from datetime import date, datetime, timedelta, timezone
+from typing import Optional, Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile
+import bcrypt
+from fastapi import APIRouter, Body, Depends, Form, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
+from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from celery import Celery
 
 from api.dependencies import get_current_user, get_db_session, require_role
-from core.schemas import PatronCreate, PatronPublic, PatronUpdate
+from core.schemas import PatronCreate, PatronPublic, PatronUpdate, PatronRegisterRequest, PatronLoginRequest, PatronAuthResponse
 from infra.config import settings
 from infra.models import PatronModel
 from infra.patron_repository import PatronRepository
-from worker.tasks import _upload_temp_frame, full_delete_patron_task
+from worker.tasks import _upload_temp_frame, full_delete_patron_task, enroll_face
 
 celery_app = Celery(
     "tasks",
@@ -22,6 +25,93 @@ celery_app = Celery(
 )
 
 router = APIRouter(prefix="/patrons", tags=["patrons"])
+
+
+@router.post("/register", response_model=PatronAuthResponse)
+async def register_patron(
+    body: PatronRegisterRequest,
+    db: AsyncSession = Depends(get_db_session),
+):
+    repo = PatronRepository(db)
+    if await repo.get_by_student_code(body.student_code):
+        raise HTTPException(409, "Mã sinh viên đã được đăng ký")
+
+    password_hash = bcrypt.hashpw(body.password.encode(), bcrypt.gensalt()).decode()
+
+    card_number = f"THV-{body.student_code}"
+    patron = await repo.create_patron(
+        full_name=body.full_name,
+        student_code=body.student_code,
+        class_name=body.class_name,
+        card_number=card_number,
+        membership_expiry=date(2099, 12, 31),
+        issue_date=date.today(),
+    )
+
+    await repo.update_patron(patron.id, password_hash=password_hash)
+    await db.commit()
+    await db.refresh(patron)
+
+    token = jwt.encode(
+        {
+            "sub": str(patron.id),
+            "student_code": patron.student_code,
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=24),
+            "iat": datetime.now(timezone.utc),
+            "typ": "access",
+        },
+        settings.jwt_access_secret,
+        algorithm="HS256",
+    )
+
+    return PatronAuthResponse(
+        access_token=token,
+        token_type="bearer",
+        patron=await _patron_to_public(patron, repo),
+    )
+
+
+@router.post("/login", response_model=PatronAuthResponse)
+async def login_patron(
+    body: PatronLoginRequest,
+    db: AsyncSession = Depends(get_db_session),
+):
+    repo = PatronRepository(db)
+    patron = await repo.get_by_student_code(body.student_code)
+    if not patron:
+        raise HTTPException(401, "Mã sinh viên hoặc mật khẩu không đúng")
+
+    if not patron.password_hash:
+        raise HTTPException(401, "Tài khoản chưa được đăng ký, vui lòng đăng ký trước")
+
+    if not bcrypt.checkpw(body.password.encode(), patron.password_hash.encode()):
+        raise HTTPException(401, "Mã sinh viên hoặc mật khẩu không đúng")
+
+    is_expired = patron.membership_expiry and patron.membership_expiry < date.today()
+    if is_expired:
+        raise HTTPException(403, "Thẻ thư viện đã hết hạn, vui lòng gia hạn")
+
+    token = jwt.encode(
+        {
+            "sub": str(patron.id),
+            "student_code": patron.student_code,
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
+            "exp": datetime.now(timezone.utc) + timedelta(hours=24),
+            "iat": datetime.now(timezone.utc),
+            "typ": "access",
+        },
+        settings.jwt_access_secret,
+        algorithm="HS256",
+    )
+
+    return PatronAuthResponse(
+        access_token=token,
+        token_type="bearer",
+        patron=await _patron_to_public(patron, repo),
+    )
 
 
 async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> PatronPublic:
@@ -38,6 +128,7 @@ async def _patron_to_public(patron: PatronModel, repo: PatronRepository) -> Patr
         issue_date=patron.issue_date,
         membership_expiry=patron.membership_expiry,
         status=patron.status,
+        current_status=patron.current_status,
         created_at=patron.created_at,
         updated_at=patron.updated_at,
         has_face=face is not None,
@@ -159,17 +250,30 @@ async def delete_patron(
 @router.post("/{patron_id}/enroll-face")
 async def enroll_patron_face(
     patron_id: uuid.UUID,
-    image: UploadFile,
+    image: UploadFile = None,
     angle: str = Form("frontal"),
+    image_data: str = Form(None),
     db: AsyncSession = Depends(get_db_session),
     _=Depends(get_current_user),
+    body_image: Annotated[str | None, Body()] = None,
 ):
     repo = PatronRepository(db)
     patron = await repo.get_by_id(patron_id)
     if not patron:
         raise HTTPException(404, "Patron not found")
 
-    raw = await image.read()
+    raw = None
+    if image:
+        raw = await image.read()
+    elif image_data:
+        import base64
+        raw = base64.b64decode(image_data)
+    elif body_image:
+        import base64
+        raw = base64.b64decode(body_image)
+    else:
+        raise HTTPException(400, "Missing image")
+
     object_key = await run_in_threadpool(_upload_temp_frame, raw, str(uuid.uuid4()))
 
     task = celery_app.send_task(
@@ -184,7 +288,7 @@ async def enroll_patron_face(
             "LIVENESS_FAILED": "Ảnh không phải khuôn mặt thật, vui lòng chụp ảnh trực tiếp",
             "NO_FACE_DETECTED": "Không tìm thấy khuôn mặt trong ảnh, vui lòng thử lại",
             "MULTIPLE_FACES": "Có nhiều hơn 1 khuôn mặt trong ảnh, vui lòng chụp lại",
-            "LOW_QUALITY": "Ảnh quá mờ hoặc thiếu sáng, vui lòng chụp lại với điều kiện ánh sáng tốt hơn",
+            "LOW_QUALITY": "Ảnh quá mờ hoặc thiếu sáng, vui lòng chụp ảnh trực tiếp với điều kiện ánh sáng tốt hơn",
             "FACE_DETECTION_FAILED": "Không thể trích xuất khuôn mặt, vui lòng thử lại",
         }.get(error_msg, error_msg)
         raise HTTPException(400, error_detail)

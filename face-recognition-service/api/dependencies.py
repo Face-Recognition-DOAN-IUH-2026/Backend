@@ -38,6 +38,7 @@ async def get_current_user(
         "email": payload.get("email", ""),
         "full_name": payload.get("full_name"),
         "role": (payload.get("roles") or [""])[0],
+        "student_code": payload.get("student_code"),
     }
 
 

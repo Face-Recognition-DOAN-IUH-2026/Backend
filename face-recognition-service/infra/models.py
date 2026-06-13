@@ -20,6 +20,7 @@ class PatronModel(Base):
     email = Column(String(255), nullable=True)
     phone = Column(String(50), nullable=True)
     card_number = Column(String(50), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=True)
     issue_date = Column(Date, nullable=True)
     membership_expiry = Column(Date, nullable=False)
     status = Column(String(20), default="active", nullable=False)

@@ -80,6 +80,24 @@ class PatronCreate(BaseModel):
     issue_date: Optional[date] = None
 
 
+class PatronRegisterRequest(BaseModel):
+    student_code: str = Field(..., min_length=4, max_length=50)
+    password: str = Field(..., min_length=6, max_length=128)
+    full_name: str
+    class_name: Optional[str] = None
+
+
+class PatronLoginRequest(BaseModel):
+    student_code: str
+    password: str
+
+
+class PatronAuthResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    patron: PatronPublic
+
+
 class PatronUpdate(BaseModel):
     full_name: Optional[str] = None
     class_name: Optional[str] = None
@@ -104,6 +122,7 @@ class PatronPublic(BaseModel):
     issue_date: Optional[date] = None
     membership_expiry: date
     status: str
+    current_status: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     has_face: bool = False

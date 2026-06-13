@@ -68,7 +68,35 @@ def _get_user_via_api(user_id: str) -> dict | None:
             _rc.setex(cache_key, 30, json.dumps(result))
         except Exception:
             pass
-    return result
+        return result
+
+    try:
+        conn = _get_pg_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, full_name, student_code, email, status FROM patrons WHERE id = %s", (user_id,))
+                row = cur.fetchone()
+                if row:
+                    result = {
+                        "id": str(row[0]),
+                        "full_name": row[1],
+                        "email": row[3] or "",
+                        "role": "patron",
+                        "student_code": row[2],
+                    }
+                    try:
+                        from infra.redis_cache import redis_client as _rc
+                        import json
+                        _rc.setex(cache_key, 30, json.dumps(result))
+                    except Exception:
+                        pass
+                    return result
+        finally:
+            _close_pg_connection(conn)
+    except Exception:
+        pass
+
+    return None
 
 
 # =============================================================================
@@ -473,11 +501,13 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
 
         user_data = _get_user_via_api(matched_user_id)
         if not user_data:
-            return {"status": "error", "error": "Tài khoản không có quyền truy cập Dashboard"}
+            return {"status": "error", "error": "Không tìm thấy thông tin tài khoản"}
 
         user_id = str(user_data["id"])
         user_email = user_data["email"]
         user_role = user_data["role"]
+        user_full_name = user_data.get("full_name")
+        user_student_code = user_data.get("student_code")
 
         try:
             import redis as _redis
@@ -528,6 +558,8 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
             {
                 "sub": user_id,
                 "email": user_email,
+                "full_name": user_full_name,
+                "student_code": user_student_code,
                 "iss": settings.jwt_issuer,
                 "aud": settings.jwt_audience,
                 "exp": dt.datetime.now(dt.UTC) + dt.timedelta(minutes=settings.jwt_access_expires_minutes),

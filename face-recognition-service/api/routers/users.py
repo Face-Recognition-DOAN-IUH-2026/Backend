@@ -18,6 +18,7 @@ class UserResponse(BaseModel):
     full_name: str | None = None
     role: str
     has_face: bool = False
+    student_code: str | None = None
 
 
 class UserListResponse(BaseModel):
@@ -59,6 +60,7 @@ async def get_current_user_info(
         full_name=current_user.get("full_name"),
         role=current_user["role"],
         has_face=has_face,
+        student_code=current_user.get("student_code"),
     )
 
 
