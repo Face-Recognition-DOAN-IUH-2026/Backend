@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
 
@@ -17,6 +18,26 @@ app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
   next();
 });
+
+// Global rate limit: 200 req/min per IP
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request, vui lòng thử lại sau' },
+});
+
+// Strict rate limit for face endpoints: 30 req/min per IP (compute-heavy)
+const faceLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request cho face recognition' },
+});
+
+app.use(globalLimiter);
 
 // ============================================================================
 // CLEAN PREFIX-BASED ROUTING
@@ -99,81 +120,45 @@ app.use('/api/borrow', createProxyMiddleware({
   pathRewrite: { '^/api': '' },  // /api/borrow → /borrow
 }));
 
-app.use('/api/borrow/*', createProxyMiddleware({
-  target: config.services.borrowService,
-  changeOrigin: true,
-  pathRewrite: { '^/api': '' },  // /api/borrow/* → /borrow/*
-}));
-
 // ---- FACE-RECOGNITION-SERVICE ----
 
-// Face-login (special route under /api/auth/)
-app.use('/api/auth/face-login', createProxyMiddleware({
+// Face-login (special route under /api/auth/ — strict rate limit)
+app.use('/api/auth/face-login', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
   pathRewrite: { '^/api': '' },  // → /auth/face-login
 }));
 
-// Face operations
-app.use('/api/face', createProxyMiddleware({
+// Face operations (with strict rate limit)
+app.use('/api/face', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
   pathRewrite: { '^/api': '' },
 }));
 
-app.use('/api/face/*', createProxyMiddleware({
+// Kiosk operations (with strict rate limit)
+app.use('/api/kiosk', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
   pathRewrite: { '^/api': '' },
 }));
 
-// Kiosk operations
-app.use('/api/kiosk', createProxyMiddleware({
+// Camera operations (with strict rate limit)
+app.use('/api/camera', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
   pathRewrite: { '^/api': '' },
 }));
 
-app.use('/api/kiosk/*', createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
-  changeOrigin: true,
-  pathRewrite: { '^/api': '' },
-}));
-
-// Camera operations
-app.use('/api/camera', createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
-  changeOrigin: true,
-  pathRewrite: { '^/api': '' },
-}));
-
-app.use('/api/camera/*', createProxyMiddleware({
+// Async tasks (with strict rate limit)
+app.use('/api/tasks', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
   pathRewrite: { '^/api': '' },
 }));
 
 // Access logs
-app.use('/api/access', createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
-  changeOrigin: true,
-  pathRewrite: { '^/api': '' },
-}));
-
-app.use('/api/access/*', createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
-  changeOrigin: true,
-  pathRewrite: { '^/api': '' },
-}));
-
-// Async tasks
-app.use('/api/tasks', createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
-  changeOrigin: true,
-  pathRewrite: { '^/api': '' },
-}));
-
-app.use('/api/tasks/*', createProxyMiddleware({
+app.use('/api/access', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
   pathRewrite: { '^/api': '' },
@@ -186,20 +171,8 @@ app.use('/api/patrons', createProxyMiddleware({
   pathRewrite: { '^/api': '' },
 }));
 
-app.use('/api/patrons/*', createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
-  changeOrigin: true,
-  pathRewrite: { '^/api': '' },
-}));
-
 // Users admin routes (list/delete patrons with face status)
 app.use('/api/users', createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
-  changeOrigin: true,
-  pathRewrite: { '^/api': '' },
-}));
-
-app.use('/api/users/*', createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
   pathRewrite: { '^/api': '' },
@@ -300,5 +273,5 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('   /api/users/*         → face-recognition-service');
 });
 
-server.timeout = 0;
-server.keepAliveTimeout = 0;
+server.timeout = 30000;       // 30s request timeout (was 0 = infinite)
+server.keepAliveTimeout = 60000; // 60s keep-alive

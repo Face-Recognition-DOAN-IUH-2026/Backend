@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import case, select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.infra.models import BookModel, BookCopyModel, BorrowRecordModel
@@ -26,6 +26,44 @@ class BorrowRepository:
             select(BookModel).where(BookModel.id == book_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_books_with_stats(self, skip: int = 0, limit: int = 20, search: str | None = None) -> tuple[list[BookModel], int, dict[uuid.UUID, tuple[int, int]]]:
+        base_query = select(BookModel)
+        count_query = select(func.count(BookModel.id))
+        if search:
+            pattern = f"%{search}%"
+            base_query = base_query.where(
+                BookModel.isbn.ilike(pattern)
+                | BookModel.title.ilike(pattern)
+                | BookModel.author.ilike(pattern)
+            )
+            count_query = count_query.where(
+                BookModel.isbn.ilike(pattern)
+                | BookModel.title.ilike(pattern)
+                | BookModel.author.ilike(pattern)
+            )
+        total_result = await self.db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        result = await self.db.execute(
+            base_query.offset(skip).limit(limit).order_by(BookModel.created_at.desc())
+        )
+        books = list(result.scalars().all())
+
+        if not books:
+            return books, total, {}
+
+        book_ids = [b.id for b in books]
+        stats_query = select(
+            BookCopyModel.book_id,
+            func.count(BookCopyModel.id),
+            func.sum(case((BookCopyModel.is_available == True, 1), else_=0)),
+        ).where(BookCopyModel.book_id.in_(book_ids)).group_by(BookCopyModel.book_id)
+        stats_result = await self.db.execute(stats_query)
+        stats_map: dict[uuid.UUID, tuple[int, int]] = {}
+        for row in stats_result:
+            stats_map[row[0]] = (row[1], row[2] or 0)
+        return books, total, stats_map
 
     async def create_book(self, isbn: str, title: str, author: str | None = None, cover_url: str | None = None, shelf_location: str | None = None) -> BookModel:
         book = BookModel(
@@ -285,49 +323,23 @@ class BorrowRepository:
         return offsets
 
     async def create_copies_batch_with_skip(self, book_id: uuid.UUID, barcodes: list[str], shelf_location: str | None = None) -> list[BookCopyModel]:
-        from sqlalchemy.dialects.postgresql import insert
-        from sqlalchemy import insert as sa_insert
-
         inserted = []
         for bc in barcodes:
-            try:
-                copy = BookCopyModel(
-                    book_id=book_id,
-                    barcode=bc,
-                    is_available=True,
-                    shelf_location=shelf_location,
-                )
-                self.db.add(copy)
-                await self.db.flush()
-                inserted.append(copy)
-            except Exception:
-                await self.db.rollback()
+            existing = await self.get_copy_by_barcode(bc)
+            if existing:
                 continue
-
-        try:
-            await self.db.commit()
+            copy = BookCopyModel(
+                book_id=book_id,
+                barcode=bc,
+                is_available=True,
+                shelf_location=shelf_location,
+            )
+            self.db.add(copy)
+            inserted.append(copy)
+        if inserted:
+            await self.db.flush()
             for c in inserted:
                 await self.db.refresh(c)
-        except Exception:
-            await self.db.rollback()
-            inserted = []
-            stmt = sa_insert(BookCopyModel).values([
-                {"book_id": book_id, "barcode": bc, "is_available": True, "shelf_location": shelf_location}
-                for bc in barcodes
-            ]).on_conflict_do_nothing(index_elements=["barcode"])
-            await self.db.execute(stmt)
-            await self.db.commit()
-
-            result = await self.db.execute(
-                select(BookCopyModel).where(
-                    and_(
-                        BookCopyModel.book_id == book_id,
-                        BookCopyModel.barcode.in_(barcodes),
-                    )
-                )
-            )
-            inserted = list(result.scalars().all())
-
         return inserted
 
     async def create_copies_batch(self, book_id: uuid.UUID, barcodes: list[str], shelf_location: str | None = None) -> list[BookCopyModel]:
