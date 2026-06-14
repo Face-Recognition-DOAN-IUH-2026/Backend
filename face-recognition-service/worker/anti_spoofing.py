@@ -77,15 +77,16 @@ class AntiSpoofingAnalyzer:
         scores = []
         for i in range(3):
             hist = cv2.calcHist([face_roi], [i], None, [256], [0, 256])
-            hist = cv2.normalize(hist, hist).flatten()
+            hist = cv2.normalize(hist, hist, norm_type=cv2.NORM_L1).flatten()
             scores.append(float(np.var(hist)))
         hsv = cv2.cvtColor(face_roi, cv2.COLOR_BGR2HSV)
         h_hist = cv2.calcHist([hsv], [0], None, [180], [0, 180])
-        h_hist = cv2.normalize(h_hist, h_hist).flatten()
+        h_hist = cv2.normalize(h_hist, h_hist, norm_type=cv2.NORM_L1).flatten()
         skin_consistency = float(np.sum(h_hist[5:25]))  # typical skin hue range
         mean_spread = float(np.mean(scores))
         # Real skin: moderate spread, good skin hue concentration
-        spread_score = min(1.0, mean_spread * 8.0)
+        # Max variance of 256-bin L1-normalized histogram = ~0.00389 → multiplier 256 normalizes to [0,1]
+        spread_score = min(1.0, mean_spread * 256.0)
         skin_score = min(1.0, skin_consistency * 2.0)
         color_score = 0.5 * spread_score + 0.5 * skin_score
         color_score = max(0.0, min(1.0, color_score))

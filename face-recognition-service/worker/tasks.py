@@ -483,7 +483,6 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
     try:
         img = safe_read_image_from_bytes(raw_bytes)
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
-        img = enhance_illumination(img)
 
         face_data = detect_face_once(img)
         if not face_data.get("valid"):

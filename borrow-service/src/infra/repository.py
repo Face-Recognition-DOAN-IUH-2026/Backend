@@ -187,3 +187,193 @@ class BorrowRepository:
             )
         )
         return result.scalar() or 0
+
+    async def count_total_copies(self, book_id: uuid.UUID) -> int:
+        result = await self.db.execute(
+            select(func.count(BookCopyModel.id)).where(
+                BookCopyModel.book_id == book_id,
+            )
+        )
+        return result.scalar() or 0
+
+    async def search_books(self, query: str, skip: int = 0, limit: int = 20) -> list[BookModel]:
+        pattern = f"%{query}%"
+        result = await self.db.execute(
+            select(BookModel).where(
+                or_(
+                    BookModel.isbn.ilike(pattern),
+                    BookModel.title.ilike(pattern),
+                    BookModel.author.ilike(pattern),
+                )
+            ).offset(skip).limit(limit).order_by(BookModel.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def count_books(self) -> int:
+        result = await self.db.execute(select(func.count(BookModel.id)))
+        return result.scalar() or 0
+
+    async def upsert_book(self, isbn: str, title: str, author: str | None = None, cover_url: str | None = None, shelf_location: str | None = None) -> tuple[BookModel, bool]:
+        existing = await self.get_book_by_isbn(isbn)
+        if existing:
+            if title and title != existing.title:
+                existing.title = title
+            if author is not None and author != existing.author:
+                existing.author = author
+            if cover_url is not None and cover_url != existing.cover_url:
+                existing.cover_url = cover_url
+            await self.db.commit()
+            await self.db.refresh(existing)
+            return existing, False
+        book = BookModel(
+            isbn=isbn,
+            title=title,
+            author=author,
+            cover_url=cover_url,
+            shelf_location=shelf_location,
+        )
+        self.db.add(book)
+        await self.db.commit()
+        await self.db.refresh(book)
+        return book, True
+
+    async def get_books_by_isbns(self, isbns: list[str]) -> dict[str, BookModel]:
+        if not isbns:
+            return {}
+        result = await self.db.execute(
+            select(BookModel).where(BookModel.isbn.in_(isbns))
+        )
+        books = result.scalars().all()
+        return {b.isbn: b for b in books}
+
+    async def update_book_metadata(self, book_id: uuid.UUID, title: str | None, author: str | None, cover_url: str | None):
+        result = await self.db.execute(
+            select(BookModel).where(BookModel.id == book_id)
+        )
+        book = result.scalar_one_or_none()
+        if not book:
+            return
+        if title and title != book.title:
+            book.title = title
+        if author is not None and author != book.author:
+            book.author = author
+        if cover_url is not None and cover_url != book.cover_url:
+            book.cover_url = cover_url
+        await self.db.commit()
+
+    async def get_barcode_offsets_by_books(self, isbns: list[str]) -> dict[str, int]:
+        if not isbns:
+            return {}
+        result = await self.db.execute(
+            select(BookModel.isbn, func.max(BookCopyModel.barcode))
+            .join(BookCopyModel, BookCopyModel.book_id == BookModel.id)
+            .where(
+                and_(
+                    BookModel.isbn.in_(isbns),
+                    BookCopyModel.barcode.like("LIB-%"),
+                )
+            )
+            .group_by(BookModel.isbn)
+        )
+        rows = result.all()
+        offsets: dict[str, int] = {}
+        for isbn, max_barcode in rows:
+            if max_barcode:
+                parts = max_barcode.rsplit("-", 1)
+                if len(parts) == 2 and parts[1].isdigit():
+                    offsets[isbn] = int(parts[1])
+        return offsets
+
+    async def create_copies_batch_with_skip(self, book_id: uuid.UUID, barcodes: list[str], shelf_location: str | None = None) -> list[BookCopyModel]:
+        from sqlalchemy.dialects.postgresql import insert
+        from sqlalchemy import insert as sa_insert
+
+        inserted = []
+        for bc in barcodes:
+            try:
+                copy = BookCopyModel(
+                    book_id=book_id,
+                    barcode=bc,
+                    is_available=True,
+                    shelf_location=shelf_location,
+                )
+                self.db.add(copy)
+                await self.db.flush()
+                inserted.append(copy)
+            except Exception:
+                await self.db.rollback()
+                continue
+
+        try:
+            await self.db.commit()
+            for c in inserted:
+                await self.db.refresh(c)
+        except Exception:
+            await self.db.rollback()
+            inserted = []
+            stmt = sa_insert(BookCopyModel).values([
+                {"book_id": book_id, "barcode": bc, "is_available": True, "shelf_location": shelf_location}
+                for bc in barcodes
+            ]).on_conflict_do_nothing(index_elements=["barcode"])
+            await self.db.execute(stmt)
+            await self.db.commit()
+
+            result = await self.db.execute(
+                select(BookCopyModel).where(
+                    and_(
+                        BookCopyModel.book_id == book_id,
+                        BookCopyModel.barcode.in_(barcodes),
+                    )
+                )
+            )
+            inserted = list(result.scalars().all())
+
+        return inserted
+
+    async def create_copies_batch(self, book_id: uuid.UUID, barcodes: list[str], shelf_location: str | None = None) -> list[BookCopyModel]:
+        copies = [
+            BookCopyModel(
+                book_id=book_id,
+                barcode=bc,
+                is_available=True,
+                shelf_location=shelf_location,
+            )
+            for bc in barcodes
+        ]
+        self.db.add_all(copies)
+        await self.db.commit()
+        for c in copies:
+            await self.db.refresh(c)
+        return copies
+
+    async def get_available_copies_by_barcode_desc(self, book_id: uuid.UUID) -> list[BookCopyModel]:
+        result = await self.db.execute(
+            select(BookCopyModel).where(
+                and_(
+                    BookCopyModel.book_id == book_id,
+                    BookCopyModel.is_available == True,
+                )
+            ).order_by(BookCopyModel.barcode.desc())
+        )
+        return list(result.scalars().all())
+
+    async def delete_copies(self, copies: list[BookCopyModel]):
+        for c in copies:
+            await self.db.delete(c)
+        await self.db.commit()
+
+    async def get_max_barcode_number_for_book(self, book_id: uuid.UUID) -> int:
+        result = await self.db.execute(
+            select(func.max(BookCopyModel.barcode)).where(
+                and_(
+                    BookCopyModel.book_id == book_id,
+                    BookCopyModel.barcode.like("LIB-%"),
+                )
+            )
+        )
+        max_bc = result.scalar()
+        if max_bc:
+            parts = max_bc.rsplit("-", 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                return int(parts[1])
+        return 0

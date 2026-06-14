@@ -18,6 +18,7 @@ class BookModel(Base):
     title = Column(String(500), nullable=False)
     author = Column(String(255), nullable=True)
     cover_url = Column(Text, nullable=True)
+    is_available = Column(Boolean, default=True, nullable=False)
     shelf_location = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -53,3 +54,6 @@ class BorrowRecordModel(Base):
     status = Column(String(20), default="borrowed", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    book = relationship("BookModel", lazy="selectin")
+    copy = relationship("BookCopyModel", lazy="selectin")
