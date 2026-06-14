@@ -40,6 +40,10 @@ def _to_camel_case(obj: dict) -> dict:
     return {_snake_to_camel(k): v for k, v in obj.items()}
 
 
+def _required_date(value: object, fallback: str = "2099-12-31") -> object:
+    return value or fallback
+
+
 async def _proxy_to_user_service(method: str, path: str, body: dict | None = None) -> dict:
     async with httpx.AsyncClient(timeout=10.0) as client:
         headers = {}
@@ -77,7 +81,7 @@ async def _patron_to_public(user_data: dict, db: AsyncSession) -> PatronPublic:
         phone=user_data.get("phone"),
         card_number=user_data.get("cardNumber") or user_data.get("card_number", ""),
         issue_date=user_data.get("issueDate") or user_data.get("issue_date"),
-        membership_expiry=user_data.get("membershipExpiry") or user_data.get("membership_expiry", ""),
+        membership_expiry=_required_date(user_data.get("membershipExpiry") or user_data.get("membership_expiry")),
         status=user_data.get("status", "active"),
         current_status=user_data.get("currentStatus") or user_data.get("current_status", "outside"),
         created_at=user_data.get("createdAt") or user_data.get("created_at"),
