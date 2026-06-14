@@ -39,6 +39,12 @@ const faceLimiter = rateLimit({
 
 app.use(globalLimiter);
 
+const preserveOriginalPath = (_path: string, req: any) => req.originalUrl || req.url;
+const stripApiPrefixFromOriginalPath = (_path: string, req: any) => {
+  const originalPath = req.originalUrl || req.url;
+  return originalPath.replace(/^\/api/, '') || '/';
+};
+
 // ============================================================================
 // CLEAN PREFIX-BASED ROUTING
 // ============================================================================
@@ -62,62 +68,64 @@ app.use(globalLimiter);
 
 // ---- USER-SERVICE (Auth, Patron Auth, User Info) ----
 
+// Backward-compatible auth routes: /auth/login, /auth/register, /auth/refresh
+app.use('/auth', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: preserveOriginalPath,
+}));
+
+app.use('/api/auth/face-login', faceLimiter, createProxyMiddleware({
+  target: config.services.faceRecognitionApi,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,
+}));
+
 // Auth routes: /api/auth/login, /api/auth/register, /api/auth/refresh
-app.use('/api/auth/login', createProxyMiddleware({
+app.use('/api/auth', createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },  // /api/auth/login → /auth/login
-}));
-
-app.use('/api/auth/register', createProxyMiddleware({
-  target: config.services.userService,
-  changeOrigin: true,
-  pathRewrite: { '^/api': '' },
-}));
-
-app.use('/api/auth/refresh', createProxyMiddleware({
-  target: config.services.userService,
-  changeOrigin: true,
-  pathRewrite: { '^/api': '' },
+  pathRewrite: stripApiPrefixFromOriginalPath,  // /api/auth/login → /auth/login
 }));
 
 // Patron auth routes: login, register
 app.use('/api/patrons/login', createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },  // → /patrons/login
+  pathRewrite: stripApiPrefixFromOriginalPath,  // → /patrons/login
 }));
 
 app.use('/api/patrons/register', createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },  // → /patrons/register
+  pathRewrite: stripApiPrefixFromOriginalPath,  // → /patrons/register
 }));
 
 // Patron self-info routes: /patrons/me, /patrons/:id/password
 app.use('/api/patrons/me', createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },  // → /patrons/me
+  pathRewrite: stripApiPrefixFromOriginalPath,  // → /patrons/me
 }));
 
 app.use('/api/patrons/:id/password', createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },  // → /patrons/:id/password
+  pathRewrite: stripApiPrefixFromOriginalPath,  // → /patrons/:id/password
 }));
 
 // User self-info: /users/me
 app.use('/users/me', createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
+  pathRewrite: preserveOriginalPath,
 }));
 
 // ---- BORROW-SERVICE ----
 app.use('/api/borrow', createProxyMiddleware({
   target: config.services.borrowService,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },  // /api/borrow → /borrow
+  pathRewrite: stripApiPrefixFromOriginalPath,  // /api/borrow → /borrow
 }));
 
 // ---- FACE-RECOGNITION-SERVICE ----
@@ -126,77 +134,91 @@ app.use('/api/borrow', createProxyMiddleware({
 app.use('/api/auth/face-login', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },  // → /auth/face-login
+  pathRewrite: stripApiPrefixFromOriginalPath,  // → /auth/face-login
 }));
 
 // Face operations (with strict rate limit)
 app.use('/api/face', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },
+  pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
 // Kiosk operations (with strict rate limit)
 app.use('/api/kiosk', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },
+  pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
 // Camera operations (with strict rate limit)
 app.use('/api/camera', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },
+  pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
 // Async tasks (with strict rate limit)
 app.use('/api/tasks', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },
+  pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
 // Access logs
 app.use('/api/access', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },
+  pathRewrite: (path: string, req: any) => {
+    const originalPath = req.originalUrl || req.url;
+    const newPath = originalPath.replace(/^\/api/, '') || '/';
+    console.log(`  [proxy] /api/access: ${originalPath} -> ${newPath}`);
+    return newPath;
+  },
 }));
 
 // Patron CRUD + face enrollment (must be after specific routes above)
 app.use('/api/patrons', createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },
+  pathRewrite: (path: string, req: any) => {
+    const originalPath = req.originalUrl || req.url;
+    const newPath = originalPath.replace(/^\/api/, '') || '/';
+    console.log(`  [proxy] /api/patrons: ${originalPath} -> ${newPath}`);
+    return newPath;
+  },
 }));
 
 // Users admin routes (list/delete patrons with face status)
 app.use('/api/users', createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
-  pathRewrite: { '^/api': '' },
+  pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
 // Swagger docs
 app.use('/docs', createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
+  pathRewrite: preserveOriginalPath,
 }));
 
 app.use('/docs/*', createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
+  pathRewrite: preserveOriginalPath,
 }));
 
 app.use('/openapi.json', createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
+  pathRewrite: preserveOriginalPath,
 }));
 
 app.use('/redoc', createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
+  pathRewrite: preserveOriginalPath,
 }));
 
 // ============================================================================

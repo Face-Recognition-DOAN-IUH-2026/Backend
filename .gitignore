@@ -20,8 +20,7 @@ api-gateway/dist/
 
 # === Environment ===
 .env
-.env.local
-.env.*.local
+
 
 # Python
 __pycache__/
