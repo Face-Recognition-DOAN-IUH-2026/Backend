@@ -26,6 +26,9 @@ sys.modules['src.infra.database'] = mock_database_module
 sys.modules['src.infra.models'] = MagicMock()
 sys.modules['src.infra.repository'] = MagicMock()
 
+# DO NOT mock src.lib.http_client at module level;
+# circuit breaker tests import the real class directly.
+
 from jose import jwt
 from httpx import ASGITransport, AsyncClient
 
@@ -54,7 +57,7 @@ async def mock_user_service():
 @pytest_asyncio.fixture
 async def test_client(mock_user_service) -> AsyncGenerator[AsyncClient, None]:
     with mock_patch("src.api.routers.borrow._check_patron_inside", return_value=True):
-        with mock_patch("src.api.routers.borrow.httpx.AsyncClient", return_value=mock_user_service):
+        with mock_patch("src.api.routers.borrow.get_http_client", return_value=mock_user_service):
             from src.api.app import create_app
             app = create_app()
 

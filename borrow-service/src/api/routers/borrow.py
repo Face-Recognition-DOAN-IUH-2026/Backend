@@ -2,18 +2,24 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import uuid
 import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from openpyxl import load_workbook
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_current_user
 from src.infra.database import get_db_session
 from src.infra.models import BookModel, BookCopyModel
 from src.infra.repository import BorrowRepository
+from src.lib.http_client import (
+    get_http_client,
+    openlibrary_circuit,
+    user_service_circuit,
+)
 from src.lib.schemas import (
     BorrowRequest,
     BorrowResponse,
@@ -32,24 +38,35 @@ from src.lib.schemas import (
 )
 from src.config import settings
 
+logger = logging.getLogger("borrow-service.api")
+
 router = APIRouter(prefix="/borrow", tags=["borrow"])
 
 
 async def _check_patron_inside(user_id: str) -> bool:
+    can_req = await user_service_circuit.can_request()
+    if not can_req:
+        logger.warning("user-service circuit OPEN, defaulting inside=True for user=%s", user_id)
+        return True
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            headers = {}
-            if settings.internal_api_key:
-                headers["X-Internal-Api-Key"] = settings.internal_api_key
-            resp = await client.get(
-                f"{settings.user_service_url}/users/{user_id}",
-                headers=headers,
-            )
-            if resp.status_code != 200:
-                return False
-            data = resp.json()
-            return data.get("currentStatus") == "inside" or data.get("current_status") == "inside"
-    except Exception:
+        client = get_http_client()
+        resp = await client.get(
+            f"{settings.user_service_url}/users/{user_id}",
+            timeout=5.0,
+        )
+        if resp.status_code != 200:
+            return False
+        data = resp.json()
+        inside = data.get("currentStatus") == "inside" or data.get("current_status") == "inside"
+        await user_service_circuit.record_success()
+        return inside
+    except httpx.TimeoutException:
+        logger.warning("user-service timeout checking patron=%s", user_id)
+        await user_service_circuit.record_failure()
+        return False
+    except Exception as e:
+        logger.error("user-service error checking patron=%s: %s", user_id, e)
+        await user_service_circuit.record_failure()
         return False
 
 
@@ -64,24 +81,9 @@ async def _get_or_create_book_and_copy(repo: BorrowRepository, barcode: str, isb
         book = await repo.get_book_by_isbn(isbn)
 
     if not book:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            try:
-                resp = await client.get(
-                    f"https://openlibrary.org/api/books",
-                    params={"bibkeys": f"ISBN:{isbn}", "format": "json", "jscmd": "data"},
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    book_data = data.get(f"ISBN:{isbn}", {})
-                    title = book_data.get("title", f"ISBN {isbn}")
-                    authors = book_data.get("authors", [])
-                    author = authors[0]["name"] if authors else None
-                    cover = None
-                    if book_data.get("cover"):
-                        cover = book_data.get("cover", {}).get("medium") or book_data.get("cover", {}).get("small")
-                    book = await repo.create_book(isbn, title, author=author, cover_url=cover)
-            except Exception:
-                pass
+        meta = await _fetch_openlibrary(isbn)
+        if meta:
+            book = await repo.create_book(isbn, meta["title"], author=meta["author"], cover_url=meta["cover_url"])
 
     if not book:
         book = await repo.create_book(isbn or barcode, f"Barcode {barcode}")
@@ -278,23 +280,10 @@ async def get_book(
     repo = BorrowRepository(db)
     book = await repo.get_book_by_isbn(isbn.strip())
     if not book:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            try:
-                resp = await client.get(
-                    "https://openlibrary.org/api/books",
-                    params={"bibkeys": f"ISBN:{isbn}", "format": "json", "jscmd": "data"},
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    book_data = data.get(f"ISBN:{isbn}", {})
-                    title = book_data.get("title", f"ISBN {isbn}")
-                    authors = book_data.get("authors", [])
-                    author = authors[0]["name"] if authors else None
-                    cover = book_data.get("cover", {}).get("medium") if book_data.get("cover") else None
-                    book = await repo.create_book(isbn, title, author=author, cover_url=cover)
-                    return BookResponse.model_validate(book)
-            except Exception:
-                pass
+        meta = await _fetch_openlibrary(isbn)
+        if meta:
+            book = await repo.create_book(isbn, meta["title"], author=meta["author"], cover_url=meta["cover_url"])
+            return BookResponse.model_validate(book)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy sách")
     return BookResponse.model_validate(book)
 
@@ -312,17 +301,11 @@ async def list_books(
     _: dict = Depends(get_current_user),
 ):
     repo = BorrowRepository(db)
-    if search:
-        books = await repo.search_books(search, skip=skip, limit=limit)
-        total = await repo.count_books()
-    else:
-        books = await repo.get_all_books(skip=skip, limit=limit)
-        total = await repo.count_books()
+    books, total, stats_map = await repo.get_books_with_stats(skip=skip, limit=limit, search=search)
 
     items = []
     for b in books:
-        total_copies = await repo.count_total_copies(b.id)
-        available_copies = await repo.count_available_copies(b.id)
+        total_copies, available_copies = stats_map.get(b.id, (0, 0))
         items.append(
             BookWithStatsResponse(
                 id=b.id,
@@ -350,11 +333,10 @@ async def search_books(
     _: dict = Depends(get_current_user),
 ):
     repo = BorrowRepository(db)
-    books = await repo.search_books(q, skip=0, limit=20)
+    books, _total, stats_map = await repo.get_books_with_stats(skip=0, limit=20, search=q)
     items = []
     for b in books:
-        total_copies = await repo.count_total_copies(b.id)
-        available_copies = await repo.count_available_copies(b.id)
+        total_copies, available_copies = stats_map.get(b.id, (0, 0))
         items.append(
             BookWithStatsResponse(
                 id=b.id,
@@ -372,26 +354,40 @@ async def search_books(
 
 
 async def _fetch_openlibrary(isbn: str) -> dict | None:
+    can_req = await openlibrary_circuit.can_request()
+    if not can_req:
+        logger.warning("OpenLibrary circuit OPEN, skipping fetch for ISBN=%s", isbn)
+        return None
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                "https://openlibrary.org/api/books",
-                params={"bibkeys": f"ISBN:{isbn}", "format": "json", "jscmd": "data"},
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                book_data = data.get(f"ISBN:{isbn}", {})
-                if book_data:
-                    return {
-                        "title": book_data.get("title", f"ISBN {isbn}"),
-                        "author": book_data.get("authors", [{}])[0].get("name") if book_data.get("authors") else None,
-                        "cover_url": (
-                            book_data.get("cover", {}).get("medium")
-                            or book_data.get("cover", {}).get("small")
-                        ),
-                    }
-    except Exception:
-        pass
+        client = get_http_client()
+        resp = await client.get(
+            "https://openlibrary.org/api/books",
+            params={"bibkeys": f"ISBN:{isbn}", "format": "json", "jscmd": "data"},
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            book_data = data.get(f"ISBN:{isbn}", {})
+            if book_data:
+                await openlibrary_circuit.record_success()
+                return {
+                    "title": book_data.get("title", f"ISBN {isbn}"),
+                    "author": book_data.get("authors", [{}])[0].get("name") if book_data.get("authors") else None,
+                    "cover_url": (
+                        book_data.get("cover", {}).get("medium")
+                        or book_data.get("cover", {}).get("small")
+                    ),
+                }
+        await openlibrary_circuit.record_success()
+    except httpx.TimeoutException:
+        logger.warning("OpenLibrary timeout for ISBN=%s", isbn)
+        await openlibrary_circuit.record_failure()
+    except httpx.HTTPError as e:
+        logger.warning("OpenLibrary HTTP error for ISBN=%s: %s", isbn, e)
+        await openlibrary_circuit.record_failure()
+    except Exception as e:
+        logger.error("OpenLibrary unexpected error for ISBN=%s: %s", isbn, e)
+        await openlibrary_circuit.record_failure()
     return None
 
 
@@ -631,15 +627,13 @@ async def import_books(
 
     metadata_map: dict[str, dict | None] = {}
     if isbns_needed:
-        async def fetch_one(client: httpx.AsyncClient, isbn: str) -> tuple[str, dict | None]:
-            return isbn, await _fetch_openlibrary(isbn)
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            tasks = [fetch_one(client, isbn) for isbn in isbns_needed]
-            fetched = await asyncio.gather(*tasks, return_exceptions=True)
-            for item in fetched:
-                if isinstance(item, Exception):
-                    continue
-                isbn, meta = item
+        tasks = [_fetch_openlibrary(isbn) for isbn in isbns_needed]
+        fetched = await asyncio.gather(*tasks, return_exceptions=True)
+        for isbn, meta in zip(isbns_needed, fetched):
+            if isinstance(meta, Exception):
+                logger.warning("OpenLibrary fetch failed for ISBN=%s: %s", isbn, meta)
+                metadata_map[isbn] = None
+            else:
                 metadata_map[isbn] = meta
 
     barcode_offsets = await repo.get_barcode_offsets_by_books(list(existing_books.keys()))
@@ -651,104 +645,117 @@ async def import_books(
 
     new_books_map: dict[str, BookModel] = {}
 
-    for row in excel_rows:
-        isbn = row["isbn"]
-        quantity = row["quantity"]
-        line = row["line"]
+    # Wrap import in a savepoint for atomic rollback on critical failure
+    savepoint = await db.begin_nested()
+    try:
+        for row in excel_rows:
+            isbn = row["isbn"]
+            quantity = row["quantity"]
+            line = row["line"]
 
-        book = existing_books.get(isbn) or new_books_map.get(isbn)
-        is_new_book = False
-        no_metadata = False
+            book = existing_books.get(isbn) or new_books_map.get(isbn)
+            is_new_book = False
+            no_metadata = False
 
-        if not book:
-            meta = metadata_map.get(isbn)
-            if not meta:
-                no_metadata = True
-                try:
-                    book, _ = await repo.upsert_book(
-                        isbn=isbn,
-                        title=f"ISBN: {isbn}",
-                        author=None,
-                        cover_url=None,
-                    )
-                    is_new_book = True
-                    new_books_map[isbn] = book
-                    barcode_offsets[isbn] = 0
-                except Exception as e:
-                    errors += 1
-                    results.append(BookImportResultRow(
-                        isbn=isbn, title="", quantity=quantity, barcodes=[],
-                        status="error", message=f"Dòng {line}: Lỗi tạo sách: {str(e)}"
-                    ))
-                    continue
-            else:
-                try:
-                    book, _ = await repo.upsert_book(
-                        isbn=isbn,
-                        title=meta.get("title", f"ISBN {isbn}"),
-                        author=meta.get("author"),
-                        cover_url=meta.get("cover_url"),
-                    )
-                    is_new_book = True
-                    new_books_map[isbn] = book
-                    barcode_offsets[isbn] = 0
-                except Exception as e:
-                    errors += 1
-                    results.append(BookImportResultRow(
-                        isbn=isbn, title="", quantity=quantity, barcodes=[],
-                        status="error", message=f"Lỗi tạo sách: {str(e)}"
-                    ))
-                    continue
-        else:
-            meta = metadata_map.get(isbn)
-            if meta:
-                try:
-                    await repo.update_book_metadata(book.id, meta.get("title"), meta.get("author"), meta.get("cover_url"))
-                except Exception:
-                    pass
-
-        offset = barcode_offsets.get(isbn, 0)
-        barcodes = [f"LIB-{isbn}-{(offset + i + 1):03d}" for i in range(quantity)]
-        barcode_offsets[isbn] = offset + quantity
-
-        try:
-            new_copies = await repo.create_copies_batch_with_skip(book.id, barcodes, shelf_location=book.shelf_location)
-            actual_added = len(new_copies)
-            skipped_barcodes = quantity - actual_added
-
-            if is_new_book:
-                imported += 1
-                if no_metadata:
-                    status_str = "warning"
+            if not book:
+                meta = metadata_map.get(isbn)
+                if not meta:
+                    no_metadata = True
+                    try:
+                        book, _ = await repo.upsert_book(
+                            isbn=isbn,
+                            title=f"ISBN: {isbn}",
+                            author=None,
+                            cover_url=None,
+                        )
+                        is_new_book = True
+                        new_books_map[isbn] = book
+                        barcode_offsets[isbn] = 0
+                    except Exception as e:
+                        errors += 1
+                        results.append(BookImportResultRow(
+                            isbn=isbn, title="", quantity=quantity, barcodes=[],
+                            status="error", message=f"Dòng {line}: Lỗi tạo sách: {str(e)}"
+                        ))
+                        continue
                 else:
-                    status_str = "imported"
-            elif actual_added > 0:
-                imported += 1
-                status_str = "updated"
+                    try:
+                        book, _ = await repo.upsert_book(
+                            isbn=isbn,
+                            title=meta.get("title", f"ISBN {isbn}"),
+                            author=meta.get("author"),
+                            cover_url=meta.get("cover_url"),
+                        )
+                        is_new_book = True
+                        new_books_map[isbn] = book
+                        barcode_offsets[isbn] = 0
+                    except Exception as e:
+                        errors += 1
+                        results.append(BookImportResultRow(
+                            isbn=isbn, title="", quantity=quantity, barcodes=[],
+                            status="error", message=f"Lỗi tạo sách: {str(e)}"
+                        ))
+                        continue
             else:
-                skipped += 1
-                status_str = "skipped"
+                meta = metadata_map.get(isbn)
+                if meta:
+                    try:
+                        await repo.update_book_metadata(book.id, meta.get("title"), meta.get("author"), meta.get("cover_url"))
+                    except Exception:
+                        pass
 
-            msg = f"Thêm {actual_added} bản sao"
-            if skipped_barcodes > 0:
-                msg += f", {skipped_barcodes} trùng"
-            if no_metadata:
-                msg += " (không có metadata từ OpenLibrary)"
+            offset = barcode_offsets.get(isbn, 0)
+            barcodes = [f"LIB-{isbn}-{(offset + i + 1):03d}" for i in range(quantity)]
+            barcode_offsets[isbn] = offset + quantity
 
-            results.append(BookImportResultRow(
-                isbn=isbn,
-                title=book.title,
-                quantity=quantity,
-                barcodes=barcodes,
-                status=status_str,
-                message=msg,
-            ))
-        except Exception as e:
-            errors += 1
-            results.append(BookImportResultRow(
-                isbn=isbn, title=book.title, quantity=quantity, barcodes=barcodes,
-                status="error", message=f"Lỗi: {str(e)}"
-            ))
+            try:
+                new_copies = await repo.create_copies_batch_with_skip(book.id, barcodes, shelf_location=book.shelf_location)
+                actual_added = len(new_copies)
+                skipped_barcodes = quantity - actual_added
+
+                if is_new_book:
+                    imported += 1
+                    if no_metadata:
+                        status_str = "warning"
+                    else:
+                        status_str = "imported"
+                elif actual_added > 0:
+                    imported += 1
+                    status_str = "updated"
+                else:
+                    skipped += 1
+                    status_str = "skipped"
+
+                msg = f"Thêm {actual_added} bản sao"
+                if skipped_barcodes > 0:
+                    msg += f", {skipped_barcodes} trùng"
+                if no_metadata:
+                    msg += " (không có metadata từ OpenLibrary)"
+
+                results.append(BookImportResultRow(
+                    isbn=isbn,
+                    title=book.title,
+                    quantity=quantity,
+                    barcodes=barcodes,
+                    status=status_str,
+                    message=msg,
+                ))
+            except Exception as e:
+                errors += 1
+                results.append(BookImportResultRow(
+                    isbn=isbn, title=book.title, quantity=quantity, barcodes=barcodes,
+                    status="error", message=f"Lỗi: {str(e)}"
+                ))
+
+    except Exception:
+        await savepoint.rollback()
+        logger.error("Import failed, all changes rolled back")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Import thất bại, toàn bộ thay đổi đã được rollback",
+        )
+    else:
+        await savepoint.commit()
 
     return BookImportResponse(
         success=errors == 0,
