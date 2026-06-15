@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import queue
-import threading
 import urllib.parse
 import uuid as _uuid
 
@@ -34,10 +32,6 @@ logger = logging.getLogger(__name__)
 
 _milvus: MilvusClient | None = None
 _storage: MinioStorage | None = None
-_pg_pool: queue.LifoQueue[psycopg.Connection] | None = None
-_pg_pool_lock = threading.Lock()
-_PG_POOL_MIN = 5
-_PG_POOL_MAX = 20
 
 # =============================================================================
 # USER-SERVICE API CLIENT - HTTP calls instead of direct DB queries
@@ -83,27 +77,10 @@ def _get_user_via_api(user_id: str) -> dict | None:
 
 
 # =============================================================================
-# PG CONNECTION - pooled per worker process
+# PG CONNECTION - Create per-call, always close after use
 # =============================================================================
 def _get_pg_connection() -> psycopg.Connection:
-    """Get a PostgreSQL connection from the worker-local pool."""
-    global _pg_pool
-    if _pg_pool is None:
-        with _pg_pool_lock:
-            if _pg_pool is None:
-                _pg_pool = queue.LifoQueue(maxsize=_PG_POOL_MAX)
-                for _ in range(_PG_POOL_MIN):
-                    _pg_pool.put(_create_pg_connection())
-    try:
-        conn = _pg_pool.get_nowait()
-        if conn.closed:
-            return _create_pg_connection()
-        return conn
-    except queue.Empty:
-        return _create_pg_connection()
-
-
-def _create_pg_connection() -> psycopg.Connection:
+    """Create a fresh PostgreSQL connection (autocommit mode)."""
     parsed = urllib.parse.urlparse(settings.postgres_url)
     return psycopg.connect(
         host=parsed.hostname,
@@ -116,17 +93,10 @@ def _create_pg_connection() -> psycopg.Connection:
 
 
 def _close_pg_connection(conn: psycopg.Connection | None) -> None:
-    """Return PG connection to pool, or close it when the pool is unavailable."""
-    global _pg_pool
-    if conn is not None:
+    """Close PG connection safely."""
+    if conn is not None and not conn.closed:
         try:
-            if _pg_pool is not None and not conn.closed:
-                try:
-                    _pg_pool.put_nowait(conn)
-                except queue.Full:
-                    conn.close()
-            elif not conn.closed:
-                conn.close()
+            conn.close()
         except Exception:
             pass
 
@@ -377,7 +347,7 @@ def _rollback_enrolled_angles(patron_id: str, enrolled_angles: list[str]) -> Non
 
 @celery_app.task(bind=True, max_retries=0)
 def batch_enroll_task(self, user_id: str, object_keys: list[str] | None = None) -> dict:
-    """Enroll user with 4 angles, preserving successful angles on partial failure."""
+    """Enroll user with 4 angles. Atomic all-or-nothing: if any angle fails, rollback all."""
     angles = ["frontal", "right", "left", "down"]
     if not object_keys or len(object_keys) != len(angles):
         return {"status": "error", "error": "Expected 4 object_keys for frontal/right/left/down"}
@@ -432,37 +402,11 @@ def batch_enroll_task(self, user_id: str, object_keys: list[str] | None = None) 
                 pass
     errors = [r for r in results if r["status"] != "success"]
     if errors:
-        first_error = errors[0]
-        try:
-            from infra.redis_cache import redis_client as _rc
-            import json
-            _rc.setex(
-                f"enroll_partial:{patron_id}",
-                600,
-                json.dumps(
-                    {
-                        "saved_angles": enrolled_angles,
-                        "failed_angles": [r["angle"] for r in errors],
-                        "results": results,
-                    }
-                ),
-            )
-        except Exception as exc:
-            logger.warning("Failed to cache partial enrollment for %s: %s", patron_id, exc)
-        logger.warning(
-            "Batch enroll partial failure for %s. saved=%s failed=%s",
-            patron_id,
-            enrolled_angles,
-            [r["angle"] for r in errors],
-        )
-        return {
-            "status": "partial_failure",
-            "failed_angle": first_error.get("angle"),
-            "error": first_error.get("error", "ANGLE_FAILED"),
-            "saved_angles": enrolled_angles,
-            "message": f"Goc {first_error.get('angle')} that bai. Vui long chup lai dung goc.",
-            "results": results,
-        }
+        # Atomic rollback: delete all successfully enrolled angles
+        if enrolled_angles:
+            logger.warning("Batch enroll failed, rolling back %s enrolled angles: %s", len(enrolled_angles), enrolled_angles)
+            _rollback_enrolled_angles(patron_id, enrolled_angles)
+        return {"status": "error", "error": f"{len(errors)} angle(s) failed, all rolled back", "results": results}
     return {"status": "success", "results": results}
 
 

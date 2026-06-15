@@ -148,7 +148,6 @@ services:
       - ./.env
     environment:
       PORT: 80
-      REDIS_URL: redis://redis:6379/0
     depends_on:
       - face-recognition-api
       - user-service

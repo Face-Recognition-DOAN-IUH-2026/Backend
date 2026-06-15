@@ -159,10 +159,6 @@ class KioskResult(BaseModel):
     message: str
     patron: Optional[PatronPublic] = None
     job_id: Optional[str] = None
-    status: Optional[str] = None
-    failed_angle: Optional[str] = None
-    saved_angles: List[str] = Field(default_factory=list)
-    results: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 # ===== Access Schemas =====

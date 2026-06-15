@@ -16,9 +16,7 @@
     "express-rate-limit": "^8.5.2",
     "helmet": "^7.1.0",
     "http-proxy-middleware": "^3.0.0",
-    "morgan": "^1.10.0",
-    "rate-limit-redis": "^5.0.0",
-    "redis": "^6.0.0"
+    "morgan": "^1.10.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

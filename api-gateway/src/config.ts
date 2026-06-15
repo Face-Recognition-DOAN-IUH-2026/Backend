@@ -11,5 +11,4 @@ export const config = {
   },
   frontendUrl: process.env.FRONTEND_URL || 'http://host.docker.internal:3000',
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['*'],
-  redisUrl: process.env.REDIS_URL || 'redis://redis:6379/0',
 };

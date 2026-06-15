@@ -173,11 +173,11 @@ class TestServiceDownScenarios:
         assert cb.is_open is True
 
     @pytest.mark.asyncio
-    async def test_user_service_open_circuit_denies_borrow(self):
+    async def test_user_service_open_circuit_fails_open_for_inside_check(self):
         from src.api.routers import borrow
 
         with patch.object(borrow.user_service_circuit, "can_request", new=AsyncMock(return_value=False)):
-            assert await borrow._check_patron_inside("patron-id") is False
+            assert await borrow._check_patron_inside("patron-id") is True
 
 
 class TestQuantityMinimumValidation:

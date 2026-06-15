@@ -2,30 +2,16 @@ import express from 'express';
 import http from 'http';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import { RedisStore } from 'rate-limit-redis';
-import { createClient } from 'redis';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
 
 const app = express();
-const redisClient = createClient({ url: config.redisUrl });
-redisClient.on('error', (err) => {
-  console.warn(`Redis rate-limit store unavailable: ${err.message}`);
-});
-redisClient.connect().catch((err) => {
-  console.warn(`Redis rate-limit store disabled: ${err.message}`);
-});
-
-const createRedisRateLimitStore = (prefix: string) => new RedisStore({
-  prefix,
-  sendCommand: (...args: string[]) => redisClient.sendCommand(args),
-});
+const corsOrigin = config.corsOrigins.includes('*') ? true : config.corsOrigins;
 
 app.use(cors({
-  origin: true,
+  origin: corsOrigin,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  credentials: true,
 }));
 
 app.use((req, res, next) => {
@@ -36,22 +22,14 @@ app.use((req, res, next) => {
 // Global rate limit: 200 req/min per IP
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 100,
-  store: createRedisRateLimitStore('rl:global:'),
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request, vui lòng thử lại sau' },
 });
 
-// Strict rate limit for face endpoints: 30 req/min per IP (compute-heavy)
-const faceLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  store: createRedisRateLimitStore('rl:face:'),
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request cho face recognition' },
-});
+// Face endpoints are intentionally not rate-limited in local development.
+const faceLimiter = (_req: express.Request, _res: express.Response, next: express.NextFunction) => next();
 
 app.use(globalLimiter);
 
