@@ -24,6 +24,19 @@ app.use((req, res, next) => {
 const globalLimiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.max,
+  skip: (req) => {
+    if (config.nodeEnv === 'production') return false;
+    return [
+      '/auth/login',
+      '/auth/register',
+      '/auth/refresh',
+      '/api/auth/login',
+      '/api/auth/register',
+      '/api/auth/refresh',
+      '/api/patrons/login',
+      '/api/patrons/register',
+    ].some((path) => req.path === path);
+  },
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request, vui lòng thử lại sau' },
