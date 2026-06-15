@@ -50,24 +50,6 @@ export class PatronRepository extends UserRepository {
     });
   }
 
-  async deleteFacesByUserId(userId: string): Promise<void> {
-    await this.repo.manager
-      .createQueryBuilder()
-      .delete()
-      .from('patron_faces')
-      .where('patron_id = :userId', { userId })
-      .execute();
-  }
-
-  async deleteAccessLogsByUserId(userId: string): Promise<void> {
-    await this.repo.manager
-      .createQueryBuilder()
-      .delete()
-      .from('access_logs')
-      .where('patron_id = :userId', { userId })
-      .execute();
-  }
-
   async updateCurrentStatus(
     id: string,
     status: string,

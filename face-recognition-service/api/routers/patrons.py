@@ -62,6 +62,10 @@ async def _proxy_to_user_service(method: str, path: str, body: dict | None = Non
             raise HTTPException(status_code=502, detail="Invalid response from user service")
 
 
+async def _get_user_summary(user_id: uuid.UUID) -> dict:
+    return await _proxy_to_user_service("GET", f"/internal/users/{user_id}")
+
+
 async def _patron_to_public(user_data: dict, db: AsyncSession) -> PatronPublic:
     repo = PatronRepository(db)
     if "id" not in user_data:
@@ -126,7 +130,7 @@ async def search_patrons(
     _=Depends(get_current_user),
 ):
     result = await _proxy_to_user_service(
-        "GET", f"/patrons/search?q={q or ''}&status={status or ''}&skip={skip}&limit={limit}"
+        "GET", f"/internal/patrons/search?q={q or ''}&status={status or ''}&skip={skip}&limit={limit}"
     )
     items = result.get("items", result if isinstance(result, list) else [])
     augmented = []
@@ -150,7 +154,7 @@ async def lookup_patron(
     else:
         return {"exists": False, "patron": None, "has_face": False, "is_expired": False}
 
-    result = await _proxy_to_user_service("GET", f"/patrons/lookup?{'&'.join(f'{k}={v}' for k, v in params.items())}")
+    result = await _proxy_to_user_service("GET", f"/internal/patrons/lookup?{'&'.join(f'{k}={v}' for k, v in params.items())}")
     if result.get("exists"):
         result["patron"] = (await _patron_to_public(result["patron"], db)).model_dump()
         user_id = uuid.UUID(result["patron"]["id"])
@@ -164,7 +168,7 @@ async def get_patron(
     db: AsyncSession = Depends(get_db_session),
     _=Depends(get_current_user),
 ):
-    result = await _proxy_to_user_service("GET", f"/patrons/{patron_id}")
+    result = await _proxy_to_user_service("GET", f"/internal/patrons/{patron_id}")
     return await _patron_to_public(result, db)
 
 
@@ -178,7 +182,7 @@ async def create_patron(
     body_dict["membership_expiry"] = str(body_dict["membership_expiry"])
     if body_dict.get("issue_date"):
         body_dict["issue_date"] = str(body_dict["issue_date"])
-    result = await _proxy_to_user_service("POST", "/patrons", body_dict)
+    result = await _proxy_to_user_service("POST", "/internal/patrons", body_dict)
     return await _patron_to_public(result, db)
 
 
@@ -193,7 +197,7 @@ async def update_patron(
     if body_dict.get("membership_expiry"):
         body_dict["membership_expiry"] = str(body_dict["membership_expiry"])
     result = await _proxy_to_user_service(
-        "PUT", f"/patrons/{patron_id}", body_dict
+        "PUT", f"/internal/patrons/{patron_id}", body_dict
     )
     return await _patron_to_public(result, db)
 
@@ -203,7 +207,7 @@ async def delete_patron(
     patron_id: uuid.UUID,
     _=Depends(get_current_user),
 ):
-    return await _proxy_to_user_service("DELETE", f"/patrons/{patron_id}")
+    return await _proxy_to_user_service("DELETE", f"/internal/patrons/{patron_id}")
 
 
 @router.post("/{patron_id}/enroll-batch")
@@ -218,9 +222,7 @@ async def enroll_patron_face_batch(
     _=Depends(get_current_user),
 ):
     repo = PatronRepository(db)
-    user = await repo.get_by_id(patron_id)
-    if not user:
-        raise HTTPException(404, "Patron not found")
+    await _get_user_summary(patron_id)
 
     if not consent_given:
         raise HTTPException(400, "Consent not given")

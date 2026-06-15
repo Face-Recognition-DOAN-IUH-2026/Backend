@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./borrow-service/init.sql:/docker-entrypoint-initdb.d/02-borrowdb.sql:ro
+      - ./scripts/create-service-databases.sql:/docker-entrypoint-initdb.d/01-create-service-databases.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -72,6 +72,9 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env
+    environment:
+      POSTGRES_URL: postgresql+psycopg://postgres:postgres@postgres:5432/facedb
+      POSTGRES_DB: facedb
     volumes:
       - insightface_models:/root/.insightface/models
     depends_on:
@@ -103,6 +106,9 @@ services:
     command: ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=2", "--include=worker.tasks"]
     env_file:
       - ./.env
+    environment:
+      POSTGRES_URL: postgresql+psycopg://postgres:postgres@postgres:5432/facedb
+      POSTGRES_DB: facedb
     volumes:
       - insightface_models:/root/.insightface/models
     depends_on:
@@ -128,6 +134,7 @@ services:
     environment:
       PORT: 3001
       DB_HOST: postgres
+      DB_NAME: userdb
       REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:
@@ -148,10 +155,10 @@ services:
     environment:
       PORT: 3002
       DB_HOST: postgres
-      DB_NAME: face_recognition
+      DB_NAME: scheduledb
       DB_SCHEMA: schedule
       USER_SERVICE_URL: http://user-service:3001
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-change-me-in-production}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
     depends_on:
       postgres:
         condition: service_healthy
@@ -161,6 +168,38 @@ services:
       - face-network
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  access-service:
+    build:
+      context: access-service
+      dockerfile: Dockerfile
+    container_name: access-service
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      PORT: 3003
+      DB_HOST: postgres
+      DB_NAME: accessdb
+      DB_SCHEMA: access
+      USER_SERVICE_URL: http://user-service:3001
+      REDIS_URL: redis://redis:6379/0
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    networks:
+      - face-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -178,11 +217,13 @@ services:
     environment:
       PORT: 80
       SCHEDULE_SERVICE: http://schedule-service:3002
+      ACCESS_SERVICE: http://access-service:3003
     depends_on:
       - face-recognition-api
       - user-service
       - borrow-service
       - schedule-service
+      - access-service
     networks:
       - face-network
     restart: unless-stopped
@@ -198,17 +239,20 @@ services:
     environment:
       POSTGRES_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/borrowdb
       USER_SERVICE_URL: http://user-service:3001
+      ACCESS_SERVICE_URL: http://access-service:3003
       FACE_RECOGNITION_API: http://face-recognition-api:8000
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-borrow-internal-secret-key-change-in-production}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
     depends_on:
       postgres:
         condition: service_healthy
       user-service:
         condition: service_started
+      access-service:
+        condition: service_started
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3

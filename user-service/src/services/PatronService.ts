@@ -117,8 +117,6 @@ export class PatronService {
     const patron = await this.patronRepo.findById(id);
     if (!patron) throw new NotFoundError('Patron not found');
 
-    await this.patronRepo.deleteFacesByUserId(id);
-    await this.patronRepo.deleteAccessLogsByUserId(id);
     await this.patronRepo.delete(id);
     await this.redis.publishUserDeleted(id, patron.email);
 

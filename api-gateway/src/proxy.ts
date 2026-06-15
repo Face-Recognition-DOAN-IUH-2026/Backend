@@ -2,18 +2,12 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
 
 export const setupProxy = (app: any) => {
-  app.use((req: any, res: any, next: any) => {
-    console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl || req.url}`);
-    next();
-  });
-
   // Auth proxy - user-service handles email/password auth
   app.use('/auth', createProxyMiddleware({
     target: config.services.userService,
     changeOrigin: true,
     pathRewrite: (path: string, req: any) => {
       const originalPath = req.originalUrl || req.url;
-      console.log(`  Auth proxy: ${originalPath}`);
       return originalPath;
     },
   }));
@@ -25,7 +19,6 @@ export const setupProxy = (app: any) => {
     pathRewrite: (path: string, req: any) => {
       // Use originalUrl which has the full path before Express strips mount point
       const originalPath = req.originalUrl || req.url;
-      console.log(`  User proxy: ${originalPath}`);
       return originalPath;
     },
   }));
@@ -37,7 +30,6 @@ export const setupProxy = (app: any) => {
     pathRewrite: (path: string, req: any) => {
       const originalUrl = req.originalUrl || req.url;
       const newPath = '/borrow/' + (originalUrl.includes('?') ? '?' + originalUrl.split('?')[1] : '');
-      console.log(`  Borrow pathRewrite: originalUrl=${originalUrl}, newPath=${newPath}`);
       return newPath;
     },
   }));
@@ -50,7 +42,6 @@ export const setupProxy = (app: any) => {
       const originalPath = req.originalUrl || req.url;
       // Strip /api prefix and use the rest
       const newPath = originalPath.replace(/^\/api/, '') || '/';
-      console.log(`  Face API proxy: ${originalPath} -> ${newPath}`);
       return newPath;
     },
   }));

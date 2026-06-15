@@ -12,15 +12,6 @@ import {
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../errors';
 import { UserServiceClient } from '../clients/UserServiceClient';
 
-function toMinutes(time: string) {
-  const [hour, minute] = time.split(':').map((part) => parseInt(part, 10));
-  return hour * 60 + minute;
-}
-
-function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: string) {
-  return toMinutes(aStart) < toMinutes(bEnd) && toMinutes(bStart) < toMinutes(aEnd);
-}
-
 function localDate(value: Date) {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, '0');
@@ -182,7 +173,7 @@ export class ScheduleService {
 
   async createAssignment(actorId: string, body: Partial<StaffSchedule>) {
     await this.ensureScheduleTargets(body.staffId!, body.shiftId!, body.zoneId!);
-    await this.ensureNoOverlap(body.staffId!, body.shiftId!, body.workDate!);
+    await this.ensureNoDuplicateAssignment(body.staffId!, body.shiftId!, body.zoneId!, body.workDate!);
     await this.ensureNoApprovedLeave(body.staffId!, body.workDate!);
     const schedule = await this.schedules.save(this.schedules.create({
       staffId: body.staffId!,
@@ -202,7 +193,7 @@ export class ScheduleService {
     if (!schedule) throw new NotFoundError('Assignment not found');
     const next = { ...schedule, ...body };
     await this.ensureScheduleTargets(next.staffId, next.shiftId, next.zoneId);
-    await this.ensureNoOverlap(next.staffId, next.shiftId, next.workDate, id);
+    await this.ensureNoDuplicateAssignment(next.staffId, next.shiftId, next.zoneId, next.workDate, id);
     await this.ensureNoApprovedLeave(next.staffId, next.workDate);
     Object.assign(schedule, body);
     const saved = await this.schedules.save(schedule);
@@ -366,19 +357,18 @@ export class ScheduleService {
     return items.filter((item) => activeShiftIds.has(item.shiftId) && activeZoneIds.has(item.zoneId));
   }
 
-  private async ensureNoOverlap(staffId: string, shiftId: string, workDate: string, exceptId?: string) {
-    const nextShift = await this.requireShift(shiftId);
-    const where: any = { staffId, workDate, status: Not(In(['cancelled', 'completed'])) };
+  private async ensureNoDuplicateAssignment(staffId: string, shiftId: string, zoneId: string, workDate: string, exceptId?: string) {
+    const where: any = {
+      staffId,
+      shiftId,
+      zoneId,
+      workDate,
+      status: Not(In(['cancelled', 'completed'])),
+    };
     if (exceptId) where.id = Not(exceptId);
-    const existing = await this.schedules.find({ where });
-    const existingShifts = existing.length
-      ? await this.shifts.findBy({ id: In(existing.map((item) => item.shiftId)) })
-      : [];
-    for (const item of existing) {
-      const shift = existingShifts.find((candidate) => candidate.id === item.shiftId);
-      if (shift && overlaps(nextShift.startTime, nextShift.endTime, shift.startTime, shift.endTime)) {
-        throw new ConflictError('Staff already has an overlapping shift');
-      }
+    const existing = await this.schedules.findOne({ where });
+    if (existing) {
+      throw new ConflictError('Staff is already assigned to this shift and zone');
     }
   }
 

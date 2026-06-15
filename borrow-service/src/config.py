@@ -20,6 +20,11 @@ class Settings(BaseSettings):
         "http://user-service:3001"
     )
 
+    access_service_url: str = os.getenv(
+        "ACCESS_SERVICE_URL",
+        "http://access-service:3003"
+    )
+
     jwt_secret: str = os.getenv("JWT_ACCESS_SECRET", "change-me-in-production")
     jwt_issuer: str = os.getenv("JWT_ISSUER", "face-recognition")
     jwt_audience: str = os.getenv("JWT_AUDIENCE", "face-recognition-users")

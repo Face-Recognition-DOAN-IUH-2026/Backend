@@ -59,8 +59,6 @@ export class UserService {
     const user = await this.userRepo.findById(id);
     if (!user) throw new NotFoundError('User not found');
 
-    await this.patronRepo.deleteFacesByUserId(id);
-    await this.patronRepo.deleteAccessLogsByUserId(id);
     await this.userRepo.delete(id);
     await this.redis.publishUserDeleted(id, user.email);
 

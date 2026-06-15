@@ -17,6 +17,7 @@ from src.infra.database import get_db_session
 from src.infra.models import BookModel, BookCopyModel
 from src.infra.repository import BorrowRepository
 from src.lib.http_client import (
+    access_service_circuit,
     get_http_client,
     openlibrary_circuit,
     user_service_circuit,
@@ -59,29 +60,29 @@ def _require_role(current_user: dict, allowed_roles: set[str], detail: str) -> N
 
 
 async def _check_patron_inside(user_id: str) -> bool:
-    can_req = await user_service_circuit.can_request()
+    can_req = await access_service_circuit.can_request()
     if not can_req:
-        logger.warning("user-service circuit OPEN, fail-open inside check for user=%s", user_id)
-        return True
+        logger.warning("access-service circuit OPEN, cannot verify inside status for user=%s", user_id)
+        return False
     try:
         client = get_http_client()
         resp = await client.get(
-            f"{settings.user_service_url}/users/{user_id}",
+            f"{settings.access_service_url}/internal/access/patrons/{user_id}/status",
             timeout=5.0,
         )
         if resp.status_code != 200:
             return False
         data = resp.json()
         inside = data.get("currentStatus") == "inside" or data.get("current_status") == "inside"
-        await user_service_circuit.record_success()
+        await access_service_circuit.record_success()
         return inside
     except httpx.TimeoutException:
-        logger.warning("user-service timeout checking patron=%s", user_id)
-        await user_service_circuit.record_failure()
+        logger.warning("access-service timeout checking patron=%s", user_id)
+        await access_service_circuit.record_failure()
         return False
     except Exception as e:
-        logger.error("user-service error checking patron=%s: %s", user_id, e)
-        await user_service_circuit.record_failure()
+        logger.error("access-service error checking patron=%s: %s", user_id, e)
+        await access_service_circuit.record_failure()
         return False
 
 

@@ -37,6 +37,7 @@ _storage: MinioStorage | None = None
 # USER-SERVICE API CLIENT - HTTP calls instead of direct DB queries
 # =============================================================================
 _USER_SERVICE_URL = settings.user_service_url
+_ACCESS_SERVICE_URL = settings.access_service_url
 
 def _call_user_service(method: str, path: str, **kwargs) -> dict | None:
     try:
@@ -76,21 +77,24 @@ def _get_user_via_api(user_id: str) -> dict | None:
     return None
 
 
-def _update_user_access_status(user_id: str, current_status: str, camera_id: str | None = None) -> dict | None:
-    """Update user access state through user-service, which owns the users table."""
-    result = _call_user_service(
-        "PUT",
-        f"/users/{user_id}/access-status",
-        json={"current_status": current_status, "camera_id": camera_id},
-    )
-    if result:
-        try:
-            from infra.redis_cache import redis_client as _rc
-            import json
-            _rc.setex(f"user:{user_id}", 30, json.dumps(result))
-        except Exception:
-            pass
-    return result
+def _call_access_service(method: str, path: str, **kwargs) -> dict | None:
+    try:
+        headers = kwargs.pop("headers", {})
+        if settings.internal_api_key:
+            headers["x-internal-api-key"] = settings.internal_api_key
+        with httpx.Client(base_url=_ACCESS_SERVICE_URL, timeout=5.0) as client:
+            resp = client.request(method, path, headers=headers, **kwargs)
+            if resp.status_code < 300:
+                return resp.json()
+            logger.warning("access-service returned %s for %s %s", resp.status_code, method, path)
+        return None
+    except Exception as exc:
+        logger.warning("access-service call failed %s %s: %s", method, path, exc)
+        return None
+
+
+def _get_access_status(patron_id: str) -> dict | None:
+    return _call_access_service("GET", f"/internal/access/patrons/{patron_id}/status")
 
 
 # =============================================================================
@@ -800,19 +804,19 @@ def identify_patron(self, object_key: str) -> dict:
 
 def _is_patron_inside(patron_id: str) -> bool:
     """Check if patron currently has an active entry (inside library).
-    Reads current_status from user-service, which owns users.
+    Reads current status from access-service, which owns access state.
     Auto-expires after max_entry_hours to prevent stuck 'inside' status.
     """
     try:
-        user_data = _get_user_via_api(patron_id)
-        if not user_data:
+        access_data = _get_access_status(patron_id)
+        if not access_data:
             return False
 
-        current_status = user_data.get("current_status") or user_data.get("currentStatus")
+        current_status = access_data.get("current_status") or access_data.get("currentStatus")
         if current_status != "inside":
             return False
 
-        last_entry_raw = user_data.get("last_entry_at") or user_data.get("lastEntryAt")
+        last_entry_raw = access_data.get("last_entry_at") or access_data.get("lastEntryAt")
         if not last_entry_raw:
             return True
 
@@ -841,10 +845,17 @@ def _publish_camera_event(data: dict) -> None:
         else:
             throttle_key = f"cam_throttle:{camera_id}:{status_val}"
 
+        from datetime import datetime, timezone
+        data.setdefault("event_id", str(_uuid.uuid4()))
+        data.setdefault("event_type", "camera_event")
+        data.setdefault("occurred_at", datetime.now(timezone.utc).isoformat())
+        data.setdefault("source", "face-recognition-service")
+        if data.get("status") == "unknown":
+            data["status"] = "no_match"
+
         r = _get_redis_throttle()
         if r is None:
-            from infra.redis_pubsub import publish as _pub
-            _pub("camera:events", data)
+            _call_access_service("POST", "/internal/access/recognition-events", json=data)
             return
 
         try:
@@ -856,11 +867,10 @@ def _publish_camera_event(data: dict) -> None:
         finally:
             r.close()
 
-        from infra.redis_pubsub import publish as _pub
-        _pub("camera:events", data)
-        logger.info("Camera event published: status=%s, camera_id=%s", status_val, camera_id)
+        _call_access_service("POST", "/internal/access/recognition-events", json=data)
+        logger.debug("Camera event submitted: status=%s, camera_id=%s", status_val, camera_id)
     except Exception as e:
-        logger.error("Failed to publish camera event: %s - data=%s", e, data)
+        logger.error("Failed to submit camera event: %s", e)
 
 
 def _get_redis_throttle():
@@ -982,8 +992,9 @@ def _process_single_face(
         student_code = user_data.get("student_code") or user_data.get("studentCode") or ""
         membership_expiry_raw = user_data.get("membership_expiry") or user_data.get("membershipExpiry")
         status = user_data.get("status")
-        current_status = user_data.get("current_status") or user_data.get("currentStatus") or "outside"
-        last_entry_raw = user_data.get("last_entry_at") or user_data.get("lastEntryAt")
+        access_state = _get_access_status(patron_id) or {}
+        current_status = access_state.get("current_status") or access_state.get("currentStatus") or "outside"
+        last_entry_raw = access_state.get("last_entry_at") or access_state.get("lastEntryAt")
 
         membership_expiry = None
         if membership_expiry_raw:
@@ -1053,29 +1064,7 @@ def _process_single_face(
             return None
 
         # All checks passed — write access log, then update user status through user-service.
-        conn2 = None
-        try:
-            conn2 = _get_pg_connection()
-            cur2 = conn2.cursor()
-            log_id = str(_uuid.uuid4())
-            cur2.execute(
-                """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
-                (log_id, patron_id, access_type, "face", score, camera_id, "success"),
-            )
-            conn2.commit()
-            cur2.close()
-        finally:
-            _close_pg_connection(conn2)
-
-        next_status = "inside" if access_type == "entry" else "outside"
-        updated_user = _update_user_access_status(patron_id, next_status, camera_id)
-        if not updated_user:
-            logger.warning(
-                "Access %s was logged but user-service status update failed for %s",
-                access_type,
-                patron_id,
-            )
+        log_id = str(_uuid.uuid4())
 
         # Phase 4: Upload evidence to MinIO (lazy — only on grant)
         if raw_bytes:
@@ -1091,6 +1080,7 @@ def _process_single_face(
             "score": score,
             "access_type": access_type,
             "is_live": True,
+            "log_id": log_id,
             "bbox": bbox,
             "landmarks": landmarks,
         }
@@ -1233,30 +1223,6 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
         access_type = "exit" if _is_patron_inside(patron_id) else "entry"
 
         # Create access log
-        conn = None
-        try:
-            conn = _get_pg_connection()
-            cur = conn.cursor()
-            log_id = str(_uuid.uuid4())
-            cur.execute(
-                """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
-                (log_id, patron_id, access_type, "face", score, "kiosk", "success"),
-            )
-            conn.commit()
-            cur.close()
-        finally:
-            _close_pg_connection(conn)
-
-        next_status = "inside" if access_type == "entry" else "outside"
-        updated_user = _update_user_access_status(patron_id, next_status, "kiosk")
-        if not updated_user:
-            logger.warning(
-                "Kiosk access %s was logged but user-service status update failed for %s",
-                access_type,
-                patron_id,
-            )
-
         logger.info("Access %s: %s (%s) at kiosk", access_type, full_name, student_code)
         result = {
             "status": "granted",
