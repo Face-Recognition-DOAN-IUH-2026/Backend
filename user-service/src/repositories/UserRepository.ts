@@ -31,7 +31,8 @@ export class UserRepository {
   async findStaff(ids?: string[]): Promise<User[]> {
     return this.repo.find({
       where: {
-        role: 'staff',
+        role: In(['staff', 'admin']),
+        status: 'active',
         ...(ids?.length ? { id: In(ids) } : {}),
       },
       order: { fullName: 'ASC', email: 'ASC' },
