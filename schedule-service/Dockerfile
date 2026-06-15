@@ -13,4 +13,4 @@ RUN npm run build
 
 EXPOSE 3002
 
-CMD ["sh", "-c", "npx typeorm-ts-node-commonjs migration:run -d src/data-source.ts && node dist/index.js"]
+CMD ["sh", "-c", "TYPEORM_MIGRATION_RUN=true npx typeorm-ts-node-commonjs migration:run -d src/data-source.ts && node dist/index.js"]

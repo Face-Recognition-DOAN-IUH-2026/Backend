@@ -16,7 +16,6 @@ export const AppDataSource = new DataSource({
   database: config.db.database,
   username: config.db.user,
   password: config.db.password,
-  schema: config.db.schema,
   entities: [
     LibraryZone,
     StaffShift,
@@ -26,7 +25,7 @@ export const AppDataSource = new DataSource({
     StaffAttendance,
     ScheduleAuditLog,
   ],
-  migrations: ['migrations/*.ts'],
+  migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.ts'] : [],
   synchronize: false,
   logging: config.nodeEnv === 'development',
 });
