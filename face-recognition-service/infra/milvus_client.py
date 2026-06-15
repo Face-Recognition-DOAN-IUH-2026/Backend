@@ -11,7 +11,7 @@ from pymilvus.milvus_client.index import IndexParams
 logger = logging.getLogger(__name__)
 
 
-def _with_retry(fn, max_retries=3, base_delay=0.5):
+def _with_retry(fn, max_retries=4, base_delay=1.0):
     for attempt in range(max_retries):
         try:
             return fn()
