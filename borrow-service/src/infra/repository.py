@@ -167,6 +167,25 @@ class BorrowRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_borrow_record_by_id(self, record_id: uuid.UUID) -> Optional[BorrowRecordModel]:
+        result = await self.db.execute(
+            select(BorrowRecordModel).where(BorrowRecordModel.id == record_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_all_active_borrows(self) -> list[BorrowRecordModel]:
+        result = await self.db.execute(
+            select(BorrowRecordModel)
+            .where(
+                and_(
+                    BorrowRecordModel.status == "borrowed",
+                    BorrowRecordModel.return_at.is_(None),
+                )
+            )
+            .order_by(BorrowRecordModel.due_at.asc(), BorrowRecordModel.borrow_at.desc())
+        )
+        return list(result.scalars().all())
+
     async def get_active_borrow_count(self, patron_id: uuid.UUID) -> int:
         result = await self.db.execute(
             select(func.count(BorrowRecordModel.id)).where(

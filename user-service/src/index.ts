@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { config } from './config';
 import { AppDataSource } from './data-source';
-import { authRoutes, userRoutes, patronRoutes } from './routes';
+import { authRoutes, userRoutes, patronRoutes, internalRoutes } from './routes';
 import { errorHandler } from './middlewares';
 
 const app = express();
@@ -18,6 +18,7 @@ app.get('/health', (_req, res) => {
 app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
 app.use('/patrons', patronRoutes);
+app.use('/internal', internalRoutes);
 
 app.use(errorHandler);
 

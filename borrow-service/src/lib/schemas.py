@@ -76,6 +76,19 @@ class StaffPatronActiveBorrowsResponse(BaseModel):
     overdue_count: int
 
 
+class StaffActiveBorrowerSummary(BaseModel):
+    patron: StaffPatronSummary
+    total_borrowed: int
+    overdue_count: int
+    latest_borrow_at: datetime
+    nearest_due_at: datetime
+
+
+class StaffActiveBorrowersResponse(BaseModel):
+    items: list[StaffActiveBorrowerSummary]
+    total: int
+
+
 class BorrowResponse(BaseModel):
     status: str
     message: str

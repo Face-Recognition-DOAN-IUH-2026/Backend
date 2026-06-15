@@ -19,10 +19,24 @@ app.use((req, res, next) => {
   next();
 });
 
-// Global rate limit: 200 req/min per IP
+// Global rate limit per IP. In local/dev this is intentionally high because
+// dashboards, SSE reconnects, and camera pages can share one browser IP.
 const globalLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 200,
+  windowMs: config.rateLimit.windowMs,
+  max: config.rateLimit.max,
+  skip: (req) => {
+    if (config.nodeEnv === 'production') return false;
+    return [
+      '/auth/login',
+      '/auth/register',
+      '/auth/refresh',
+      '/api/auth/login',
+      '/api/auth/register',
+      '/api/auth/refresh',
+      '/api/patrons/login',
+      '/api/patrons/register',
+    ].some((path) => req.path === path);
+  },
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request, vui lòng thử lại sau' },
@@ -120,6 +134,12 @@ app.use('/api/borrow', createProxyMiddleware({
   target: config.services.borrowService,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,  // /api/borrow → /borrow
+}));
+
+app.use('/api/schedules', createProxyMiddleware({
+  target: config.services.scheduleService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
 // ---- FACE-RECOGNITION-SERVICE ----
@@ -229,6 +249,7 @@ app.get('/', (req, res) => {
       userService: config.services.userService,
       faceRecognitionApi: config.services.faceRecognitionApi,
       borrowService: config.services.borrowService,
+      scheduleService: config.services.scheduleService,
     },
   });
 });

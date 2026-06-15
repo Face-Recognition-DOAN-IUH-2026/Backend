@@ -73,6 +73,21 @@ class TestBorrowEndpointAuth:
         assert response.status_code in [401, 403]
 
     @pytest.mark.asyncio
+    async def test_staff_active_borrowers_requires_auth(self, test_client):
+        """GET /borrow/staff/active-borrowers requires authentication"""
+        response = await test_client.get("/borrow/staff/active-borrowers")
+        assert response.status_code in [401, 403]
+
+    @pytest.mark.asyncio
+    async def test_staff_active_borrowers_rejects_patron(self, test_client, auth_headers_patron):
+        """GET /borrow/staff/active-borrowers is staff/admin only"""
+        response = await test_client.get(
+            "/borrow/staff/active-borrowers",
+            headers=auth_headers_patron,
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
     async def test_staff_return_by_patron_requires_auth(self, test_client):
         """POST /borrow/staff-return/by-patron requires authentication"""
         response = await test_client.post(
@@ -80,6 +95,23 @@ class TestBorrowEndpointAuth:
             json={"student_code": "SV001", "barcode_or_isbn": "9780134685991"},
         )
         assert response.status_code in [401, 403]
+
+    @pytest.mark.asyncio
+    async def test_staff_return_by_record_requires_auth(self, test_client):
+        """POST /borrow/staff-return/record/{record_id} requires authentication"""
+        response = await test_client.post(
+            "/borrow/staff-return/record/11111111-1111-1111-1111-111111111111",
+        )
+        assert response.status_code in [401, 403]
+
+    @pytest.mark.asyncio
+    async def test_staff_return_by_record_rejects_patron(self, test_client, auth_headers_patron):
+        """POST /borrow/staff-return/record/{record_id} is staff/admin only"""
+        response = await test_client.post(
+            "/borrow/staff-return/record/11111111-1111-1111-1111-111111111111",
+            headers=auth_headers_patron,
+        )
+        assert response.status_code == 403
 
     @pytest.mark.asyncio
     async def test_list_books_requires_auth(self, test_client):

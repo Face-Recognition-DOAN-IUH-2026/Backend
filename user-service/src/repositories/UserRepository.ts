@@ -1,4 +1,4 @@
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { User } from '../entities/User.entity';
 
 export class UserRepository {
@@ -25,6 +25,17 @@ export class UserRepository {
       skip,
       take: limit,
       order: { createdAt: 'DESC' },
+    });
+  }
+
+  async findStaff(ids?: string[]): Promise<User[]> {
+    return this.repo.find({
+      where: {
+        role: In(['staff', 'admin']),
+        status: 'active',
+        ...(ids?.length ? { id: In(ids) } : {}),
+      },
+      order: { fullName: 'ASC', email: 'ASC' },
     });
   }
 

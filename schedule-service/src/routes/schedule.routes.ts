@@ -1,0 +1,185 @@
+import { Router, Response, NextFunction } from 'express';
+import { z } from 'zod';
+import { scheduleService } from '../services/ScheduleService';
+import { AuthRequest, auth } from '../middlewares/auth';
+import { requireRole } from '../middlewares/requireRole';
+
+const router = Router();
+
+const asyncHandler = (
+  fn: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>,
+) => (req: AuthRequest, res: Response, next: NextFunction) => {
+  fn(req, res, next).catch(next);
+};
+
+const idParam = z.object({ id: z.string().uuid() });
+const zoneSchema = z.object({
+  floor: z.number().int(),
+  zoneName: z.string().min(1),
+  description: z.string().nullable().optional(),
+  isActive: z.boolean().optional(),
+});
+const shiftSchema = z.object({
+  name: z.string().min(1),
+  startTime: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
+  endTime: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
+  minStaff: z.number().int().min(1).optional(),
+  isActive: z.boolean().optional(),
+});
+const templateSchema = z.object({
+  name: z.string().min(1),
+  dayOfWeek: z.number().int().min(0).max(6),
+  shiftId: z.string().uuid(),
+  zoneId: z.string().uuid(),
+  staffId: z.string().uuid(),
+  isActive: z.boolean().optional(),
+});
+const assignmentSchema = z.object({
+  staffId: z.string().uuid(),
+  shiftId: z.string().uuid(),
+  zoneId: z.string().uuid(),
+  workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  note: z.string().nullable().optional(),
+  status: z.string().optional(),
+});
+const assignmentPatchSchema = assignmentSchema.partial();
+const availabilitySchema = z.object({
+  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  type: z.string().optional(),
+  reason: z.string().nullable().optional(),
+});
+const rangeSchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+router.get('/health', asyncHandler(async (_req, res) => {
+  res.json(await scheduleService.health());
+}));
+
+router.get('/staff-options', requireRole('admin'), asyncHandler(async (req, res) => {
+  const ids = typeof req.query.ids === 'string'
+    ? req.query.ids.split(',').map((id) => id.trim()).filter(Boolean)
+    : undefined;
+  res.json(await scheduleService.listStaff(ids));
+}));
+
+router.get('/zones', requireRole('admin', 'staff'), asyncHandler(async (_req, res) => {
+  res.json(await scheduleService.listZones());
+}));
+router.post('/zones', requireRole('admin'), asyncHandler(async (req, res) => {
+  const body = zoneSchema.parse(req.body);
+  res.status(201).json(await scheduleService.createZone(req.user!.userId, body));
+}));
+router.put('/zones/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.updateZone(req.user!.userId, id, zoneSchema.partial().parse(req.body)));
+}));
+router.delete('/zones/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.deleteZone(req.user!.userId, id));
+}));
+
+router.get('/shifts', requireRole('admin', 'staff'), asyncHandler(async (_req, res) => {
+  res.json(await scheduleService.listShifts());
+}));
+router.post('/shifts', requireRole('admin'), asyncHandler(async (req, res) => {
+  res.status(201).json(await scheduleService.createShift(req.user!.userId, shiftSchema.parse(req.body)));
+}));
+router.put('/shifts/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.updateShift(req.user!.userId, id, shiftSchema.partial().parse(req.body)));
+}));
+router.delete('/shifts/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.deleteShift(req.user!.userId, id));
+}));
+
+router.get('/templates', requireRole('admin'), asyncHandler(async (_req, res) => {
+  res.json(await scheduleService.listTemplates());
+}));
+router.post('/templates', requireRole('admin'), asyncHandler(async (req, res) => {
+  res.status(201).json(await scheduleService.createTemplate(req.user!.userId, templateSchema.parse(req.body)));
+}));
+router.put('/templates/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.updateTemplate(req.user!.userId, id, templateSchema.partial().parse(req.body)));
+}));
+router.delete('/templates/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.deleteTemplate(req.user!.userId, id));
+}));
+router.post('/generate-from-template', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { from, to } = rangeSchema.parse(req.body);
+  res.json(await scheduleService.generateFromTemplate(req.user!.userId, from, to));
+}));
+
+router.get('/assignments', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
+  res.json(await scheduleService.listAssignments({
+    from: req.query.from as string | undefined,
+    to: req.query.to as string | undefined,
+    staffId: req.query.staff_id as string | undefined,
+    zoneId: req.query.zone_id as string | undefined,
+    status: req.query.status as string | undefined,
+  }));
+}));
+router.post('/assignments', requireRole('admin'), asyncHandler(async (req, res) => {
+  res.status(201).json(await scheduleService.createAssignment(req.user!.userId, assignmentSchema.parse(req.body)));
+}));
+router.put('/assignments/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.updateAssignment(req.user!.userId, id, assignmentPatchSchema.parse(req.body)));
+}));
+router.post('/assignments/:id/move', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.moveAssignment(req.user!.userId, id, assignmentPatchSchema.parse(req.body)));
+}));
+router.delete('/assignments/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.deleteAssignment(req.user!.userId, id));
+}));
+
+router.get('/availability', requireRole('admin'), asyncHandler(async (req, res) => {
+  res.json(await scheduleService.listAvailability({
+    staffId: req.query.staff_id as string | undefined,
+    status: req.query.status as string | undefined,
+  }));
+}));
+router.post('/availability/:id/approve', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.reviewAvailability(req.user!.userId, id, 'approved'));
+}));
+router.post('/availability/:id/reject', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.reviewAvailability(req.user!.userId, id, 'rejected'));
+}));
+
+router.get('/me', auth, asyncHandler(async (req, res) => {
+  res.json(await scheduleService.listMine(req.user!.userId, req.query.from as string | undefined, req.query.to as string | undefined));
+}));
+router.get('/me/availability', auth, asyncHandler(async (req, res) => {
+  res.json(await scheduleService.listAvailability({ staffId: req.user!.userId }));
+}));
+router.post('/me/availability', auth, asyncHandler(async (req, res) => {
+  res.status(201).json(await scheduleService.createAvailability(req.user!.userId, availabilitySchema.parse(req.body)));
+}));
+
+router.post('/assignments/:id/confirm', auth, asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.confirmAssignment(req.user!.userId, id));
+}));
+router.post('/assignments/:id/check-in', auth, asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.checkIn(req.user!.userId, id, req.body?.method || 'web'));
+}));
+router.post('/assignments/:id/check-out', auth, asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.checkOut(req.user!.userId, id));
+}));
+
+router.get('/audit-logs', requireRole('admin'), asyncHandler(async (_req, res) => {
+  res.json(await scheduleService.auditLogs());
+}));
+
+export default router;

@@ -18,6 +18,8 @@ from infra.sse_manager import sse_manager
 
 router = APIRouter(prefix="/access", tags=["access"])
 
+ACTIVE_CAMERA_IDS = ["entry_gate", "exit_gate", "kiosk"]
+
 
 @router.get("/events")
 async def sse_events():
@@ -144,7 +146,7 @@ async def get_active(
     _=Depends(get_current_user),
 ):
     repo = PatronRepository(db)
-    users = await repo.get_active_users()
+    users = await repo.get_active_users(camera_ids=ACTIVE_CAMERA_IDS)
     face_map = {}
     if users:
         pids = [u.id for u in users]
@@ -194,7 +196,7 @@ async def get_stats(
     repo = PatronRepository(db)
     return StatsResponse(
         total_patrons=await repo.count_active(),
-        active_patrons=await repo.count_active_inside(),
+        active_patrons=await repo.count_active_inside(camera_ids=ACTIVE_CAMERA_IDS),
         today_entries=await repo.count_today_access("entry"),
         today_exits=await repo.count_today_access("exit"),
     )
