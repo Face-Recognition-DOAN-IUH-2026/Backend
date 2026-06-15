@@ -170,9 +170,14 @@ export class ScheduleService {
     if (filters.from && filters.to) where.workDate = Between(filters.from, filters.to);
     if (filters.staffId) where.staffId = filters.staffId;
     if (filters.zoneId) where.zoneId = filters.zoneId;
-    if (filters.status) where.status = filters.status;
+    if (filters.status) {
+      where.status = filters.status;
+    } else {
+      where.status = Not(In(['cancelled']));
+    }
     const items = await this.schedules.find({ where, order: { workDate: 'ASC', createdAt: 'ASC' } });
-    return this.enrichAssignments(items);
+    const activeItems = filters.status ? items : await this.filterActiveScheduleTargets(items);
+    return this.enrichAssignments(activeItems);
   }
 
   async createAssignment(actorId: string, body: Partial<StaffSchedule>) {
@@ -346,6 +351,19 @@ export class ScheduleService {
     const shift = await this.shifts.findOneBy({ id: shiftId, isActive: true });
     if (!shift) throw new NotFoundError('Shift not found');
     return shift;
+  }
+
+  private async filterActiveScheduleTargets(items: StaffSchedule[]) {
+    if (!items.length) return items;
+    const shiftIds = [...new Set(items.map((item) => item.shiftId))];
+    const zoneIds = [...new Set(items.map((item) => item.zoneId))];
+    const [activeShifts, activeZones] = await Promise.all([
+      this.shifts.findBy({ id: In(shiftIds), isActive: true }),
+      this.zones.findBy({ id: In(zoneIds), isActive: true }),
+    ]);
+    const activeShiftIds = new Set(activeShifts.map((item) => item.id));
+    const activeZoneIds = new Set(activeZones.map((item) => item.id));
+    return items.filter((item) => activeShiftIds.has(item.shiftId) && activeZoneIds.has(item.zoneId));
   }
 
   private async ensureNoOverlap(staffId: string, shiftId: string, workDate: string, exceptId?: string) {
