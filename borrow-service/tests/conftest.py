@@ -18,7 +18,13 @@ mock_database_module = MagicMock()
 mock_database_module.engine = mock_engine
 mock_database_module.async_session_factory = mock_async_session_factory
 mock_database_module.Base = MagicMock()
-mock_database_module.get_db_session = MagicMock()
+
+
+async def mock_get_db_session():
+    yield MagicMock()
+
+
+mock_database_module.get_db_session = mock_get_db_session
 mock_database_module.init_db = MagicMock()
 mock_database_module.close_db = MagicMock()
 
@@ -62,7 +68,7 @@ async def test_client(mock_user_service) -> AsyncGenerator[AsyncClient, None]:
             app = create_app()
 
             async with AsyncClient(
-                transport=ASGITransport(app=app),
+                transport=ASGITransport(app=app, raise_app_exceptions=False),
                 base_url="http://test"
             ) as client:
                 yield client

@@ -230,13 +230,16 @@ class PatronRepository:
         )
         return result.scalar_one_or_none() == "inside"
 
-    async def get_active_users(self) -> List[UserModel]:
+    async def get_active_users(self, camera_ids: list[str] | None = None) -> List[UserModel]:
+        filters = [
+            UserModel.current_status == "inside",
+            UserModel.status == "active",
+            UserModel.role == "patron",
+        ]
+        if camera_ids:
+            filters.append(UserModel.last_entry_camera.in_(camera_ids))
         result = await self.db.execute(
-            select(UserModel).where(
-                UserModel.current_status == "inside",
-                UserModel.status == "active",
-                UserModel.role == "patron",
-            )
+            select(UserModel).where(*filters)
         )
         return list(result.scalars().all())
 
@@ -249,13 +252,16 @@ class PatronRepository:
         )
         return result.scalar() or 0
 
-    async def count_active_inside(self) -> int:
+    async def count_active_inside(self, camera_ids: list[str] | None = None) -> int:
+        filters = [
+            UserModel.current_status == "inside",
+            UserModel.status == "active",
+            UserModel.role == "patron",
+        ]
+        if camera_ids:
+            filters.append(UserModel.last_entry_camera.in_(camera_ids))
         result = await self.db.execute(
-            select(func.count(UserModel.id)).where(
-                UserModel.current_status == "inside",
-                UserModel.status == "active",
-                UserModel.role == "patron",
-            )
+            select(func.count(UserModel.id)).where(*filters)
         )
         return result.scalar() or 0
 

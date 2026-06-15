@@ -35,6 +35,8 @@ from src.lib.schemas import (
     StaffReturnRequest,
     StaffReturnByPatronRequest,
     StaffPatronActiveBorrowsResponse,
+    StaffActiveBorrowerSummary,
+    StaffActiveBorrowersResponse,
     StaffPatronSummary,
     ReturnResponse,
     ErrorResponse,
@@ -132,6 +134,36 @@ async def _lookup_patron_by_student_code(student_code: str) -> dict:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Khong the tra cuu doc gia")
 
 
+async def _lookup_patron_by_id(patron_id: uuid.UUID) -> dict | None:
+    can_req = await user_service_circuit.can_request()
+    if not can_req:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="user-service is temporarily unavailable")
+
+    try:
+        client = get_http_client()
+        resp = await client.get(
+            f"{settings.user_service_url}/users/{patron_id}",
+            timeout=5.0,
+        )
+        if resp.status_code >= 500:
+            await user_service_circuit.record_failure()
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Cannot lookup patron right now")
+        if resp.status_code != 200:
+            return None
+
+        await user_service_circuit.record_success()
+        return resp.json()
+    except HTTPException:
+        raise
+    except httpx.TimeoutException:
+        await user_service_circuit.record_failure()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Timeout khi tra cuu doc gia")
+    except Exception as e:
+        logger.error("user-service error looking up patron_id=%s: %s", patron_id, e)
+        await user_service_circuit.record_failure()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Khong the tra cuu doc gia")
+
+
 def _build_patron_summary(patron: dict) -> StaffPatronSummary:
     patron_id = _patron_field(patron, "id", "id")
     student_code = _patron_field(patron, "student_code", "studentCode")
@@ -188,7 +220,7 @@ async def borrow_book(
     _require_role(
         current_user,
         {"patron"},
-        "Chỉ độc giả mới có thể tự mượn sách trên ứng dụng",
+        "Chi doc gia moi co the tu muon sach tren ung dung",
     )
     user_id = current_user["id"]
     barcode = body.barcode.strip()
@@ -198,23 +230,12 @@ async def borrow_book(
     if not is_inside:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Bạn phải có mặt trong thư viện để mượn sách. Vui lòng quét thẻ tại cửa vào.",
+            detail="Ban phai co mat trong thu vien de muon sach. Vui long quet the tai cua vao.",
         )
 
     repo = BorrowRepository(db)
 
-    copy = await repo.get_copy_by_barcode(barcode)
-
-    if copy:
-        book = await repo.get_book_by_id(copy.book_id)
-        if not book:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy sách")
-        if not copy.is_available:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Bản sao này hiện đang được mượn",
-            )
-    elif body.isbn or (barcode.isdigit() and len(barcode) in (10, 13)):
+    if body.isbn or (barcode.isdigit() and len(barcode) in (10, 13)):
         lookup_isbn = body.isbn or barcode
         book = await repo.get_book_by_isbn(lookup_isbn)
         if not book:
@@ -222,13 +243,25 @@ async def borrow_book(
         else:
             copy = await repo.get_available_copy(book.id)
             if not copy:
-                copy = await repo.create_copy(book.id, barcode, shelf_location=book.shelf_location)
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Sach nay hien da het ban co the muon",
+                )
     else:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Không tìm thấy bản sao nào với mã vạch {barcode}",
-        )
-
+        copy = await repo.get_copy_by_barcode(barcode)
+        if not copy:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Khong tim thay ban sao nao voi ma vach {barcode}",
+            )
+        book = await repo.get_book_by_id(copy.book_id)
+        if not book:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay sach")
+        if not copy.is_available:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ban sao nay hien dang duoc muon",
+            )
     existing = await repo.get_active_borrow(patron_uuid, book.id)
     if existing:
         raise HTTPException(
@@ -286,6 +319,59 @@ async def lookup_by_barcode(
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bản sao này hiện không được mượn")
     return BorrowRecordResponse.model_validate(record)
+
+
+@router.get(
+    "/staff/active-borrowers",
+    response_model=StaffActiveBorrowersResponse,
+    responses={
+        403: {"model": ErrorResponse, "description": "Staff role required"},
+        401: {"model": ErrorResponse, "description": "Unauthorized"},
+    },
+)
+async def staff_get_active_borrowers(
+    db: AsyncSession = Depends(get_db_session),
+    current_user: dict = Depends(get_current_user),
+):
+    _require_role(
+        current_user,
+        {"admin", "staff"},
+        "Chi quan tri vien hoac nhan vien thu vien moi co the xem danh sach doc gia dang muon",
+    )
+
+    repo = BorrowRepository(db)
+    records = await repo.get_all_active_borrows()
+    grouped: dict[uuid.UUID, list] = {}
+    for record in records:
+        grouped.setdefault(record.patron_id, []).append(record)
+
+    now = datetime.utcnow()
+    items: list[StaffActiveBorrowerSummary] = []
+    for patron_id, patron_records in grouped.items():
+        patron = await _lookup_patron_by_id(patron_id)
+        if patron:
+            patron_summary = _build_patron_summary(patron)
+        else:
+            patron_summary = StaffPatronSummary(
+                id=patron_id,
+                full_name=None,
+                student_code=str(patron_id),
+                email=None,
+                card_number=None,
+                current_status=None,
+            )
+        items.append(
+            StaffActiveBorrowerSummary(
+                patron=patron_summary,
+                total_borrowed=len(patron_records),
+                overdue_count=sum(1 for record in patron_records if record.due_at < now),
+                latest_borrow_at=max(record.borrow_at for record in patron_records),
+                nearest_due_at=min(record.due_at for record in patron_records),
+            )
+        )
+
+    items.sort(key=lambda item: (-item.overdue_count, item.nearest_due_at, item.patron.student_code))
+    return StaffActiveBorrowersResponse(items=items, total=len(items))
 
 
 @router.get(
@@ -439,6 +525,52 @@ async def staff_return_book_by_patron(
         returned_by_user_id=_current_user_uuid(current_user),
         returned_by_email=current_user.get("email"),
         return_method="staff_mobile",
+    )
+    if copy:
+        await repo.mark_copy_available(copy)
+
+    return ReturnResponse(
+        status="success",
+        message="Tra sach thanh cong",
+        record=BorrowRecordResponse.model_validate(record),
+    )
+
+
+@router.post(
+    "/staff-return/record/{record_id}",
+    response_model=ReturnResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Bad request"},
+        403: {"model": ErrorResponse, "description": "Staff role required"},
+        404: {"model": ErrorResponse, "description": "Borrow record not found"},
+        409: {"model": ErrorResponse, "description": "Borrow record is not active"},
+        401: {"model": ErrorResponse, "description": "Unauthorized"},
+    },
+)
+async def staff_return_book_by_record(
+    record_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: dict = Depends(get_current_user),
+):
+    _require_role(
+        current_user,
+        {"admin", "staff"},
+        "Chi quan tri vien hoac nhan vien thu vien moi co the tra sach",
+    )
+
+    repo = BorrowRepository(db)
+    record = await repo.get_borrow_record_by_id(record_id)
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay phieu muon")
+    if record.status != "borrowed" or record.return_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Phieu muon nay da duoc tra hoac khong con hieu luc")
+
+    copy = await repo.get_copy_by_id(record.copy_id) if record.copy_id else None
+    await repo.return_book(
+        record,
+        returned_by_user_id=_current_user_uuid(current_user),
+        returned_by_email=current_user.get("email"),
+        return_method="staff_web",
     )
     if copy:
         await repo.mark_copy_available(copy)
