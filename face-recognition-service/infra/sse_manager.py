@@ -13,7 +13,7 @@ class SSEEvent(BaseModel):
 
 
 class SSEManager:
-    def __init__(self, queue_max: int = 100, keepalive_seconds: float = 30.0):
+    def __init__(self, queue_max: int = 100, keepalive_seconds: float = 15.0):
         self._clients: Set[asyncio.Queue] = set()
         self._queue_max = queue_max
         self._keepalive_seconds = keepalive_seconds
@@ -52,7 +52,7 @@ class SSEManager:
         try:
             while True:
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
                     yield f"event: {event.event}\ndata: {json.dumps(event.data, default=str)}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
