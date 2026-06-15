@@ -20,6 +20,8 @@ coverage/
 node_modules/
 api-gateway/dist/
 user-service/dist/
+access-service/dist/
+schedule-service/dist/
 *.tsbuildinfo
 
 # === Environment ===
@@ -62,6 +64,7 @@ Thumbs.db
 *.swo
 
 # === Generated / Agent files ===
+repomix-output.xml
 repomix-output.xml/
 SkillAgent/
 CLAUDE.md

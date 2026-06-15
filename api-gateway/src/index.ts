@@ -14,11 +14,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
 }));
 
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
-  next();
-});
-
 // Global rate limit per IP. In local/dev this is intentionally high because
 // dashboards, SSE reconnects, and camera pages can share one browser IP.
 const globalLimiter = rateLimit({
@@ -67,7 +62,7 @@ const stripApiPrefixFromOriginalPath = (_path: string, req: any) => {
 //   /api/face/*         → face-recognition-service
 //   /api/kiosk/*        → face-recognition-service
 //   /api/camera/*       → face-recognition-service
-//   /api/access/*       → face-recognition-service
+//   /api/access/*       → access-service
 //   /api/tasks/*        → face-recognition-service
 //   /api/users/*        → face-recognition-service (admin: list/delete patrons)
 //   /api/patrons/*      → face-recognition-service (CRUD + face enrollment)
@@ -174,30 +169,23 @@ app.use('/api/tasks', faceLimiter, createProxyMiddleware({
   pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
-// Access logs
-app.use('/api/access', faceLimiter, createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
+// Access logs and realtime stream
+const accessProxy = createProxyMiddleware({
+  target: config.services.accessService,
   changeOrigin: true,
+  ws: true,
   timeout: 0,
   proxyTimeout: 0,
-  pathRewrite: (path: string, req: any) => {
-    const originalPath = req.originalUrl || req.url;
-    const newPath = originalPath.replace(/^\/api/, '') || '/';
-    console.log(`  [proxy] /api/access: ${originalPath} -> ${newPath}`);
-    return newPath;
-  },
-}));
+  pathRewrite: stripApiPrefixFromOriginalPath,
+});
+
+app.use('/api/access', faceLimiter, accessProxy);
 
 // Patron CRUD + face enrollment (must be after specific routes above)
 app.use('/api/patrons', createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
-  pathRewrite: (path: string, req: any) => {
-    const originalPath = req.originalUrl || req.url;
-    const newPath = originalPath.replace(/^\/api/, '') || '/';
-    console.log(`  [proxy] /api/patrons: ${originalPath} -> ${newPath}`);
-    return newPath;
-  },
+  pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
 // Users admin routes (list/delete patrons with face status)
@@ -250,6 +238,7 @@ app.get('/', (req, res) => {
       faceRecognitionApi: config.services.faceRecognitionApi,
       borrowService: config.services.borrowService,
       scheduleService: config.services.scheduleService,
+      accessService: config.services.accessService,
     },
   });
 });
@@ -290,21 +279,17 @@ app.all('/*', (req, res) => {
 const PORT = config.port;
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 API Gateway running on port ${PORT}`);
-  console.log('📋 Routing rules:');
-  console.log('   /api/auth/*          → user-service');
-  console.log('   /api/patrons/login   → user-service');
-  console.log('   /api/patrons/register → user-service');
-  console.log('   /api/patrons/me      → user-service');
-  console.log('   /api/patrons/:id/password → user-service');
-  console.log('   /users/me            → user-service');
-  console.log('   /api/borrow/*        → borrow-service');
-  console.log('   /api/face/*          → face-recognition-service');
-  console.log('   /api/kiosk/*         → face-recognition-service');
-  console.log('   /api/camera/*        → face-recognition-service');
-  console.log('   /api/access/*        → face-recognition-service');
-  console.log('   /api/tasks/*         → face-recognition-service');
-  console.log('   /api/patrons/*       → face-recognition-service');
-  console.log('   /api/users/*         → face-recognition-service');
+  if (config.nodeEnv !== 'production') {
+    console.log('Routing: auth=user-service, borrow=borrow-service, access=access-service, face/camera=face-recognition-service');
+  }
+});
+
+server.on('upgrade', (req, socket, head) => {
+  if (req.url?.startsWith('/api/access/ws')) {
+    accessProxy.upgrade(req, socket as any, head);
+    return;
+  }
+  socket.destroy();
 });
 
 server.keepAliveTimeout = 120000; // 120s keep-alive (up from 60s to accommodate SSE keepalive)

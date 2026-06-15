@@ -19,6 +19,11 @@ const toPublic = (user: any) => ({
   email: user.email,
   role: user.role,
   status: user.status,
+  studentCode: user.studentCode,
+  cardNumber: user.cardNumber,
+  currentStatus: user.currentStatus,
+  lastEntryAt: user.lastEntryAt,
+  lastEntryCamera: user.lastEntryCamera,
 });
 
 router.get('/users/:id', async (req, res) => {

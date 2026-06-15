@@ -166,6 +166,38 @@ services:
       retries: 3
       start_period: 10s
 
+  access-service:
+    build:
+      context: access-service
+      dockerfile: Dockerfile
+    container_name: access-service
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      PORT: 3003
+      DB_HOST: postgres
+      DB_NAME: face_recognition
+      DB_SCHEMA: access
+      USER_SERVICE_URL: http://user-service:3001
+      REDIS_URL: redis://redis:6379/0
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-change-me-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    networks:
+      - face-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   gateway:
     build:
       context: api-gateway
@@ -178,11 +210,13 @@ services:
     environment:
       PORT: 80
       SCHEDULE_SERVICE: http://schedule-service:3002
+      ACCESS_SERVICE: http://access-service:3003
     depends_on:
       - face-recognition-api
       - user-service
       - borrow-service
       - schedule-service
+      - access-service
     networks:
       - face-network
     restart: unless-stopped
@@ -198,6 +232,7 @@ services:
     environment:
       POSTGRES_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/borrowdb
       USER_SERVICE_URL: http://user-service:3001
+      ACCESS_SERVICE_URL: http://access-service:3003
       FACE_RECOGNITION_API: http://face-recognition-api:8000
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:-borrow-internal-secret-key-change-in-production}
     depends_on:
@@ -205,10 +240,12 @@ services:
         condition: service_healthy
       user-service:
         condition: service_started
+      access-service:
+        condition: service_started
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3

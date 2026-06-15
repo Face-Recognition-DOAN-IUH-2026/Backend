@@ -80,3 +80,4 @@ class CircuitBreakerState:
 
 openlibrary_circuit = CircuitBreakerState(threshold=3, cooldown_seconds=60.0)
 user_service_circuit = CircuitBreakerState(threshold=3, cooldown_seconds=30.0)
+access_service_circuit = CircuitBreakerState(threshold=3, cooldown_seconds=30.0)

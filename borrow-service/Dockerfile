@@ -1,14 +1,16 @@
-FROM python:3.12-slim
+FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
-
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e .
+COPY package*.json ./
+COPY tsconfig.json ./
+RUN npm ci
 
 COPY src ./src
 
+RUN npm run build
+RUN npm prune --omit=dev
+
 EXPOSE 8000
 
-CMD ["uvicorn", "src.api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["node", "dist/index.js"]

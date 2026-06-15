@@ -11,7 +11,7 @@ from infra.sse_manager import sse_manager
 
 logger = logging.getLogger(__name__)
 
-CHANNEL = "camera:events"
+CHANNEL = "access.events"
 
 _running = True
 
