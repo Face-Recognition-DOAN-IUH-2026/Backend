@@ -13,7 +13,7 @@ export const AppDataSource = new DataSource({
   entities: [User],
   migrations: ['migrations/*.ts'],
   synchronize: false,
-  logging: config.nodeEnv === 'development',
+  logging: process.env.TYPEORM_LOGGING === 'true',
   extra: {
     max: 20,
     idleTimeoutMillis: 30000,

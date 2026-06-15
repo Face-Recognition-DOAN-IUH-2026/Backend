@@ -14,5 +14,5 @@ export const AppDataSource = new DataSource({
   password: config.postgres.password,
   entities: [Book, BookCopy, BorrowRecord],
   synchronize: false,
-  logging: config.nodeEnv === 'development',
+  logging: process.env.TYPEORM_LOGGING === 'true',
 });

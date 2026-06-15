@@ -14,5 +14,5 @@ export const AppDataSource = new DataSource({
   entities: [AccessLog, PatronAccessState],
   migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.ts'] : [],
   synchronize: false,
-  logging: config.nodeEnv === 'development',
+  logging: process.env.TYPEORM_LOGGING === 'true',
 });

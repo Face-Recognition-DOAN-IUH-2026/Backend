@@ -151,7 +151,7 @@ services:
       DB_NAME: face_recognition
       DB_SCHEMA: schedule
       USER_SERVICE_URL: http://user-service:3001
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-change-me-in-production}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
     depends_on:
       postgres:
         condition: service_healthy
@@ -181,7 +181,7 @@ services:
       DB_SCHEMA: access
       USER_SERVICE_URL: http://user-service:3001
       REDIS_URL: redis://redis:6379/0
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-change-me-in-production}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
     depends_on:
       postgres:
         condition: service_healthy
@@ -234,7 +234,7 @@ services:
       USER_SERVICE_URL: http://user-service:3001
       ACCESS_SERVICE_URL: http://access-service:3003
       FACE_RECOGNITION_API: http://face-recognition-api:8000
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-borrow-internal-secret-key-change-in-production}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
     depends_on:
       postgres:
         condition: service_healthy

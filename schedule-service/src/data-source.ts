@@ -27,5 +27,5 @@ export const AppDataSource = new DataSource({
   ],
   migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.ts'] : [],
   synchronize: false,
-  logging: config.nodeEnv === 'development',
+  logging: process.env.TYPEORM_LOGGING === 'true',
 });
