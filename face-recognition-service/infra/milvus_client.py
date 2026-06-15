@@ -1,12 +1,27 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
-from pymilvus import CollectionSchema, DataType, FieldSchema, MilvusClient as _MilvusClient
+from pymilvus import CollectionSchema, ConsistencyLevel, DataType, FieldSchema, MilvusClient as _MilvusClient
+from pymilvus.exceptions import MilvusException
 from pymilvus.milvus_client.index import IndexParams
 
 logger = logging.getLogger(__name__)
+
+
+def _with_retry(fn, max_retries=3, base_delay=0.5):
+    for attempt in range(max_retries):
+        try:
+            return fn()
+        except MilvusException as e:
+            if "Timestamp lag too large" in str(e) and attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                logger.warning("Milvus timestamp lag, retrying in %.1fs (attempt %d/%d)", delay, attempt + 1, max_retries)
+                time.sleep(delay)
+                continue
+            raise
 
 
 class MilvusClient:
@@ -43,6 +58,7 @@ class MilvusClient:
         self.client.create_collection(
             collection_name=self.collection_name,
             schema=schema,
+            consistency_level=ConsistencyLevel.BOUNDED,
         )
         self._create_index()
 
@@ -93,11 +109,13 @@ class MilvusClient:
         return 0
 
     def get_embeddings_by_user_id(self, user_id: str) -> list[dict[str, Any]]:
-        results = self.client.query(
-            self.collection_name,
-            filter=f'user_id == "{user_id}"',
-            output_fields=["id", "angle", "embedding"],
-        )
+        def _query():
+            return self.client.query(
+                self.collection_name,
+                filter=f'user_id == "{user_id}"',
+                output_fields=["id", "angle", "embedding"],
+            )
+        results = _with_retry(_query)
         return results or []
 
     # Compatibility helpers (older code expects this name)
@@ -115,27 +133,33 @@ class MilvusClient:
 
 
     def search(self, *, embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
-        results = self.client.search(
-            collection_name=self.collection_name,
-            data=[embedding],
-            anns_field="embedding",
-            search_params={"metric_type": self.metric_type, "params": {"nprobe": 16}},
-            limit=top_k,
-            output_fields=["user_id", "angle"],
-        )
-        if not results:
-            return []
-        hits = []
-        for r in results[0]:
-            hits.append({
-                "user_id": r["entity"]["user_id"],
-                "angle": r["entity"].get("angle", ""),
-                "score": float(r["distance"]),
-            })
-        return hits
+        def _search():
+            results = self.client.search(
+                collection_name=self.collection_name,
+                data=[embedding],
+                anns_field="embedding",
+                search_params={"metric_type": self.metric_type, "params": {"nprobe": 16}},
+                limit=top_k,
+                output_fields=["user_id", "angle"],
+            )
+            if not results:
+                return []
+            hits = []
+            for r in results[0]:
+                hits.append({
+                    "user_id": r["entity"]["user_id"],
+                    "angle": r["entity"].get("angle", ""),
+                    "score": float(r["distance"]),
+                })
+            return hits
+        return _with_retry(_search)
 
     def delete_by_user_id(self, *, user_id: str) -> None:
-        self.client.delete(self.collection_name, filter=f'user_id == "{user_id}"')
+        def _delete():
+            self.client.delete(self.collection_name, filter=f'user_id == "{user_id}"')
+        _with_retry(_delete)
 
     def delete_by_user_id_and_angle(self, *, user_id: str, angle: str) -> None:
-        self.client.delete(self.collection_name, filter=f'user_id == "{user_id}" and angle == "{angle}"')
+        def _delete():
+            self.client.delete(self.collection_name, filter=f'user_id == "{user_id}" and angle == "{angle}"')
+        _with_retry(_delete)
