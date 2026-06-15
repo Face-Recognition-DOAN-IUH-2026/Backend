@@ -137,6 +137,35 @@ services:
     networks:
       - face-network
 
+  schedule-service:
+    build:
+      context: schedule-service
+      dockerfile: Dockerfile
+    container_name: schedule-service
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      PORT: 3002
+      DB_HOST: postgres
+      DB_NAME: face_recognition
+      DB_SCHEMA: schedule
+      USER_SERVICE_URL: http://user-service:3001
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:-change-me-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    networks:
+      - face-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   gateway:
     build:
       context: api-gateway
@@ -148,10 +177,12 @@ services:
       - ./.env
     environment:
       PORT: 80
+      SCHEDULE_SERVICE: http://schedule-service:3002
     depends_on:
       - face-recognition-api
       - user-service
       - borrow-service
+      - schedule-service
     networks:
       - face-network
     restart: unless-stopped

@@ -221,19 +221,20 @@ Chi hien thi voi role `admin` hoac `staff`.
 
 ## Vi Tri Trien Khai
 
-Giai doan dau nen dat trong `user-service` vi:
+Trien khai bang `schedule-service` rieng de dam bao boundary microservice:
 
-- `users` la owner cua staff/admin.
-- Auth role da nam trong user-service.
-- CRUD staff va schedule can lien ket truc tiep den `users`.
-
-Khi module lon hon, co the tach thanh `schedule-service`.
+- `schedule-service` so huu schema `schedule` va cac bang lich truc.
+- Khong tao FK/query truc tiep sang bang `users`.
+- `user-service` van la source of truth cho staff/admin.
+- `schedule-service` lay thong tin staff qua internal REST cua `user-service` voi `x-internal-api-key`.
+- API Gateway chi proxy `/api/schedules/*`, khong validate nghiep vu.
 
 ## Phase Trien Khai
 
 ### Phase 1: Backend Foundation
 
-- Them migration cho `staff_shifts`, `staff_schedules`, `staff_attendance`.
+- Tao `schedule-service` Node.js/Express/TypeORM.
+- Them migration schema `schedule` cho `library_zones`, `staff_shifts`, `staff_schedules`, `staff_attendance`.
 - Them TypeORM entities.
 - Them DTO/request validation.
 - Them repository/service check trung ca.

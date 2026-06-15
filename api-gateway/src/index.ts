@@ -122,6 +122,12 @@ app.use('/api/borrow', createProxyMiddleware({
   pathRewrite: stripApiPrefixFromOriginalPath,  // /api/borrow → /borrow
 }));
 
+app.use('/api/schedules', createProxyMiddleware({
+  target: config.services.scheduleService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,
+}));
+
 // ---- FACE-RECOGNITION-SERVICE ----
 
 // Face operations
@@ -229,6 +235,7 @@ app.get('/', (req, res) => {
       userService: config.services.userService,
       faceRecognitionApi: config.services.faceRecognitionApi,
       borrowService: config.services.borrowService,
+      scheduleService: config.services.scheduleService,
     },
   });
 });
