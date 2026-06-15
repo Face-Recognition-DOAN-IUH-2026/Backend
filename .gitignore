@@ -12,10 +12,14 @@ build/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+test-results/
+playwright-report/
+coverage/
 
 # === Node.js (api-gateway) ===
 node_modules/
 api-gateway/dist/
+user-service/dist/
 *.tsbuildinfo
 
 # === Environment ===

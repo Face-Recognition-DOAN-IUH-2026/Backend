@@ -124,21 +124,14 @@ app.use('/api/borrow', createProxyMiddleware({
 
 // ---- FACE-RECOGNITION-SERVICE ----
 
-// Face-login (special route under /api/auth/ — strict rate limit)
-app.use('/api/auth/face-login', faceLimiter, createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
-  changeOrigin: true,
-  pathRewrite: stripApiPrefixFromOriginalPath,  // → /auth/face-login
-}));
-
-// Face operations (with strict rate limit)
+// Face operations
 app.use('/api/face', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
-// Kiosk operations (with strict rate limit)
+// Kiosk operations
 app.use('/api/kiosk', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
@@ -147,14 +140,14 @@ app.use('/api/kiosk', faceLimiter, createProxyMiddleware({
   pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
-// Camera operations (with strict rate limit)
+// Camera operations
 app.use('/api/camera', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
-// Async tasks (with strict rate limit)
+// Async tasks
 app.use('/api/tasks', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,

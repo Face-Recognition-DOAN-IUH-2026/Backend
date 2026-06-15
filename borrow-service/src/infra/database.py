@@ -41,6 +41,18 @@ async def init_db():
             ALTER TABLE borrow_records
             ADD COLUMN IF NOT EXISTS copy_id UUID REFERENCES book_copies(id)
         """))
+        await conn.execute(text("""
+            ALTER TABLE borrow_records
+            ADD COLUMN IF NOT EXISTS returned_by_user_id UUID
+        """))
+        await conn.execute(text("""
+            ALTER TABLE borrow_records
+            ADD COLUMN IF NOT EXISTS returned_by_email VARCHAR(255)
+        """))
+        await conn.execute(text("""
+            ALTER TABLE borrow_records
+            ADD COLUMN IF NOT EXISTS return_method VARCHAR(50)
+        """))
 
 
 

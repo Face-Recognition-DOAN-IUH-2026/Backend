@@ -67,6 +67,21 @@ class TestBorrowEndpointAuth:
         assert response.status_code in [401, 403]
 
     @pytest.mark.asyncio
+    async def test_staff_patron_active_requires_auth(self, test_client):
+        """GET /borrow/staff/patrons/{student_code}/active requires authentication"""
+        response = await test_client.get("/borrow/staff/patrons/SV001/active")
+        assert response.status_code in [401, 403]
+
+    @pytest.mark.asyncio
+    async def test_staff_return_by_patron_requires_auth(self, test_client):
+        """POST /borrow/staff-return/by-patron requires authentication"""
+        response = await test_client.post(
+            "/borrow/staff-return/by-patron",
+            json={"student_code": "SV001", "barcode_or_isbn": "9780134685991"},
+        )
+        assert response.status_code in [401, 403]
+
+    @pytest.mark.asyncio
     async def test_list_books_requires_auth(self, test_client):
         """GET /borrow/books requires authentication"""
         response = await test_client.get("/borrow/books")
@@ -107,6 +122,16 @@ class TestBorrowValidation:
         """POST /borrow/staff-return with empty body returns 422"""
         response = await test_client.post(
             "/borrow/staff-return",
+            json={},
+            headers=auth_headers_staff,
+        )
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_staff_return_by_patron_empty_body(self, test_client, auth_headers_staff):
+        """POST /borrow/staff-return/by-patron with empty body returns 422"""
+        response = await test_client.post(
+            "/borrow/staff-return/by-patron",
             json={},
             headers=auth_headers_staff,
         )

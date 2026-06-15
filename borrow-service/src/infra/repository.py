@@ -84,6 +84,12 @@ class BorrowRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_copy_by_id(self, copy_id: uuid.UUID) -> Optional[BookCopyModel]:
+        result = await self.db.execute(
+            select(BookCopyModel).where(BookCopyModel.id == copy_id)
+        )
+        return result.scalar_one_or_none()
+
     async def create_copy(self, book_id: uuid.UUID, barcode: str, shelf_location: str | None = None) -> BookCopyModel:
         copy = BookCopyModel(
             book_id=book_id,
@@ -134,6 +140,21 @@ class BorrowRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_active_borrows_by_patron_and_book(self, patron_id: uuid.UUID, book_id: uuid.UUID) -> list[BorrowRecordModel]:
+        result = await self.db.execute(
+            select(BorrowRecordModel)
+            .where(
+                and_(
+                    BorrowRecordModel.patron_id == patron_id,
+                    BorrowRecordModel.book_id == book_id,
+                    BorrowRecordModel.status == "borrowed",
+                    BorrowRecordModel.return_at.is_(None),
+                )
+            )
+            .order_by(BorrowRecordModel.borrow_at.desc())
+        )
+        return list(result.scalars().all())
+
     async def get_active_borrow_by_copy(self, copy_id: uuid.UUID) -> Optional[BorrowRecordModel]:
         result = await self.db.execute(
             select(BorrowRecordModel).where(
@@ -180,6 +201,20 @@ class BorrowRepository:
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
+    async def get_active_borrows_by_patron(self, patron_id: uuid.UUID) -> list[BorrowRecordModel]:
+        result = await self.db.execute(
+            select(BorrowRecordModel)
+            .where(
+                and_(
+                    BorrowRecordModel.patron_id == patron_id,
+                    BorrowRecordModel.status == "borrowed",
+                    BorrowRecordModel.return_at.is_(None),
+                )
+            )
+            .order_by(BorrowRecordModel.due_at.asc(), BorrowRecordModel.borrow_at.desc())
+        )
+        return list(result.scalars().all())
+
     async def create_borrow_record(
         self,
         patron_id: uuid.UUID,
@@ -202,9 +237,18 @@ class BorrowRepository:
         await self.db.refresh(record)
         return record
 
-    async def return_book(self, record: BorrowRecordModel) -> BorrowRecordModel:
+    async def return_book(
+        self,
+        record: BorrowRecordModel,
+        returned_by_user_id: uuid.UUID | None = None,
+        returned_by_email: str | None = None,
+        return_method: str | None = None,
+    ) -> BorrowRecordModel:
         record.return_at = datetime.utcnow()
         record.status = "returned"
+        record.returned_by_user_id = returned_by_user_id
+        record.returned_by_email = returned_by_email
+        record.return_method = return_method
         await self.db.commit()
         await self.db.refresh(record)
         return record
