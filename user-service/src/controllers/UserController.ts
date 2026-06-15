@@ -52,6 +52,32 @@ export class UserController {
       res.status(error.statusCode || 404).json({ error: error.message });
     }
   }
+
+  async updateAccessStatus(req: AuthRequest, res: Response) {
+    try {
+      const id = req.params.id;
+      if (!id || id === 'undefined') {
+        res.status(400).json({ error: 'Invalid user ID' });
+        return;
+      }
+
+      const { current_status, currentStatus, camera_id, cameraId } = req.body;
+      const nextStatus = current_status ?? currentStatus;
+      if (!['inside', 'outside'].includes(nextStatus)) {
+        res.status(400).json({ error: 'current_status must be inside or outside' });
+        return;
+      }
+
+      const user = await userService.updateAccessStatus(
+        id,
+        nextStatus,
+        camera_id ?? cameraId ?? null,
+      );
+      res.json(user);
+    } catch (error: any) {
+      res.status(error.statusCode || 404).json({ error: error.message });
+    }
+  }
 }
 
 export const userController = new UserController();

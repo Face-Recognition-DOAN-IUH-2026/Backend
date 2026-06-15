@@ -1,67 +1,67 @@
-# Nguyên tắc Microservice Architecture
+# Microservice Architecture Rules
 
-## 1. Edge và API Gateway
-- Nginx là public edge duy nhất được publish ra host.
-- Mọi request HTTP API từ **external client** (FE, mobile) phải qua API Gateway.
-- Realtime WebSocket/STOMP đi qua Nginx và được route trực tiếp tới Realtime Service.
-- Không expose port service ra ngoài trực tiếp; các service chỉ listen trên internal network (Docker internal).
+## 1. Edge And Gateway
 
-## 2. Gateway không gọi trực tiếp Infrastructure
-- ❌ Sai: Gateway → Redis / DB / Cloudinary / S3 / ...
-- ✅ Đúng: Gateway → Service → Infrastructure
-- Gateway chỉ giao tiếp với service qua REST/GraphQL
+- The public HTTP edge is the Express/Node.js API Gateway in `api-gateway`.
+- Frontend and mobile clients call backend APIs through the gateway.
+- Services should communicate on the Docker internal network unless a port is explicitly exposed for local debugging.
+- Gateway routes requests only; it must not own business state.
 
-## 3. Service-to-Service Communication
-- **Đồng bộ (sync):** Gọi REST trực tiếp trong internal network (Docker)
-  - Ví dụ: Chat Service → Realtime Service, không qua Gateway
-- **Bất đồng bộ (async):** Qua Message Broker (RabbitMQ)
-  - Ví dụ: Auth Service → RabbitMQ → Chat Service (user.created event)
-- Service không gọi nhau qua API Gateway (tránh circular dependency)
+## 2. Gateway Does Not Call Infrastructure Directly
 
-## 4. Internal API Key pattern
-- Service-to-service calls dùng header `x-internal-api-key`
-- Không dùng JWT user token cho internal calls
-- Key là shared secret giữa các service (cấu hình qua env)
-- Validation: kiểm tra API key trước khi xử lý internal request
+- Wrong: Gateway -> PostgreSQL / Redis / Milvus / MinIO.
+- Correct: Gateway -> Service -> Infrastructure.
+- Gateway talks to services over HTTP.
 
-## 5. Mỗi service owns data riêng
-- Auth Service: `auth_service` DB (users, friends, blocks, refresh_tokens)
-- Chat Service: `chat_service` DB (conversations, messages, message_attachments)
-- Không share database giữa các service
-- Service A muốn data của Service B → gọi REST API, không query trực tiếp DB
+## 3. Service-To-Service Communication
 
-## 6. Shared state qua Redis
-- Presence/online status → Realtime Service quản lý Redis cho WebSocket sessions; Auth Service có thể cung cấp presence API nếu cần.
-- Message cache → Chat Service quản lý Redis.
-- API Gateway không kết nối Redis/DB/Cloudinary; rate limit ở Gateway dùng local in-memory store hoặc đẩy xuống edge/service chuyên trách.
-- Mỗi service có Redis connection riêng (hoặc dùng chung Redis instance với key prefix).
+- Sync communication uses REST over the internal Docker network.
+- Internal service calls use `x-internal-api-key`.
+- Async work currently uses Redis and Celery.
+- Services should not call each other through the public API Gateway.
 
-## 7. Cấu hình qua Environment Variables
-- Mọi config phải qua env vars, không hardcode
-- File `.env.example` ở mỗi service document đủ các biến
-- Docker Compose là single source of truth cho tất cả env
+## 4. Data Ownership
 
-## 8. Service có health / ready endpoint
-- Mỗi service có `GET /health` (simple alive check)
-- Mỗi service có `GET /ready` (check dependencies: DB, Redis, RabbitMQ)
-- Gateway / Orchestrator dùng health check để route traffic
+- `user-service` owns `users`, auth data, and user access status fields such as `current_status`.
+- `face-recognition-service` owns face enrollment, embeddings, Milvus, MinIO evidence, and the current `access_logs` module.
+- `borrow-service` owns borrow/book data and asks the proper service when it needs user/access state.
+- A service that needs data owned by another service should call that service's internal API instead of querying its tables directly.
 
-## 9. Input validation ở mỗi service
-- Mỗi service tự validate input của nó (defense in depth)
-- Không tin tưởng Gateway đã validate hết
-- Dùng `express-validator` pattern hiện có
+## 5. Face And Access Boundary
 
-## 10. Graceful shutdown
-- Mỗi service phải handle `SIGTERM` signal
-- Đóng connection (DB, Redis, RabbitMQ) trước khi exit
-- Dùng `process.on('SIGTERM', async () => { ... })`
+- Face login only authenticates and returns tokens.
+- Camera entry/exit and kiosk flows are responsible for recording physical access.
+- Entry camera writes `entry` events only.
+- Exit camera writes `exit` events only.
+- Kiosk may auto-toggle entry/exit based on current user status.
+- Face worker may write `access_logs` while access-service has not been split out, but user status updates go through `user-service`.
 
-## 11. Service không publish port ra ngoài
-- Chỉ Nginx publish port ra host (Docker: `ports: - "4321:80"` hoặc map qua biến `NGINX_HTTP_PORT`).
-- Service khác chỉ communication qua internal Docker network.
-- Nếu cần expose để debug -> ghi chú rõ trong docker-compose.
+## 6. Internal API Key Pattern
 
-## 12. Service URL qua Environment Variables
-- Khi Service A gọi Service B, URL của B phải qua env var
-- ❌ Sai: hardcode `http://realtime-service:8080` trong code
-- ✅ Đúng: `process.env.REALTIME_SERVICE_URL || 'http://realtime-service:8080'`
+- Service-to-service calls use header `x-internal-api-key`.
+- Do not use end-user JWTs for internal service authority.
+- The key is configured through environment variables and must match across services.
+
+## 7. Shared State And Redis
+
+- Redis is used for Celery broker/result backend, temporary camera frame cache, throttling/cooldowns, and pub/sub events.
+- Each service owns its Redis keys and should use clear prefixes.
+- Gateway rate limiting should remain at gateway/edge level and not require DB access.
+
+## 8. Configuration
+
+- Configuration must come from environment variables.
+- Keep `.env.example` files complete enough for clone-and-run.
+- Do not commit `.env`, `.env.local`, test output, build artifacts, or local cache folders.
+- Docker Compose is the local integration source of truth.
+
+## 9. Health And Readiness
+
+- Each service should expose an alive endpoint.
+- Services with dependencies should expose readiness checks when possible.
+- Smoke checks after changes should include gateway `/healthz`, `/openapi.json`, auth login, face login, access stats, and borrow books.
+
+## 10. Validation And Shutdown
+
+- Each service validates its own inputs.
+- Services should handle shutdown signals and close DB/Redis/Milvus/MinIO clients cleanly.

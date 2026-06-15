@@ -76,6 +76,23 @@ def _get_user_via_api(user_id: str) -> dict | None:
     return None
 
 
+def _update_user_access_status(user_id: str, current_status: str, camera_id: str | None = None) -> dict | None:
+    """Update user access state through user-service, which owns the users table."""
+    result = _call_user_service(
+        "PUT",
+        f"/users/{user_id}/access-status",
+        json={"current_status": current_status, "camera_id": camera_id},
+    )
+    if result:
+        try:
+            from infra.redis_cache import redis_client as _rc
+            import json
+            _rc.setex(f"user:{user_id}", 30, json.dumps(result))
+        except Exception:
+            pass
+    return result
+
+
 # =============================================================================
 # PG CONNECTION - Create per-call, always close after use
 # =============================================================================
@@ -186,9 +203,9 @@ def _get_user_info(user_id: str) -> dict | None:
             return {
                 "id": str(data["id"]),
                 "email": data["email"],
-                "full_name": data.get("full_name"),
+                "full_name": data.get("full_name") or data.get("fullName"),
                 "role": data["role"],
-                "created_at": str(data["created_at"]) if data.get("created_at") else None,
+                "created_at": str(data.get("created_at") or data.get("createdAt")) if data.get("created_at") or data.get("createdAt") else None,
             }
         return None
     except Exception as exc:
@@ -506,8 +523,8 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
         user_id = str(user_data["id"])
         user_email = user_data["email"]
         user_role = user_data["role"]
-        user_full_name = user_data.get("full_name")
-        user_student_code = user_data.get("student_code")
+        user_full_name = user_data.get("full_name") or user_data.get("fullName")
+        user_student_code = user_data.get("student_code") or user_data.get("studentCode")
 
         try:
             import redis as _redis
@@ -527,21 +544,6 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
         if not is_live:
             logger.warning("Spoof attempt detected for user %s (%s)", user_email, user_id)
             try:
-                conn2 = _get_pg_connection()
-                try:
-                    cur2 = conn2.cursor()
-                    cur2.execute(
-                        """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
-                        (str(_uuid.uuid4()), user_id, "entry", "face_login", score, "web_login", "spoof_attempt"),
-                    )
-                    conn2.commit()
-                    cur2.close()
-                finally:
-                    _close_pg_connection(conn2)
-            except Exception:
-                pass
-            try:
                 import redis as _redis
                 r = _redis.Redis.from_url(settings.celery_broker_url)
                 fail_key = f"face_login_fail:{user_id}"
@@ -551,7 +553,7 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
                 r.close()
             except Exception:
                 pass
-            return {"status": "error", "error": "Phát hiện giả mạo — đã ghi log bảo mật"}
+            return {"status": "error", "error": "Phát hiện giả mạo. Vui lòng dùng mật khẩu hoặc thử lại."}
 
         import datetime as dt
         access_token = jwt.encode(
@@ -591,24 +593,6 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
             r.close()
         except Exception:
             pass
-
-        try:
-            _login_conn = _get_pg_connection()
-            _login_cur = _login_conn.cursor()
-            _login_cur.execute(
-                "UPDATE users SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = 'web_login', updated_at = NOW() WHERE id = %s",
-                (user_id,),
-            )
-            _login_cur.execute(
-                """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
-                (str(_uuid.uuid4()), user_id, "entry", "face_login", score, "web_login", "success"),
-            )
-            _login_conn.commit()
-            _login_cur.close()
-            _login_conn.close()
-        except Exception as _e:
-            logger.warning("Failed to update current_status on face login: %s", _e)
 
         return {
             "status": "success",
@@ -764,27 +748,24 @@ def identify_patron(self, object_key: str) -> dict:
             patron_id = best["user_id"]
             score = round(best["score"], 4)
 
-            conn = None
-            try:
-                conn = _get_pg_connection()
-                cur = conn.cursor()
-                cur.execute(
-                    "SELECT full_name, student_code, membership_expiry, status FROM users WHERE id = %s",
-                    (patron_id,),
-                )
-                row = cur.fetchone()
-                cur.close()
-            finally:
-                _close_pg_connection(conn)
-
-            if not row:
+            user_data = _get_user_via_api(patron_id)
+            if not user_data:
                 _get_milvus().delete_by_user_id(user_id=patron_id)
                 logger.warning("Orphaned embedding cleaned up for %s", patron_id)
                 continue
 
-            full_name, student_code, membership_expiry, status = row
-
             from datetime import date
+            full_name = user_data.get("full_name") or user_data.get("fullName") or ""
+            student_code = user_data.get("student_code") or user_data.get("studentCode") or ""
+            membership_expiry_raw = user_data.get("membership_expiry") or user_data.get("membershipExpiry")
+            membership_expiry = None
+            if membership_expiry_raw:
+                membership_expiry = (
+                    membership_expiry_raw
+                    if isinstance(membership_expiry_raw, date)
+                    else date.fromisoformat(str(membership_expiry_raw)[:10])
+                )
+            status = user_data.get("status")
             is_expired = membership_expiry and membership_expiry < date.today()
             if is_expired or status != "active":
                 matches.append({
@@ -819,25 +800,35 @@ def identify_patron(self, object_key: str) -> dict:
 
 def _is_patron_inside(patron_id: str) -> bool:
     """Check if patron currently has an active entry (inside library).
-    Uses current_status column from patrons table for fast reads.
+    Reads current_status from user-service, which owns users.
     Auto-expires after max_entry_hours to prevent stuck 'inside' status.
     """
-    conn = None
     try:
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT current_status = 'inside' AND last_entry_at > NOW() - INTERVAL '%s hours' FROM users WHERE id = %s",
-            (settings.max_entry_hours, patron_id),
+        user_data = _get_user_via_api(patron_id)
+        if not user_data:
+            return False
+
+        current_status = user_data.get("current_status") or user_data.get("currentStatus")
+        if current_status != "inside":
+            return False
+
+        last_entry_raw = user_data.get("last_entry_at") or user_data.get("lastEntryAt")
+        if not last_entry_raw:
+            return True
+
+        from datetime import datetime, timezone
+        last_entry_at = (
+            last_entry_raw
+            if isinstance(last_entry_raw, datetime)
+            else datetime.fromisoformat(str(last_entry_raw).replace("Z", "+00:00"))
         )
-        row = cur.fetchone()
-        cur.close()
-        return bool(row and row[0])
+        if last_entry_at.tzinfo is None:
+            last_entry_at = last_entry_at.replace(tzinfo=timezone.utc)
+        max_age_seconds = settings.max_entry_hours * 3600
+        return (datetime.now(timezone.utc) - last_entry_at).total_seconds() < max_age_seconds
     except Exception as e:
         logger.warning("Failed to check patron inside status for %s: %s", patron_id, e)
         return False
-    finally:
-        _close_pg_connection(conn)
 
 
 def _publish_camera_event(data: dict) -> None:
@@ -978,24 +969,36 @@ def _process_single_face(
         logger.debug("Cooldown hit for %s %s on %s", patron_id, access_type, camera_id)
         return None
 
-    # DB lookup — single connection for all queries
-    conn = None
+    # User lookup through user-service, which owns users.
     try:
-        conn = _get_pg_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT full_name, student_code, membership_expiry, status, current_status, last_entry_at FROM users WHERE id = %s",
-            (patron_id,),
-        )
-        row = cur.fetchone()
-
-        if not row:
+        user_data = _get_user_via_api(patron_id)
+        if not user_data:
             _get_milvus().delete_by_user_id(user_id=patron_id)
             logger.warning("Orphaned embedding cleaned up for %s from camera %s", patron_id, camera_id)
             return None
 
-        full_name, student_code, membership_expiry, status, current_status, last_entry_at = row
         from datetime import date, datetime, timezone
+        full_name = user_data.get("full_name") or user_data.get("fullName") or ""
+        student_code = user_data.get("student_code") or user_data.get("studentCode") or ""
+        membership_expiry_raw = user_data.get("membership_expiry") or user_data.get("membershipExpiry")
+        status = user_data.get("status")
+        current_status = user_data.get("current_status") or user_data.get("currentStatus") or "outside"
+        last_entry_raw = user_data.get("last_entry_at") or user_data.get("lastEntryAt")
+
+        membership_expiry = None
+        if membership_expiry_raw:
+            membership_expiry = (
+                membership_expiry_raw
+                if isinstance(membership_expiry_raw, date)
+                else date.fromisoformat(str(membership_expiry_raw)[:10])
+            )
+        last_entry_at = None
+        if last_entry_raw:
+            last_entry_at = (
+                last_entry_raw
+                if isinstance(last_entry_raw, datetime)
+                else datetime.fromisoformat(str(last_entry_raw).replace("Z", "+00:00"))
+            )
 
         # Expiry check
         is_expired = membership_expiry and membership_expiry < date.today()
@@ -1035,8 +1038,6 @@ def _process_single_face(
                     _upload_evidence_frame(raw_bytes, patron_id, prefix="wrong_dir_")
                 return None
 
-        cur.close()
-
         # Phase 2 (cont): Liveness check (expensive — after all fast checks passed)
         liveness = liveness_from_face(img, face)
         if not liveness.get("is_live", False):
@@ -1051,7 +1052,7 @@ def _process_single_face(
                 _upload_evidence_frame(raw_bytes, patron_id, prefix="spoof_")
             return None
 
-        # All checks passed — write access log + update patron status
+        # All checks passed — write access log, then update user status through user-service.
         conn2 = None
         try:
             conn2 = _get_pg_connection()
@@ -1062,20 +1063,19 @@ def _process_single_face(
                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
                 (log_id, patron_id, access_type, "face", score, camera_id, "success"),
             )
-            if access_type == "entry":
-                cur2.execute(
-                    "UPDATE users SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = %s, updated_at = NOW() WHERE id = %s",
-                    (camera_id, patron_id),
-                )
-            else:
-                cur2.execute(
-                    "UPDATE users SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
-                    (patron_id,),
-                )
             conn2.commit()
             cur2.close()
         finally:
             _close_pg_connection(conn2)
+
+        next_status = "inside" if access_type == "entry" else "outside"
+        updated_user = _update_user_access_status(patron_id, next_status, camera_id)
+        if not updated_user:
+            logger.warning(
+                "Access %s was logged but user-service status update failed for %s",
+                access_type,
+                patron_id,
+            )
 
         # Phase 4: Upload evidence to MinIO (lazy — only on grant)
         if raw_bytes:
@@ -1099,8 +1099,6 @@ def _process_single_face(
     except Exception:
         logger.exception("Failed to process face for camera %s", camera_id)
         return None
-    finally:
-        _close_pg_connection(conn)
 
 
 @celery_app.task(bind=True, name="process_camera_frame", max_retries=1, default_retry_delay=5)
@@ -1226,45 +1224,38 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Liveness check failed", "is_live": False}
 
-        # Lookup patron info for access log
+        # Lookup patron info through user-service; kiosk still owns its access decision.
+        user_data = _get_user_via_api(patron_id) or {}
+        full_name = user_data.get("full_name") or user_data.get("fullName") or "Unknown"
+        student_code = user_data.get("student_code") or user_data.get("studentCode") or ""
+
+        # Determine entry/exit based on inside status
+        access_type = "exit" if _is_patron_inside(patron_id) else "entry"
+
+        # Create access log
         conn = None
         try:
             conn = _get_pg_connection()
             cur = conn.cursor()
-            cur.execute(
-                "SELECT full_name, student_code FROM users WHERE id = %s",
-                (patron_id,),
-            )
-            row = cur.fetchone()
-            full_name = row[0] if row else "Unknown"
-            student_code = row[1] if row else ""
-            cur.close()
-
-            # Determine entry/exit based on inside status
-            access_type = "exit" if _is_patron_inside(patron_id) else "entry"
-
-            # Create access log
             log_id = str(_uuid.uuid4())
-            cur = conn.cursor()
             cur.execute(
                 """INSERT INTO access_logs (id, patron_id, access_type, verify_method, confidence, camera_id, status, access_time)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
                 (log_id, patron_id, access_type, "face", score, "kiosk", "success"),
             )
-            if access_type == "entry":
-                cur.execute(
-                    "UPDATE users SET current_status = 'inside', last_entry_at = NOW(), last_entry_camera = 'kiosk', updated_at = NOW() WHERE id = %s",
-                    (patron_id,),
-                )
-            else:
-                cur.execute(
-                    "UPDATE users SET current_status = 'outside', updated_at = NOW() WHERE id = %s",
-                    (patron_id,),
-                )
             conn.commit()
             cur.close()
         finally:
             _close_pg_connection(conn)
+
+        next_status = "inside" if access_type == "entry" else "outside"
+        updated_user = _update_user_access_status(patron_id, next_status, "kiosk")
+        if not updated_user:
+            logger.warning(
+                "Kiosk access %s was logged but user-service status update failed for %s",
+                access_type,
+                patron_id,
+            )
 
         logger.info("Access %s: %s (%s) at kiosk", access_type, full_name, student_code)
         result = {

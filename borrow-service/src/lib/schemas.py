@@ -15,6 +15,11 @@ class StaffReturnRequest(BaseModel):
     barcode: str
 
 
+class StaffReturnByPatronRequest(BaseModel):
+    student_code: str
+    barcode_or_isbn: str
+
+
 class BookCopyResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,7 +54,26 @@ class BorrowRecordResponse(BaseModel):
     return_at: datetime | None = None
     shelf_location: str | None = None
     status: str
+    returned_by_user_id: UUID | None = None
+    returned_by_email: str | None = None
+    return_method: str | None = None
     book: BookResponse | None = None
+
+
+class StaffPatronSummary(BaseModel):
+    id: UUID
+    full_name: str | None = None
+    student_code: str
+    email: str | None = None
+    card_number: str | None = None
+    current_status: str | None = None
+
+
+class StaffPatronActiveBorrowsResponse(BaseModel):
+    patron: StaffPatronSummary
+    records: list[BorrowRecordResponse]
+    total: int
+    overdue_count: int
 
 
 class BorrowResponse(BaseModel):

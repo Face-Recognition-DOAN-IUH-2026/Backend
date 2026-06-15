@@ -30,9 +30,29 @@ export class UserService {
       cardNumber: user.cardNumber,
       status: user.status,
       currentStatus: user.currentStatus,
+      lastEntryAt: user.lastEntryAt,
+      lastEntryCamera: user.lastEntryCamera,
       membershipExpiry: user.membershipExpiry,
       createdAt: user.createdAt,
     };
+  }
+
+  async updateAccessStatus(
+    id: string,
+    currentStatus: 'inside' | 'outside',
+    cameraId?: string | null,
+  ): Promise<any> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    const updates: any = { currentStatus };
+    if (currentStatus === 'inside') {
+      updates.lastEntryAt = new Date();
+      updates.lastEntryCamera = cameraId ?? null;
+    }
+
+    const updated = await this.userRepo.update(id, updates);
+    return this.getUserById(updated!.id);
   }
 
   async deleteUser(id: string): Promise<{ deleted: boolean; id: string }> {
