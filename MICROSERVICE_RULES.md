@@ -22,9 +22,11 @@
 
 ## 4. Data Ownership
 
-- `user-service` owns `users`, auth data, and user access status fields such as `current_status`.
-- `face-recognition-service` owns face enrollment, embeddings, Milvus, MinIO evidence, and the current `access_logs` module.
-- `borrow-service` owns borrow/book data and asks the proper service when it needs user/access state.
+- `user-service` owns `users`, auth data, staff/admin/patron identity, and profile fields.
+- `access-service` owns `access_logs`, patron inside/outside state, access stats, SSE, and WebSocket realtime.
+- `face-recognition-service` owns face enrollment, embeddings, Milvus, MinIO evidence, and recognition jobs.
+- `borrow-service` owns borrow/book data and asks `user-service` or `access-service` when it needs user/access state.
+- `schedule-service` owns library zones, shifts, schedule assignments, attendance, and schedule audit logs.
 - A service that needs data owned by another service should call that service's internal API instead of querying its tables directly.
 
 ## 5. Face And Access Boundary
@@ -34,7 +36,9 @@
 - Entry camera writes `entry` events only.
 - Exit camera writes `exit` events only.
 - Kiosk may auto-toggle entry/exit based on current user status.
-- Face worker may write `access_logs` while access-service has not been split out, but user status updates go through `user-service`.
+- Face worker sends recognition/access results to `access-service` through `POST /internal/access/recognition-events`.
+- `access-service` is the source of truth for access logs and patron inside/outside state.
+- Legacy access routes in `face-recognition-service` are deprecated while gateway `/api/access/*` routes to `access-service`.
 
 ## 6. Internal API Key Pattern
 
@@ -60,6 +64,7 @@
 - Each service should expose an alive endpoint.
 - Services with dependencies should expose readiness checks when possible.
 - Smoke checks after changes should include gateway `/healthz`, `/openapi.json`, auth login, face login, access stats, and borrow books.
+- Run `node scripts/check-service-boundaries.js` before pushing service-boundary changes.
 
 ## 10. Validation And Shutdown
 

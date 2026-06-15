@@ -3,7 +3,15 @@ import { randomUUID } from 'crypto';
 import { AppDataSource } from '../data-source';
 import { AccessLog } from '../entities/AccessLog';
 import { PatronAccessState } from '../entities/PatronAccessState';
-import { AccessRealtimeEvent, AccessStatus, AccessType, ACTIVE_CAMERA_IDS, ACCESS_STATUSES } from '../contracts';
+import {
+  AccessRealtimeEvent,
+  AccessRealtimeEventSchema,
+  AccessStatus,
+  AccessType,
+  ACTIVE_CAMERA_IDS,
+  ACCESS_STATUSES,
+  RecognitionEventInputSchema,
+} from '../contracts';
 import { UserServiceClient } from '../clients/UserServiceClient';
 import { realtimeHub } from '../realtime/RealtimeHub';
 import { HttpError } from '../middlewares/errorHandler';
@@ -65,11 +73,12 @@ async function enrichLogs(logs: AccessLog[]) {
 
 export class AccessService {
   async recordRecognitionEvent(input: any): Promise<AccessRealtimeEvent> {
-    const status = normalizeStatus(input.status);
-    const cameraId = String(input.camera_id || 'unknown');
-    const patronId = input.patron_id ? String(input.patron_id) : null;
-    let accessType = input.access_type ? String(input.access_type) as AccessType : null;
-    const occurredAt = toIso(input.occurred_at);
+    const parsedInput = RecognitionEventInputSchema.parse(input || {});
+    const status = normalizeStatus(parsedInput.status);
+    const cameraId = String(parsedInput.camera_id || 'unknown');
+    const patronId = parsedInput.patron_id ? String(parsedInput.patron_id) : null;
+    let accessType = parsedInput.access_type ? String(parsedInput.access_type) as AccessType : null;
+    const occurredAt = toIso(parsedInput.occurred_at);
 
     if (!accessType && cameraId === 'entry_gate') accessType = 'entry';
     if (!accessType && cameraId === 'exit_gate') accessType = 'exit';
@@ -79,41 +88,43 @@ export class AccessService {
     }
 
     const event: AccessRealtimeEvent = {
-      event_id: String(input.event_id || randomUUID()),
+      event_id: String(parsedInput.event_id || randomUUID()),
       event_type: 'camera_event',
       camera_id: cameraId,
       access_type: accessType,
       status,
       patron_id: patronId,
-      student_code: input.student_code || null,
-      full_name: input.full_name || null,
-      score: typeof input.score === 'number' ? input.score : input.confidence ?? null,
-      bbox: input.bbox ?? null,
-      landmarks: input.landmarks ?? null,
+      student_code: parsedInput.student_code || null,
+      full_name: parsedInput.full_name || null,
+      score: typeof parsedInput.score === 'number' ? parsedInput.score : parsedInput.confidence ?? null,
+      bbox: parsedInput.bbox ?? null,
+      landmarks: parsedInput.landmarks ?? null,
       occurred_at: occurredAt,
-      source: input.source || 'face-recognition-service',
-      image_url: input.image_url || null,
+      source: parsedInput.source || 'face-recognition-service',
+      image_url: parsedInput.image_url || null,
     };
+
+    const realtimeEvent = AccessRealtimeEventSchema.parse(event);
 
     if (status === 'granted' && patronId && accessType) {
       await logRepo().save(logRepo().create({
-        id: input.log_id || undefined,
+        id: parsedInput.log_id || undefined,
         patronId,
         accessType,
-        verifyMethod: input.verify_method || 'face',
-        confidence: event.score ?? null,
+        verifyMethod: parsedInput.verify_method || 'face',
+        confidence: realtimeEvent.score ?? null,
         cameraId,
-        imageUrl: event.image_url || null,
+        imageUrl: realtimeEvent.image_url || null,
         status: 'success',
-        eventId: event.event_id,
-        source: event.source,
+        eventId: realtimeEvent.event_id,
+        source: realtimeEvent.source,
         accessTime: new Date(occurredAt),
       }));
       await this.upsertState(patronId, accessType, cameraId, new Date(occurredAt));
     }
 
-    await realtimeHub.publish(event);
-    return event;
+    await realtimeHub.publish(realtimeEvent);
+    return realtimeEvent;
   }
 
   async getRecent(limit = 20) {
