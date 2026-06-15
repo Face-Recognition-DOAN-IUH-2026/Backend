@@ -2,13 +2,27 @@ import express from 'express';
 import http from 'http';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { RedisStore } from 'rate-limit-redis';
+import { createClient } from 'redis';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
 
 const app = express();
+const redisClient = createClient({ url: config.redisUrl });
+redisClient.on('error', (err) => {
+  console.warn(`Redis rate-limit store unavailable: ${err.message}`);
+});
+redisClient.connect().catch((err) => {
+  console.warn(`Redis rate-limit store disabled: ${err.message}`);
+});
+
+const createRedisRateLimitStore = (prefix: string) => new RedisStore({
+  prefix,
+  sendCommand: (...args: string[]) => redisClient.sendCommand(args),
+});
 
 app.use(cors({
-  origin: '*',
+  origin: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
   credentials: true,
@@ -22,7 +36,8 @@ app.use((req, res, next) => {
 // Global rate limit: 200 req/min per IP
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 200,
+  max: 100,
+  store: createRedisRateLimitStore('rl:global:'),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request, vui lòng thử lại sau' },
@@ -32,6 +47,7 @@ const globalLimiter = rateLimit({
 const faceLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
+  store: createRedisRateLimitStore('rl:face:'),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request cho face recognition' },
@@ -148,6 +164,8 @@ app.use('/api/face', faceLimiter, createProxyMiddleware({
 app.use('/api/kiosk', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
+  timeout: 60000,
+  proxyTimeout: 60000,
   pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
@@ -169,6 +187,8 @@ app.use('/api/tasks', faceLimiter, createProxyMiddleware({
 app.use('/api/access', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
+  timeout: 0,
+  proxyTimeout: 0,
   pathRewrite: (path: string, req: any) => {
     const originalPath = req.originalUrl || req.url;
     const newPath = originalPath.replace(/^\/api/, '') || '/';
@@ -295,5 +315,4 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('   /api/users/*         → face-recognition-service');
 });
 
-server.timeout = 30000;       // 30s request timeout (was 0 = infinite)
-server.keepAliveTimeout = 60000; // 60s keep-alive
+server.keepAliveTimeout = 120000; // 120s keep-alive (up from 60s to accommodate SSE keepalive)
