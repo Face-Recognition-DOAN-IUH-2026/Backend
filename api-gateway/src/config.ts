@@ -12,4 +12,8 @@ export const config = {
   },
   frontendUrl: process.env.FRONTEND_URL || 'http://host.docker.internal:3000',
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['*'],
+  rateLimit: {
+    windowMs: parseInt(process.env.API_RATE_LIMIT_WINDOW_MS || '60000', 10),
+    max: parseInt(process.env.API_RATE_LIMIT_MAX || (process.env.NODE_ENV === 'production' ? '600' : '5000'), 10),
+  },
 };

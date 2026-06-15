@@ -19,10 +19,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// Global rate limit: 200 req/min per IP
+// Global rate limit per IP. In local/dev this is intentionally high because
+// dashboards, SSE reconnects, and camera pages can share one browser IP.
 const globalLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 200,
+  windowMs: config.rateLimit.windowMs,
+  max: config.rateLimit.max,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request, vui lòng thử lại sau' },
