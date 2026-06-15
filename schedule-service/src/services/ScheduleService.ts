@@ -70,8 +70,9 @@ export class ScheduleService {
     if (!zone) throw new NotFoundError('Zone not found');
     zone.isActive = false;
     await this.zones.save(zone);
-    await this.log('zone.deactivated', 'library_zone', id, actorId, null);
-    return { deleted: true, id };
+    const cancelledCount = await this.cancelAssignmentsForTarget(actorId, { zoneId: id }, 'zone.deactivated');
+    await this.log('zone.deactivated', 'library_zone', id, actorId, { cancelledAssignments: cancelledCount });
+    return { deleted: true, id, cancelledAssignments: cancelledCount };
   }
 
   async createShift(actorId: string, body: Partial<StaffShift>) {
@@ -98,8 +99,9 @@ export class ScheduleService {
     if (!shift) throw new NotFoundError('Shift not found');
     shift.isActive = false;
     await this.shifts.save(shift);
-    await this.log('shift.deactivated', 'staff_shift', id, actorId, null);
-    return { deleted: true, id };
+    const cancelledCount = await this.cancelAssignmentsForTarget(actorId, { shiftId: id }, 'shift.deactivated');
+    await this.log('shift.deactivated', 'staff_shift', id, actorId, { cancelledAssignments: cancelledCount });
+    return { deleted: true, id, cancelledAssignments: cancelledCount };
   }
 
   async createTemplate(actorId: string, body: Partial<StaffScheduleTemplate>) {
@@ -309,6 +311,35 @@ export class ScheduleService {
     await this.requireShift(shiftId);
     const zone = await this.zones.findOneBy({ id: zoneId, isActive: true });
     if (!zone) throw new NotFoundError('Zone not found');
+  }
+
+  private async cancelAssignmentsForTarget(
+    actorId: string,
+    target: { zoneId?: string; shiftId?: string },
+    reason: string,
+  ) {
+    const where: any = {
+      ...target,
+      status: Not(In(['cancelled', 'completed'])),
+    };
+    const assignments = await this.schedules.find({ where });
+    if (!assignments.length) return 0;
+
+    await this.schedules.save(assignments.map((item) => ({
+      ...item,
+      status: 'cancelled',
+      note: item.note ? `${item.note}\nCancelled by ${reason}` : `Cancelled by ${reason}`,
+    })));
+
+    await Promise.all(assignments.map((item) => (
+      this.log('assignment.cancelled_by_config_delete', 'staff_schedule', item.id, actorId, {
+        reason,
+        zoneId: target.zoneId ?? null,
+        shiftId: target.shiftId ?? null,
+      })
+    )));
+
+    return assignments.length;
   }
 
   private async requireShift(shiftId: string) {
