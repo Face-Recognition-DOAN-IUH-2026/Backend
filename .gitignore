@@ -20,6 +20,8 @@ api-gateway/dist/
 
 # === Environment ===
 .env
+.env.local
+!.env.example
 
 
 # Python

@@ -69,6 +69,7 @@ export class AuthController {
       res.status(401).json({ error: 'Invalid refresh token' });
     }
   }
+
 }
 
 export const authController = new AuthController();

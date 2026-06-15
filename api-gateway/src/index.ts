@@ -6,12 +6,12 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
 
 const app = express();
+const corsOrigin = config.corsOrigins.includes('*') ? true : config.corsOrigins;
 
 app.use(cors({
-  origin: '*',
+  origin: corsOrigin,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  credentials: true,
 }));
 
 app.use((req, res, next) => {
@@ -28,14 +28,8 @@ const globalLimiter = rateLimit({
   message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request, vui lòng thử lại sau' },
 });
 
-// Strict rate limit for face endpoints: 30 req/min per IP (compute-heavy)
-const faceLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request cho face recognition' },
-});
+// Face endpoints are intentionally not rate-limited in local development.
+const faceLimiter = (_req: express.Request, _res: express.Response, next: express.NextFunction) => next();
 
 app.use(globalLimiter);
 
@@ -148,6 +142,8 @@ app.use('/api/face', faceLimiter, createProxyMiddleware({
 app.use('/api/kiosk', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
+  timeout: 60000,
+  proxyTimeout: 60000,
   pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
@@ -169,6 +165,8 @@ app.use('/api/tasks', faceLimiter, createProxyMiddleware({
 app.use('/api/access', faceLimiter, createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
+  timeout: 0,
+  proxyTimeout: 0,
   pathRewrite: (path: string, req: any) => {
     const originalPath = req.originalUrl || req.url;
     const newPath = originalPath.replace(/^\/api/, '') || '/';
@@ -295,5 +293,4 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('   /api/users/*         → face-recognition-service');
 });
 
-server.timeout = 30000;       // 30s request timeout (was 0 = infinite)
-server.keepAliveTimeout = 60000; // 60s keep-alive
+server.keepAliveTimeout = 120000; // 120s keep-alive (up from 60s to accommodate SSE keepalive)
