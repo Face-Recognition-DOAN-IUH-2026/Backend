@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import access, auth, camera, face, kiosk, patrons, tasks, users
+from api.routers import auth, camera, face, kiosk, patrons, tasks, users
 from infra.config import settings
 
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
@@ -58,16 +58,7 @@ async def lifespan(app: FastAPI):
         from sqlalchemy import text
 
         await conn.execute(
-            text("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)")
-        )
-        await conn.execute(
-            text("ALTER TABLE patron_faces DROP CONSTRAINT IF EXISTS patron_faces_patron_id_fkey")
-        )
-        await conn.execute(
             text("ALTER TABLE patron_faces ADD COLUMN IF NOT EXISTS angle VARCHAR(20) NOT NULL DEFAULT 'frontal'")
-        )
-        await conn.execute(
-            text("DROP TABLE IF EXISTS patrons CASCADE")
         )
 
     entry = settings.entry_cam_url
@@ -151,7 +142,6 @@ def create_app() -> FastAPI:
     app.include_router(tasks.router)
     app.include_router(users.router)
     app.include_router(patrons.router)
-    app.include_router(access.router)
     app.include_router(camera.router)
     app.include_router(kiosk.router)
 

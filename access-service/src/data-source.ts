@@ -12,7 +12,7 @@ export const AppDataSource = new DataSource({
   username: config.db.user,
   password: config.db.password,
   entities: [AccessLog, PatronAccessState],
-  migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.ts'] : [],
+  migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
   synchronize: false,
   logging: process.env.TYPEORM_LOGGING === 'true',
 });

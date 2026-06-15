@@ -79,7 +79,7 @@ async def list_users(
         )
 
     async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
-        resp = await client.get("/users", headers=_INTERNAL_HEADERS)
+        resp = await client.get("/internal/users", headers=_INTERNAL_HEADERS)
         if resp.status_code != 200:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -94,7 +94,7 @@ async def list_users(
             UserResponse(
                 id=str(u["id"]),
                 email=u["email"],
-                full_name=u.get("full_name"),
+                full_name=u.get("full_name") or u.get("fullName"),
                 role=u["role"],
                 has_face=str(u["id"]) in face_user_ids,
             )
@@ -116,7 +116,7 @@ async def delete_user(
         )
 
     async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
-        resp = await client.delete(f"/users/{user_id}", headers=_INTERNAL_HEADERS)
+        resp = await client.delete(f"/internal/patrons/{user_id}", headers=_INTERNAL_HEADERS)
         if resp.status_code == 404:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

@@ -25,7 +25,7 @@ export const AppDataSource = new DataSource({
     StaffAttendance,
     ScheduleAuditLog,
   ],
-  migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.ts'] : [],
+  migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
   synchronize: false,
   logging: process.env.TYPEORM_LOGGING === 'true',
 });

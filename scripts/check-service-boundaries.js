@@ -5,6 +5,19 @@ const root = path.resolve(__dirname, '..');
 
 const rules = [
   {
+    service: 'user-service',
+    include: ['src'],
+    extensions: ['.ts'],
+    forbidden: [
+      { pattern: /\bpatron_faces\b/i, reason: 'user-service must publish user events instead of deleting face tables' },
+      { pattern: /\baccess_logs\b/i, reason: 'user-service must not read or delete access logs' },
+      { pattern: /\bborrow_records\b/i, reason: 'user-service must not read borrow records' },
+    ],
+    allow: [
+      /config\.ts$/,
+    ],
+  },
+  {
     service: 'borrow-service',
     include: ['src'],
     extensions: ['.ts'],
@@ -48,6 +61,22 @@ const rules = [
       /UserServiceClient\.ts$/,
       /ScheduleService\.ts$/,
       /config\.ts$/,
+    ],
+  },
+  {
+    service: 'face-recognition-service',
+    include: ['api', 'infra', 'worker'],
+    extensions: ['.py'],
+    forbidden: [
+      { pattern: /class\s+UserModel\b/, reason: 'face-recognition-service must not map the users table' },
+      { pattern: /class\s+AccessLogModel\b/, reason: 'face-recognition-service must not map access logs' },
+      { pattern: /__tablename__\s*=\s*["']users["']/, reason: 'face-recognition-service must not own users' },
+      { pattern: /__tablename__\s*=\s*["']access_logs["']/, reason: 'face-recognition-service must not own access logs' },
+      { pattern: /select\(UserModel|update\(UserModel/, reason: 'face-recognition-service must call user-service instead of querying users' },
+      { pattern: /select\(AccessLogModel|INSERT\s+INTO\s+access_logs/i, reason: 'face-recognition-service must call access-service instead of querying access logs' },
+    ],
+    allow: [
+      /api[\\/]routers[\\/]access\.py$/,
     ],
   },
 ];
