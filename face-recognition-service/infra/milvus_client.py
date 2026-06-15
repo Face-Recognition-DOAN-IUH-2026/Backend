@@ -4,7 +4,7 @@ import logging
 import time
 from typing import Any
 
-from pymilvus import CollectionSchema, ConsistencyLevel, DataType, FieldSchema, MilvusClient as _MilvusClient
+from pymilvus import CollectionSchema, DataType, FieldSchema, MilvusClient as _MilvusClient
 from pymilvus.exceptions import MilvusException
 from pymilvus.milvus_client.index import IndexParams
 
@@ -58,7 +58,7 @@ class MilvusClient:
         self.client.create_collection(
             collection_name=self.collection_name,
             schema=schema,
-            consistency_level=ConsistencyLevel.BOUNDED,
+            consistency_level="Bounded",
         )
         self._create_index()
 

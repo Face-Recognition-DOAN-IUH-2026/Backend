@@ -226,31 +226,27 @@ async def kiosk_batch_enroll(
         kwargs={"user_id": user_data["id"], "object_keys": [keys["frontal"], keys["right"], keys["left"], keys["down"]]},
     )
     result = await run_in_threadpool(task.get, timeout=120)
-    if result.get("status") == "error":
-        error_results = result.get("results", [])
-        error_msgs = []
-        for r in error_results:
-            if r.get("status") == "error":
-                msg = r.get("error", "Unknown error")
-                error_msgs.append(f"{r['angle']}: {msg}")
-        try:
-            _get_milvus_client().delete_by_user_id(user_id=user_data["id"])
-        except Exception:
-            pass
-        try:
-            sto = _MinioStorage()
-            for angle in ["frontal", "right", "left", "down"]:
-                sto.delete_image(f"enrollments/{user_data['id']}_{angle}.jpg")
-        except Exception:
-            pass
-        await _proxy_delete_user(user_data["id"])
-        raise HTTPException(400, f"Dang ky that bai. Loi cac goc: {', '.join(error_msgs)}")
-
     user = await repo.get_by_id(_uuid.UUID(user_data["id"]))
+    patron = await _patron_to_public(user, repo) if user else PatronPublic(**user_data)
+    if result.get("status") == "partial_failure":
+        return KioskResult(
+            success=False,
+            status="partial_failure",
+            message=result.get("message", "Mot so goc chup that bai. Vui long chup lai goc loi."),
+            patron=patron,
+            failed_angle=result.get("failed_angle"),
+            saved_angles=result.get("saved_angles", []),
+            results=result.get("results", []),
+        )
+    if result.get("status") == "error":
+        raise HTTPException(400, result.get("error", "Dang ky khuon mat that bai"))
+
     return KioskResult(
         success=True,
+        status="success",
         message="Da tao doc gia voi day du 4 goc khuon mat.",
-        patron=await _patron_to_public(user, repo) if user else PatronPublic(**user_data),
+        patron=patron,
+        results=result.get("results", []),
     )
 
 

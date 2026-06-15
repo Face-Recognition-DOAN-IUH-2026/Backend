@@ -46,8 +46,8 @@ router = APIRouter(prefix="/borrow", tags=["borrow"])
 async def _check_patron_inside(user_id: str) -> bool:
     can_req = await user_service_circuit.can_request()
     if not can_req:
-        logger.warning("user-service circuit OPEN, defaulting inside=True for user=%s", user_id)
-        return True
+        logger.warning("user-service circuit OPEN, denying borrow for user=%s", user_id)
+        return False
     try:
         client = get_http_client()
         resp = await client.get(

@@ -172,6 +172,13 @@ class TestServiceDownScenarios:
         assert await cb.can_request() is False
         assert cb.is_open is True
 
+    @pytest.mark.asyncio
+    async def test_user_service_open_circuit_denies_borrow(self):
+        from src.api.routers import borrow
+
+        with patch.object(borrow.user_service_circuit, "can_request", new=AsyncMock(return_value=False)):
+            assert await borrow._check_patron_inside("patron-id") is False
+
 
 class TestQuantityMinimumValidation:
     """Phase 0: Quantity minimum validation"""
