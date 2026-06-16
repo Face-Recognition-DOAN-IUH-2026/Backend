@@ -163,12 +163,13 @@ export class BorrowRepository {
     return this.records.save(record);
   }
 
-  async returnBook(record: BorrowRecord, returnedByUserId?: string | null, returnedByEmail?: string | null, returnMethod?: string | null) {
+  async returnBook(record: BorrowRecord, returnedByUserId?: string | null, returnedByEmail?: string | null, returnMethod?: string | null, note?: string | null) {
     record.returnAt = new Date();
     record.status = 'returned';
     record.returnedByUserId = returnedByUserId || null;
     record.returnedByEmail = returnedByEmail || null;
     record.returnMethod = returnMethod || null;
+    record.note = note || null;
     record.updatedAt = new Date();
     return this.records.save(record);
   }

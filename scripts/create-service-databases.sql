@@ -17,6 +17,9 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'scheduledb')\gexec
 SELECT 'CREATE DATABASE facedb'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'facedb')\gexec
 
+SELECT 'CREATE DATABASE aidb'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'aidb')\gexec
+
 \connect borrowdb
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

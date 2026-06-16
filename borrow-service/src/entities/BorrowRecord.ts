@@ -40,6 +40,9 @@ export class BorrowRecord {
   @Column({ name: 'return_method', type: 'varchar', length: 50, nullable: true })
   returnMethod!: string | null;
 
+  @Column({ name: 'note', type: 'text', nullable: true })
+  note!: string | null;
+
   @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt!: Date;
 

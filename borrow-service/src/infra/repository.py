@@ -262,12 +262,14 @@ class BorrowRepository:
         returned_by_user_id: uuid.UUID | None = None,
         returned_by_email: str | None = None,
         return_method: str | None = None,
+        note: str | None = None,
     ) -> BorrowRecordModel:
         record.return_at = datetime.utcnow()
         record.status = "returned"
         record.returned_by_user_id = returned_by_user_id
         record.returned_by_email = returned_by_email
         record.return_method = return_method
+        record.note = note
         await self.db.commit()
         await self.db.refresh(record)
         return record
