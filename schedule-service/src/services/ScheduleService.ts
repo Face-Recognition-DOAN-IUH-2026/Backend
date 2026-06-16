@@ -175,6 +175,9 @@ export class ScheduleService {
     await this.ensureScheduleTargets(body.staffId!, body.shiftId!, body.zoneId!);
     await this.ensureNoDuplicateAssignment(body.staffId!, body.shiftId!, body.zoneId!, body.workDate!);
     await this.ensureNoApprovedLeave(body.staffId!, body.workDate!);
+    await this.ensureFutureDate(body.workDate!);
+    await this.ensureNoZoneConflictOnSameDay(body.staffId!, body.zoneId!, body.workDate!);
+    await this.ensureNoShiftTimeOverlap(body.staffId!, body.shiftId!, body.workDate!);
     const schedule = await this.schedules.save(this.schedules.create({
       staffId: body.staffId!,
       shiftId: body.shiftId!,
@@ -195,6 +198,8 @@ export class ScheduleService {
     await this.ensureScheduleTargets(next.staffId, next.shiftId, next.zoneId);
     await this.ensureNoDuplicateAssignment(next.staffId, next.shiftId, next.zoneId, next.workDate, id);
     await this.ensureNoApprovedLeave(next.staffId, next.workDate);
+    await this.ensureNoZoneConflictOnSameDay(next.staffId, next.zoneId, next.workDate, id);
+    await this.ensureNoShiftTimeOverlap(next.staffId, next.shiftId, next.workDate, id);
     Object.assign(schedule, body);
     const saved = await this.schedules.save(schedule);
     await this.log('assignment.updated', 'staff_schedule', id, actorId, body);
@@ -380,6 +385,47 @@ export class ScheduleService {
       .andWhere(':workDate BETWEEN availability.date_from AND availability.date_to', { workDate })
       .getOne();
     if (leave) throw new ConflictError('Staff has approved unavailable time on this date');
+  }
+
+  private async ensureNoZoneConflictOnSameDay(staffId: string, zoneId: string, workDate: string, exceptId?: string) {
+    const where: any = {
+      staffId,
+      workDate,
+      status: Not(In(['cancelled'])),
+    };
+    if (exceptId) where.id = Not(exceptId);
+    const existing = await this.schedules.findOne({ where });
+    if (existing && existing.zoneId !== zoneId) {
+      throw new ConflictError('Staff is already assigned to a different zone on this day');
+    }
+  }
+
+  private async ensureNoShiftTimeOverlap(staffId: string, shiftId: string, workDate: string, exceptId?: string) {
+    const newShift = await this.requireShift(shiftId);
+    const newStart = newShift.startTime.slice(0, 5);
+    const newEnd = newShift.endTime.slice(0, 5);
+
+    const where: any = {
+      staffId,
+      workDate,
+      status: Not(In(['cancelled'])),
+    };
+    if (exceptId) where.id = Not(exceptId);
+
+    const existingAssignments = await this.schedules.find({ where });
+
+    for (const assignment of existingAssignments) {
+      if (assignment.shiftId === shiftId) continue;
+      const existingShift = await this.shifts.findOneBy({ id: assignment.shiftId, isActive: true });
+      if (!existingShift) continue;
+      const existStart = existingShift.startTime.slice(0, 5);
+      const existEnd = existingShift.endTime.slice(0, 5);
+      if (newStart < existEnd && newEnd > existStart) {
+        throw new ConflictError(
+          `New shift time (${newStart}-${newEnd}) overlaps with existing shift "${existingShift.name}" (${existStart}-${existEnd}) on ${workDate}`,
+        );
+      }
+    }
   }
 
   private async requireOwnedSchedule(staffId: string, id: string) {

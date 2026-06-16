@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional
@@ -7,8 +8,12 @@ from typing import Optional
 from sqlalchemy import case, select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.infra.models import BookModel, BookCopyModel, BorrowRecordModel
+from src.infra.models import BookModel, BookCopyModel, BorrowRecordModel, BorrowSlipModel
 from src.config import settings
+
+
+def _normalize_isbn(isbn: str) -> str:
+    return re.sub(r"[\s-]+", "", isbn).strip()
 
 
 class BorrowRepository:
@@ -16,8 +21,11 @@ class BorrowRepository:
         self.db = db
 
     async def get_book_by_isbn(self, isbn: str) -> Optional[BookModel]:
+        cleaned = _normalize_isbn(isbn)
         result = await self.db.execute(
-            select(BookModel).where(BookModel.isbn == isbn)
+            select(BookModel).where(
+                func.replace(func.replace(BookModel.isbn, "-", ""), " ", "") == cleaned
+            )
         )
         return result.scalar_one_or_none()
 
@@ -67,7 +75,7 @@ class BorrowRepository:
 
     async def create_book(self, isbn: str, title: str, author: str | None = None, cover_url: str | None = None, shelf_location: str | None = None) -> BookModel:
         book = BookModel(
-            isbn=isbn,
+            isbn=_normalize_isbn(isbn),
             title=title,
             author=author,
             cover_url=cover_url,
@@ -79,8 +87,11 @@ class BorrowRepository:
         return book
 
     async def get_copy_by_barcode(self, barcode: str) -> Optional[BookCopyModel]:
+        cleaned = barcode.replace("-", "").replace(" ", "").strip()
         result = await self.db.execute(
-            select(BookCopyModel).where(BookCopyModel.barcode == barcode)
+            select(BookCopyModel).where(
+                func.replace(func.replace(BookCopyModel.barcode, "-", ""), " ", "") == cleaned
+            )
         )
         return result.scalar_one_or_none()
 
@@ -93,7 +104,7 @@ class BorrowRepository:
     async def create_copy(self, book_id: uuid.UUID, barcode: str, shelf_location: str | None = None) -> BookCopyModel:
         copy = BookCopyModel(
             book_id=book_id,
-            barcode=barcode,
+            barcode=barcode.replace("-", "").replace(" ", "").strip(),
             is_available=True,
             shelf_location=shelf_location,
         )
@@ -272,6 +283,8 @@ class BorrowRepository:
         record.note = note
         await self.db.commit()
         await self.db.refresh(record)
+        if record.slip_id:
+            await self.close_slip_if_complete(record.slip_id)
         return record
 
     async def get_all_books(self, skip: int = 0, limit: int = 50) -> list[BookModel]:
@@ -339,6 +352,98 @@ class BorrowRepository:
         await self.db.commit()
         await self.db.refresh(book)
         return book, True
+
+    async def create_slip(
+        self,
+        patron_id: uuid.UUID,
+        book_ids: list[uuid.UUID],
+        copy_ids: list[uuid.UUID | None],
+        shelf_locations: list[str | None],
+        created_by_user_id: uuid.UUID | None = None,
+        created_by_email: str | None = None,
+    ) -> tuple[BorrowSlipModel, list[BorrowRecordModel]]:
+        due_at = datetime.utcnow() + timedelta(days=settings.max_borrow_days)
+        slip = BorrowSlipModel(
+            patron_id=patron_id,
+            due_at=due_at,
+            status="active",
+            created_by_user_id=created_by_user_id,
+            created_by_email=created_by_email,
+            total_items=len(book_ids),
+        )
+        self.db.add(slip)
+        await self.db.flush()
+        await self.db.refresh(slip)
+
+        records: list[BorrowRecordModel] = []
+        for i in range(len(book_ids)):
+            record = BorrowRecordModel(
+                patron_id=patron_id,
+                book_id=book_ids[i],
+                copy_id=copy_ids[i],
+                slip_id=slip.id,
+                borrow_at=datetime.utcnow(),
+                due_at=due_at,
+                shelf_location=shelf_locations[i],
+                status="borrowed",
+            )
+            self.db.add(record)
+            records.append(record)
+
+        await self.db.flush()
+        for r in records:
+            await self.db.refresh(r)
+        slip.total_items = len(records)
+        await self.db.commit()
+        await self.db.refresh(slip)
+        return slip, records
+
+    async def get_active_slip(self, slip_id: uuid.UUID) -> BorrowSlipModel | None:
+        result = await self.db.execute(
+            select(BorrowSlipModel).where(
+                and_(
+                    BorrowSlipModel.id == slip_id,
+                    BorrowSlipModel.status == "active",
+                )
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def close_slip_if_complete(self, slip_id: uuid.UUID) -> bool:
+        result = await self.db.execute(
+            select(func.count(BorrowRecordModel.id)).where(
+                and_(
+                    BorrowRecordModel.slip_id == slip_id,
+                    BorrowRecordModel.status == "borrowed",
+                    BorrowRecordModel.return_at.is_(None),
+                )
+            )
+        )
+        remaining = result.scalar() or 0
+        if remaining == 0:
+            result = await self.db.execute(
+                select(BorrowSlipModel).where(BorrowSlipModel.id == slip_id)
+            )
+            slip = result.scalar_one_or_none()
+            if slip:
+                slip.status = "closed"
+                await self.db.commit()
+            return True
+        return False
+
+    async def get_records_by_slip_id(self, slip_id: uuid.UUID) -> list[BorrowRecordModel]:
+        result = await self.db.execute(
+            select(BorrowRecordModel).where(BorrowRecordModel.slip_id == slip_id)
+            .order_by(BorrowRecordModel.borrow_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_slips_by_patron(self, patron_id: uuid.UUID) -> list[BorrowSlipModel]:
+        result = await self.db.execute(
+            select(BorrowSlipModel).where(BorrowSlipModel.patron_id == patron_id)
+            .order_by(BorrowSlipModel.created_at.desc())
+        )
+        return list(result.scalars().all())
 
     async def get_books_by_isbns(self, isbns: list[str]) -> dict[str, BookModel]:
         if not isbns:

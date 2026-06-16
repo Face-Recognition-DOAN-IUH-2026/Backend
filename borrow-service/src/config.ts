@@ -28,4 +28,5 @@ export const config = {
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
   maxBorrowDays: parseInt(process.env.MAX_BORROW_DAYS || '14', 10),
   maxBorrowBooks: parseInt(process.env.MAX_BORROW_BOOKS || '3', 10),
+  maxBorrowBooksPerSlip: parseInt(process.env.MAX_BORROW_BOOKS_PER_SLIP || '5', 10),
 };

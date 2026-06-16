@@ -10,6 +10,21 @@ from sqlalchemy.orm import relationship
 from src.infra.database import Base
 
 
+class BorrowSlipModel(Base):
+    __tablename__ = "borrow_slips"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    patron_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    borrow_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    due_at = Column(DateTime, nullable=False)
+    status = Column(String(20), default="active", nullable=False)
+    created_by_user_id = Column(UUID(as_uuid=True), nullable=True)
+    created_by_email = Column(String(255), nullable=True)
+    total_items = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class BookModel(Base):
     __tablename__ = "books"
 
@@ -55,6 +70,7 @@ class BorrowRecordModel(Base):
     returned_by_user_id = Column(UUID(as_uuid=True), nullable=True)
     returned_by_email = Column(String(255), nullable=True)
     return_method = Column(String(50), nullable=True)
+    slip_id = Column(UUID(as_uuid=True), ForeignKey("borrow_slips.id"), nullable=True)
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
