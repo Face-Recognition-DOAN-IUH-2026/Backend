@@ -40,6 +40,9 @@ export class BorrowRecord {
   @Column({ name: 'return_method', type: 'varchar', length: 50, nullable: true })
   returnMethod!: string | null;
 
+  @Column({ name: 'slip_id', type: 'uuid', nullable: true })
+  slipId!: string | null;
+
   @Column({ name: 'note', type: 'text', nullable: true })
   note!: string | null;
 

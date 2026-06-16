@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BorrowRequest(BaseModel):
@@ -55,6 +55,7 @@ class BorrowRecordResponse(BaseModel):
     patron_id: UUID
     book_id: UUID
     copy_id: UUID | None = None
+    slip_id: UUID | None = None
     borrow_at: datetime
     due_at: datetime
     return_at: datetime | None = None
@@ -185,3 +186,57 @@ class BookImportResponse(BaseModel):
 
 class UpdateBookQuantityRequest(BaseModel):
     quantity: int
+
+
+class BorrowSlipItem(BaseModel):
+    barcode: str
+    isbn: str | None = None
+
+
+class CreateBorrowSlipRequest(BaseModel):
+    patron_id: UUID
+    items: list[BorrowSlipItem] = Field(min_length=1)
+
+
+class BorrowSlipResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    patron_id: UUID
+    borrow_at: datetime
+    due_at: datetime
+    status: str
+    created_by_user_id: UUID | None = None
+    created_by_email: str | None = None
+    total_items: int = 0
+    created_at: datetime
+    updated_at: datetime
+    records: list[BorrowRecordResponse] = []
+
+
+class CreateBorrowSlipResponse(BaseModel):
+    status: str
+    message: str
+    slip: BorrowSlipResponse | None = None
+
+
+class BatchStaffReturnItem(BaseModel):
+    barcode_or_isbn: str
+    note: str | None = None
+
+
+class BatchStaffReturnRequest(BaseModel):
+    student_code: str
+    items: list[BatchStaffReturnItem] = Field(min_length=1, max_length=50)
+
+
+class BatchStaffReturnResultItem(BaseModel):
+    barcode_or_isbn: str
+    status: str
+    message: str
+
+
+class BatchStaffReturnResponse(BaseModel):
+    results: list[BatchStaffReturnResultItem]
+    ok: int
+    fail: int

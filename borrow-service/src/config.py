@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     max_borrow_days: int = 14
     max_borrow_books: int = 3
+    max_borrow_books_per_slip: int = 5
 
     class Config:
         env_file = ".env"

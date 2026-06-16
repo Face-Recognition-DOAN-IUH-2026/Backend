@@ -9,10 +9,11 @@ import { BorrowRepository } from '../repositories/BorrowRepository';
 import { isPatronInside } from '../clients/AccessServiceClient';
 import { fetchOpenLibrary } from '../clients/OpenLibraryClient';
 import { lookupPatronById, lookupPatronByStudentCode, PatronSummary } from '../clients/UserServiceClient';
-import { serializeBook, serializeBookWithStats, serializeBorrowRecord, serializeCopy } from '../services/serializers';
+import { serializeBook, serializeBookWithStats, serializeBorrowRecord, serializeBorrowSlip, serializeCopy } from '../services/serializers';
 import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
+import { BorrowSlip } from '../entities/BorrowSlip';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -28,6 +29,9 @@ function patronSummary(patron: PatronSummary) {
   const id = patron.id;
   const studentCode = patron.student_code || patron.studentCode;
   if (!id || !studentCode) throw new HttpError(502, 'Du lieu doc gia khong hop le');
+  if (!/^[0-9a-f]{32}$/i.test(id.replace(/-/g, ''))) {
+    throw new HttpError(502, 'ID doc gia khong hop le');
+  }
   return {
     id,
     full_name: patron.full_name || patron.fullName || null,
@@ -184,7 +188,12 @@ router.get('/staff/active-borrowers', requireRole(['admin', 'staff'], 'Chi quan 
 
 router.get('/staff/patrons/:student_code/active', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra cuu sach dang muon'), async (req, res, next) => {
   try {
-    const patron = patronSummary(await lookupPatronByStudentCode(req.params.student_code));
+    const raw = await lookupPatronByStudentCode(req.params.student_code);
+    const status = raw.current_status || raw.currentStatus;
+    if (status && ['blocked', 'expelled', 'expired'].includes(status)) {
+      throw new HttpError(403, 'The doc gia da bi khoa/het han. Vui long lien he thu vien.');
+    }
+    const patron = patronSummary(raw);
     const repo = new BorrowRepository();
     const records = await repo.getActiveBorrowsByPatron(patron.id);
     const now = Date.now();
@@ -196,7 +205,12 @@ router.get('/staff/patrons/:student_code/active', requireRole(['admin', 'staff']
 
 router.get('/staff/patrons/:student_code/history', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra cuu lich su muon sach'), async (req, res, next) => {
   try {
-    const patron = patronSummary(await lookupPatronByStudentCode(req.params.student_code));
+    const raw = await lookupPatronByStudentCode(req.params.student_code);
+    const status = raw.current_status || raw.currentStatus;
+    if (status && ['blocked', 'expelled', 'expired'].includes(status)) {
+      throw new HttpError(403, 'The doc gia da bi khoa/het han. Vui long lien he thu vien.');
+    }
+    const patron = patronSummary(raw);
     const records = await new BorrowRepository().getBorrowsByPatron(patron.id, req.query.status_filter as string | undefined);
     res.json(records.map(serializeBorrowRecord));
   } catch (error) {
@@ -230,6 +244,95 @@ router.get('/staff/active', requireRole(['admin', 'staff'], 'Chi quan tri vien h
   }
 });
 
+router.post('/staff/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({
+      patron_id: z.string().min(1),
+      items: z.array(z.object({
+        barcode: z.string().min(1),
+        isbn: z.string().optional(),
+      })).min(1),
+    }).parse(req.body);
+
+    const repo = new BorrowRepository();
+    const bookIds: string[] = [];
+    const copyIds: (string | null)[] = [];
+    const shelfLocations: (string | null)[] = [];
+
+    for (const item of body.items) {
+      const barcode = item.barcode.trim();
+      const isbn = item.isbn?.trim();
+      let book: Book | null | undefined;
+      let copy: BookCopy | null | undefined;
+
+      if (isbn || (/^\d+$/.test(barcode) && [10, 13].includes(barcode.length))) {
+        const lookupIsbn = isbn || barcode;
+        book = await repo.getBookByIsbn(lookupIsbn);
+        if (!book) {
+          const existingCopy = await repo.getCopyByBarcode(barcode);
+          if (existingCopy) {
+            book = existingCopy.book || await repo.getBookById(existingCopy.bookId);
+            copy = existingCopy;
+            if (!copy.isAvailable) throw new HttpError(409, `Ban sao ${barcode} dang duoc muon`);
+          }
+        }
+        if (!book) {
+          const { book: newBook, copy: newCopy } = await getOrCreateBookAndCopy(repo, barcode, lookupIsbn);
+          book = newBook;
+          copy = newCopy;
+        } else if (!copy) {
+          copy = await repo.getAvailableCopy(book.id);
+          if (!copy) throw new HttpError(409, `Sach ${book.title} da het ban co the muon`);
+        }
+      } else {
+        copy = await repo.getCopyByBarcode(barcode);
+        if (!copy) throw new HttpError(404, `Khong tim thay ban sao voi ma vach ${barcode}`);
+        book = copy.book || await repo.getBookById(copy.bookId);
+        if (!book) throw new HttpError(404, 'Khong tim thay sach');
+        if (!copy.isAvailable) throw new HttpError(409, `Ban sao ${barcode} dang duoc muon`);
+      }
+
+      if (!book || !copy) throw new HttpError(404, 'Khong tim thay sach');
+
+      const active = await repo.getActiveBorrow(body.patron_id, book.id);
+      if (active) throw new HttpError(409, `Sach "${book.title}" da duoc doc gia nay muon`);
+
+      bookIds.push(book.id);
+      copyIds.push(copy.id);
+      shelfLocations.push(copy.shelfLocation || book.shelfLocation);
+    }
+
+    const overdue = await repo.getOverdueBorrows(body.patron_id);
+    if (overdue.length) throw new HttpError(409, 'Doc gia co sach qua han. Vui long tra sach truoc khi muon them.');
+
+    const activeCount = await repo.countActiveBorrows(body.patron_id);
+    if (activeCount + bookIds.length > config.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
+    if (bookIds.length > config.maxBorrowBooksPerSlip) throw new HttpError(409, `Moi phieu muon toi da ${config.maxBorrowBooksPerSlip} cuon`);
+
+    for (const copyId of copyIds) {
+      if (copyId) {
+        const copy = await repo.getCopyById(copyId);
+        if (copy) await repo.setCopyAvailable(copy, false);
+      }
+    }
+
+    const { slip, records } = await repo.createSlip(body.patron_id, bookIds, copyIds, shelfLocations, req.user?.id, req.user?.email);
+
+    for (let i = 0; i < records.length; i += 1) {
+      records[i].book = (await repo.getBookById(bookIds[i]))!;
+      records[i].copy = copyIds[i] ? await repo.getCopyById(copyIds[i]!) : null;
+    }
+
+    res.json({
+      status: 'success',
+      message: `Tao phieu muon thanh cong voi ${records.length} cuon. Han tra: ${slip.dueAt.toLocaleDateString('vi-VN')}.`,
+      slip: { ...serializeBorrowSlip(slip), records: records.map(serializeBorrowRecord) },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/staff-return/by-patron', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ student_code: z.string().min(1), barcode_or_isbn: z.string().min(1), note: z.string().nullable().optional() }).parse(req.body);
@@ -249,6 +352,58 @@ router.post('/staff-return/by-patron', requireRole(['admin', 'staff'], 'Chi quan
     await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_mobile', body.note);
     if (copy) await repo.setCopyAvailable(copy, true);
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/staff-return/batch', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({
+      student_code: z.string().min(1),
+      items: z.array(z.object({
+        barcode_or_isbn: z.string().min(1),
+        note: z.string().nullable().optional(),
+      })).min(1).max(50),
+    }).parse(req.body);
+
+    const patron = patronSummary(await lookupPatronByStudentCode(body.student_code));
+    const repo = new BorrowRepository();
+    const results: Array<{ barcode_or_isbn: string; status: string; message: string }> = [];
+    let ok = 0;
+    let fail = 0;
+
+    for (const item of body.items) {
+      const rawScanned = item.barcode_or_isbn.trim();
+      const scanned = normalizeBookCode(rawScanned);
+      try {
+        let book = await repo.getBookByNormalizedIsbn(scanned);
+        const legacyCopy = !book ? await repo.getCopyByBarcode(rawScanned) : null;
+        if (!book && legacyCopy) book = legacyCopy.book || await repo.getBookById(legacyCopy.bookId);
+        if (!book) {
+          throw new HttpError(404, 'Khong tim thay sach voi ma vua quet');
+        }
+        const records = await repo.getActiveBorrowsByPatronAndBook(patron.id, book.id);
+        if (!records.length) {
+          throw new HttpError(404, 'Doc gia nay khong muon sach co ma nay');
+        }
+        if (records.length > 1) {
+          throw new HttpError(409, 'Co nhieu ban ghi muon trung sach. Vui long chon ban ghi thu cong hoac dung barcode ban sao.');
+        }
+        const record = records[0];
+        const copy = legacyCopy || (record.copyId ? await repo.getCopyById(record.copyId) : null);
+        await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_mobile', item.note || null);
+        if (copy) await repo.setCopyAvailable(copy, true);
+        results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'success', message: 'Tra sach thanh cong' });
+        ok += 1;
+      } catch (err) {
+        const msg = err instanceof HttpError ? err.message : (err instanceof Error ? err.message : 'Loi khong xac dinh');
+        results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'failed', message: msg });
+        fail += 1;
+      }
+    }
+
+    res.json({ results, ok, fail });
   } catch (error) {
     next(error);
   }

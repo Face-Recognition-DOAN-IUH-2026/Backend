@@ -3,15 +3,25 @@ import { AppDataSource } from '../data-source';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
 import { BorrowRecord } from '../entities/BorrowRecord';
+import { BorrowSlip } from '../entities/BorrowSlip';
 import { config } from '../config';
 
 export class BorrowRepository {
   books = AppDataSource.getRepository(Book);
   copies = AppDataSource.getRepository(BookCopy);
   records = AppDataSource.getRepository(BorrowRecord);
+  slips = AppDataSource.getRepository(BorrowSlip);
+
+  private normalizeCode(code: string) {
+    return code.replace(/[\s-]+/g, '').trim();
+  }
 
   getBookByIsbn(isbn: string) {
-    return this.books.findOne({ where: { isbn }, relations: { copies: true } });
+    const cleaned = this.normalizeCode(isbn);
+    return this.books.createQueryBuilder('book')
+      .leftJoinAndSelect('book.copies', 'copy')
+      .where("REPLACE(REPLACE(book.isbn, '-', ''), ' ', '') = :isbn", { isbn: cleaned })
+      .getOne();
   }
 
   getBookByNormalizedIsbn(isbn: string) {
@@ -26,7 +36,11 @@ export class BorrowRepository {
   }
 
   getCopyByBarcode(barcode: string) {
-    return this.copies.findOne({ where: { barcode }, relations: { book: true } });
+    const cleaned = this.normalizeCode(barcode);
+    return this.copies.createQueryBuilder('copy')
+      .leftJoinAndSelect('copy.book', 'book')
+      .where("REPLACE(REPLACE(copy.barcode, '-', ''), ' ', '') = :barcode", { barcode: cleaned })
+      .getOne();
   }
 
   getCopyById(id: string) {
@@ -66,7 +80,7 @@ export class BorrowRepository {
   }
 
   async createBook(isbn: string, title: string, author?: string | null, coverUrl?: string | null, shelfLocation?: string | null) {
-    const book = this.books.create({ isbn, title, author: author || null, coverUrl: coverUrl || null, shelfLocation: shelfLocation || null });
+    const book = this.books.create({ isbn: this.normalizeCode(isbn), title, author: author || null, coverUrl: coverUrl || null, shelfLocation: shelfLocation || null });
     return this.books.save(book);
   }
 
@@ -78,11 +92,11 @@ export class BorrowRepository {
       if (coverUrl !== undefined) existing.coverUrl = coverUrl;
       return { book: await this.books.save(existing), created: false };
     }
-    return { book: await this.createBook(isbn, title, author, coverUrl), created: true };
+    return { book: await this.createBook(this.normalizeCode(isbn), title, author, coverUrl), created: true };
   }
 
   async createCopy(bookId: string, barcode: string, shelfLocation?: string | null) {
-    const copy = this.copies.create({ bookId, barcode, isAvailable: true, shelfLocation: shelfLocation || null });
+    const copy = this.copies.create({ bookId, barcode: this.normalizeCode(barcode), isAvailable: true, shelfLocation: shelfLocation || null });
     return this.copies.save(copy);
   }
 
@@ -171,12 +185,19 @@ export class BorrowRepository {
     record.returnMethod = returnMethod || null;
     record.note = note || null;
     record.updatedAt = new Date();
-    return this.records.save(record);
+    const saved = await this.records.save(record);
+    if (record.slipId) {
+      await this.closeSlipIfComplete(record.slipId);
+    }
+    return saved;
   }
 
   async getBooksByIsbns(isbns: string[]) {
     if (!isbns.length) return new Map<string, Book>();
-    const books = await this.books.find({ where: { isbn: In(isbns) } });
+    const cleaned = isbns.map((isbn) => this.normalizeCode(isbn));
+    const books = await this.books.createQueryBuilder('book')
+      .where("REPLACE(REPLACE(book.isbn, '-', ''), ' ', '') IN (:...isbns)", { isbns: cleaned })
+      .getMany();
     return new Map(books.map((book) => [book.isbn, book]));
   }
 
@@ -220,5 +241,49 @@ export class BorrowRepository {
 
   deleteCopies(copies: BookCopy[]) {
     return this.copies.remove(copies);
+  }
+
+  // === Borrow Slip ===
+
+  async createSlip(patronId: string, bookIds: string[], copyIds: (string | null)[], shelfLocations: (string | null)[], createdByUserId?: string | null, createdByEmail?: string | null) {
+    const dueAt = new Date(Date.now() + config.maxBorrowDays * 24 * 60 * 60 * 1000);
+    const slip = this.slips.create({ patronId, dueAt, status: 'active', createdByUserId: createdByUserId || null, createdByEmail: createdByEmail || null, totalItems: bookIds.length });
+    await this.slips.save(slip);
+
+    const records: BorrowRecord[] = [];
+    for (let i = 0; i < bookIds.length; i += 1) {
+      const record = this.records.create({
+        patronId, bookId: bookIds[i], copyId: copyIds[i] || null, slipId: slip.id,
+        borrowAt: new Date(), dueAt, shelfLocation: shelfLocations[i] || null, status: 'borrowed',
+      });
+      records.push(record);
+    }
+    await this.records.save(records);
+
+    slip.totalItems = records.length;
+    await this.slips.save(slip);
+
+    return { slip, records };
+  }
+
+  getActiveSlip(slipId: string) {
+    return this.slips.findOne({ where: { id: slipId, status: 'active' } });
+  }
+
+  async closeSlipIfComplete(slipId: string) {
+    const remaining = await this.records.count({ where: { slipId, status: 'borrowed', returnAt: IsNull() } });
+    if (remaining === 0) {
+      await this.slips.update(slipId, { status: 'closed', updatedAt: new Date() });
+      return true;
+    }
+    return false;
+  }
+
+  getRecordsBySlipId(slipId: string) {
+    return this.records.find({ where: { slipId }, relations: { book: true, copy: true }, order: { borrowAt: 'DESC' } });
+  }
+
+  getSlipsByPatron(patronId: string) {
+    return this.slips.find({ where: { patronId }, order: { createdAt: 'DESC' } });
   }
 }

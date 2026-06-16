@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import get_current_user
 from src.infra.database import get_db_session
-from src.infra.models import BookModel, BookCopyModel
+from src.infra.models import BookModel, BookCopyModel, BorrowSlipModel
 from src.infra.repository import BorrowRepository
 from src.lib.http_client import (
     access_service_circuit,
@@ -26,6 +26,10 @@ from src.lib.schemas import (
     BorrowRequest,
     BorrowResponse,
     BorrowRecordResponse,
+    BorrowSlipResponse,
+    BorrowSlipItem,
+    CreateBorrowSlipRequest,
+    CreateBorrowSlipResponse,
     BookResponse,
     BookWithStatsResponse,
     BooksListResponse,
@@ -166,13 +170,30 @@ async def _lookup_patron_by_id(patron_id: uuid.UUID) -> dict | None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Khong the tra cuu doc gia")
 
 
+def _check_patron_status(patron_or_summary: StaffPatronSummary | dict) -> None:
+    """Raise 403 if patron card is blocked / expired / expelled."""
+    if isinstance(patron_or_summary, dict):
+        status = _patron_field(patron_or_summary, "current_status", "currentStatus")
+    else:
+        status = patron_or_summary.current_status
+    if status in ("blocked", "expelled", "expired"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The doc gia da bi khoa/het han. Vui long lien he thu vien.",
+        )
+
+
 def _build_patron_summary(patron: dict) -> StaffPatronSummary:
     patron_id = _patron_field(patron, "id", "id")
     student_code = _patron_field(patron, "student_code", "studentCode")
     if not patron_id or not student_code:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Du lieu doc gia khong hop le")
+    try:
+        parsed_id = uuid.UUID(patron_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="ID doc gia khong hop le")
     return StaffPatronSummary(
-        id=uuid.UUID(patron_id),
+        id=parsed_id,
         full_name=_patron_field(patron, "full_name", "fullName"),
         student_code=student_code,
         email=_patron_field(patron, "email", "email"),
@@ -182,6 +203,7 @@ def _build_patron_summary(patron: dict) -> StaffPatronSummary:
 
 
 async def _get_or_create_book_and_copy(repo: BorrowRepository, barcode: str, isbn: str | None = None) -> tuple[BookModel, BookCopyModel]:
+    barcode = barcode.replace("-", "").replace(" ", "").strip()
     copy = await repo.get_copy_by_barcode(barcode)
     if copy:
         book = await repo.get_book_by_id(copy.book_id)
@@ -397,6 +419,7 @@ async def staff_get_patron_active_borrows(
     )
 
     patron = await _lookup_patron_by_student_code(student_code)
+    _check_patron_status(patron)
     patron_summary = _build_patron_summary(patron)
     repo = BorrowRepository(db)
     records = await repo.get_active_borrows_by_patron(patron_summary.id)
@@ -461,6 +484,159 @@ async def staff_get_patron_borrow_history_by_id(
     repo = BorrowRepository(db)
     records = await repo.get_borrows_by_patron(patron_id, status=status_filter)
     return [BorrowRecordResponse.model_validate(record) for record in records]
+
+
+@router.post(
+    "/staff/slip/create",
+    response_model=CreateBorrowSlipResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Bad request"},
+        403: {"model": ErrorResponse, "description": "Staff role required"},
+        404: {"model": ErrorResponse, "description": "Book or copy not found"},
+        409: {"model": ErrorResponse, "description": "Conflict (already borrowed / quota full)"},
+        401: {"model": ErrorResponse, "description": "Unauthorized"},
+    },
+)
+async def staff_create_borrow_slip(
+    body: CreateBorrowSlipRequest,
+    db: AsyncSession = Depends(get_db_session),
+    current_user: dict = Depends(get_current_user),
+):
+    _require_role(
+        current_user,
+        {"admin", "staff"},
+        "Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon",
+    )
+
+    repo = BorrowRepository(db)
+    patron_uuid = body.patron_id
+
+    try:
+        patron = await _lookup_patron_by_id(patron_uuid)
+        if patron:
+            _check_patron_status(patron)
+    except Exception:
+        logger.warning("Khong the xac thuc trang thai doc gia %s: tiep tuc cho muon", patron_uuid)
+
+    book_ids: list[uuid.UUID] = []
+    copy_ids: list[uuid.UUID | None] = []
+    shelf_locations: list[str | None] = []
+    used_copy_ids: set[uuid.UUID] = set()
+
+    for item in body.items:
+        barcode = item.barcode.strip()
+        isbn = item.isbn.strip() if item.isbn else None
+        copy: BookCopyModel | None = None
+        book: BookModel | None = None
+
+        if isbn or (barcode.isdigit() and len(barcode) in (10, 13)):
+            lookup_isbn = isbn or barcode
+            book = await repo.get_book_by_isbn(lookup_isbn)
+            if not book:
+                existing_copy = await repo.get_copy_by_barcode(barcode)
+                if existing_copy:
+                    book = await repo.get_book_by_id(existing_copy.book_id)
+                    copy = existing_copy
+                    if not copy.is_available:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Ban sao {barcode} dang duoc muon",
+                        )
+            if not book:
+                book, copy = await _get_or_create_book_and_copy(repo, barcode, lookup_isbn)
+            elif not copy:
+                copy = await repo.get_available_copy(book.id)
+                if not copy:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Sach {book.title} da het ban co the muon",
+                    )
+        else:
+            copy = await repo.get_copy_by_barcode(barcode)
+            if not copy:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Khong tim thay ban sao voi ma vach {barcode}",
+                )
+            book = await repo.get_book_by_id(copy.book_id)
+            if not book:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay sach")
+            if not copy.is_available:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Ban sao {barcode} dang duoc muon",
+                )
+
+        if not book or not copy:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Khong tim thay sach")
+
+        if copy.id in used_copy_ids:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Ma vach {barcode} da duoc quet trong phieu muon nay",
+            )
+        used_copy_ids.add(copy.id)
+
+        existing = await repo.get_active_borrow(patron_uuid, book.id)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f'Sach "{book.title}" da duoc doc gia nay muon',
+            )
+
+        book_ids.append(book.id)
+        copy_ids.append(copy.id)
+        shelf_locations.append(copy.shelf_location or book.shelf_location)
+
+    overdue = await repo.get_overdue_borrows(patron_uuid)
+    if overdue:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Doc gia co sach qua han. Vui long tra sach truoc khi muon them.",
+        )
+
+    if len(book_ids) > settings.max_borrow_books_per_slip:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Moi phieu muon toi da {settings.max_borrow_books_per_slip} cuon",
+        )
+
+    active_count = await repo.get_active_borrow_count(patron_uuid)
+    if active_count + len(book_ids) > settings.max_borrow_books:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Qua gioi han muon sach (toi da {settings.max_borrow_books} cuon)",
+        )
+
+    for cid in copy_ids:
+        if cid:
+            c = await repo.get_copy_by_id(cid)
+            if c:
+                await repo.mark_copy_unavailable(c)
+
+    slip, records = await repo.create_slip(
+        patron_uuid, book_ids, copy_ids, shelf_locations,
+        created_by_user_id=_current_user_uuid(current_user),
+        created_by_email=current_user.get("email"),
+    )
+
+    return CreateBorrowSlipResponse(
+        status="success",
+        message=f"Tao phieu muon thanh cong voi {len(records)} cuon. Han tra: {slip.due_at.strftime('%d/%m/%Y')}.",
+        slip=BorrowSlipResponse(
+            id=slip.id,
+            patron_id=slip.patron_id,
+            borrow_at=slip.borrow_at,
+            due_at=slip.due_at,
+            status=slip.status,
+            created_by_user_id=slip.created_by_user_id,
+            created_by_email=slip.created_by_email,
+            total_items=slip.total_items,
+            created_at=slip.created_at,
+            updated_at=slip.updated_at,
+            records=[BorrowRecordResponse.model_validate(r) for r in records],
+        ),
+    )
 
 
 @router.post(
