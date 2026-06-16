@@ -213,6 +213,23 @@ router.get('/staff/patrons/id/:patron_id/history', requireRole(['admin', 'staff'
   }
 });
 
+router.get('/staff/stats', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem thong ke'), async (req, res, next) => {
+  try {
+    res.json(await new BorrowRepository().getStats());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/staff/active', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem danh sach muon'), async (req, res, next) => {
+  try {
+    const records = await new BorrowRepository().getAllActiveBorrows();
+    res.json(records.map(serializeBorrowRecord));
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/staff-return/by-patron', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ student_code: z.string().min(1), barcode_or_isbn: z.string().min(1) }).parse(req.body);

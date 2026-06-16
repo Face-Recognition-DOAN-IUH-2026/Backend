@@ -136,6 +136,17 @@ export class BorrowRepository {
       .getMany();
   }
 
+  async getStats(): Promise<{ total: number; active: number; overdue: number }> {
+    const total = await this.records.count();
+    const active = await this.records.count({ where: { status: 'borrowed', returnAt: IsNull() } });
+    const overdue = await this.records.createQueryBuilder('record')
+      .where('record.status = :status', { status: 'borrowed' })
+      .andWhere('record.returnAt IS NULL')
+      .andWhere('record.dueAt < :now', { now: new Date() })
+      .getCount();
+    return { total, active, overdue };
+  }
+
   getBorrowsByPatron(patronId: string, status?: string) {
     const where: any = { patronId };
     if (status) where.status = status;
