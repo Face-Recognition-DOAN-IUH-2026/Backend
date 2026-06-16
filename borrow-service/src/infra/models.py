@@ -55,6 +55,7 @@ class BorrowRecordModel(Base):
     returned_by_user_id = Column(UUID(as_uuid=True), nullable=True)
     returned_by_email = Column(String(255), nullable=True)
     return_method = Column(String(50), nullable=True)
+    note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

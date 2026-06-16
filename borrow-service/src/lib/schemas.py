@@ -13,11 +13,17 @@ class BorrowRequest(BaseModel):
 
 class StaffReturnRequest(BaseModel):
     barcode: str
+    note: str | None = None
 
 
 class StaffReturnByPatronRequest(BaseModel):
     student_code: str
     barcode_or_isbn: str
+    note: str | None = None
+
+
+class StaffReturnRecordRequest(BaseModel):
+    note: str | None = None
 
 
 class BookCopyResponse(BaseModel):
@@ -57,6 +63,7 @@ class BorrowRecordResponse(BaseModel):
     returned_by_user_id: UUID | None = None
     returned_by_email: str | None = None
     return_method: str | None = None
+    note: str | None = None
     book: BookResponse | None = None
 
 

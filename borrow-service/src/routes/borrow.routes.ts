@@ -232,7 +232,7 @@ router.get('/staff/active', requireRole(['admin', 'staff'], 'Chi quan tri vien h
 
 router.post('/staff-return/by-patron', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
   try {
-    const body = z.object({ student_code: z.string().min(1), barcode_or_isbn: z.string().min(1) }).parse(req.body);
+    const body = z.object({ student_code: z.string().min(1), barcode_or_isbn: z.string().min(1), note: z.string().nullable().optional() }).parse(req.body);
     const patron = patronSummary(await lookupPatronByStudentCode(body.student_code));
     const repo = new BorrowRepository();
     const rawScanned = body.barcode_or_isbn.trim();
@@ -246,7 +246,7 @@ router.post('/staff-return/by-patron', requireRole(['admin', 'staff'], 'Chi quan
     if (records.length > 1) throw new HttpError(409, 'Co nhieu ban ghi muon trung sach. Vui long chon ban ghi thu cong hoac dung barcode ban sao.');
     const record = records[0];
     const copy = legacyCopy || (record.copyId ? await repo.getCopyById(record.copyId) : null);
-    await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_mobile');
+    await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_mobile', body.note);
     if (copy) await repo.setCopyAvailable(copy, true);
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
@@ -256,12 +256,13 @@ router.post('/staff-return/by-patron', requireRole(['admin', 'staff'], 'Chi quan
 
 router.post('/staff-return/record/:record_id', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
   try {
+    const body = z.object({ note: z.string().nullable().optional() }).parse(req.body);
     const repo = new BorrowRepository();
     const record = await repo.getBorrowRecordById(req.params.record_id);
     if (!record) throw new HttpError(404, 'Khong tim thay phieu muon');
     if (record.status !== 'borrowed' || record.returnAt) throw new HttpError(409, 'Phieu muon nay da duoc tra hoac khong con hieu luc');
     const copy = record.copyId ? await repo.getCopyById(record.copyId) : null;
-    await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_web');
+    await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_web', body.note);
     if (copy) await repo.setCopyAvailable(copy, true);
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
@@ -271,13 +272,13 @@ router.post('/staff-return/record/:record_id', requireRole(['admin', 'staff'], '
 
 router.post('/staff-return', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
   try {
-    const body = z.object({ barcode: z.string().min(1) }).parse(req.body);
+    const body = z.object({ barcode: z.string().min(1), note: z.string().nullable().optional() }).parse(req.body);
     const repo = new BorrowRepository();
     const copy = await repo.getCopyByBarcode(body.barcode.trim());
     if (!copy) throw new HttpError(404, `Khong tim thay ban sao nao voi ma vach ${body.barcode}`);
     const record = await repo.getActiveBorrowByCopy(copy.id);
     if (!record) throw new HttpError(404, 'Khong co ban ghi muon dang hoat dong cho ban sao nay');
-    await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_web');
+    await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_web', body.note);
     await repo.setCopyAvailable(copy, true);
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
@@ -303,7 +304,9 @@ router.get('/book/:isbn', async (req, res, next) => {
       if (!meta) throw new HttpError(404, 'Khong tim thay sach');
       book = await repo.createBook(req.params.isbn, meta.title, meta.author, meta.cover_url);
     }
-    res.json(serializeBook(book));
+    const total = await repo.countCopies(book.id);
+    const available = await repo.countCopies(book.id, true);
+    res.json(serializeBookWithStats(book, total, available));
   } catch (error) {
     next(error);
   }
@@ -434,6 +437,53 @@ router.post('/books/import', upload.single('file'), async (req, res, next) => {
       }
     }
     res.json({ success: errors === 0, total_rows: rows.length, imported, skipped, errors, results });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/isbn-import/batch', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the nhap sach qua ISBN'), async (req: AuthRequest, res, next) => {
+  try {
+    const { items } = z.object({
+      items: z.array(z.object({ isbn: z.string().min(1), quantity: z.number().int().min(1) })).min(1).max(50),
+    }).parse(req.body);
+
+    const repo = new BorrowRepository();
+    const isbns = items.map((item) => item.isbn);
+    const existing = await repo.getBooksByIsbns(isbns);
+    const offsets = await repo.getBarcodeOffsetsByBooks([...existing.keys()]);
+    const results = [];
+    let imported = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    for (const item of items) {
+      try {
+        let book = existing.get(item.isbn);
+        let created = false;
+        let noMeta = false;
+        if (!book) {
+          const meta = await fetchOpenLibrary(item.isbn);
+          noMeta = !meta;
+          const upserted = await repo.upsertBook(item.isbn, meta?.title || `ISBN: ${item.isbn}`, meta?.author, meta?.cover_url);
+          book = upserted.book;
+          created = upserted.created;
+          existing.set(item.isbn, book);
+          offsets.set(item.isbn, 0);
+        }
+        const offset = offsets.get(item.isbn) || 0;
+        const barcodes = Array.from({ length: item.quantity }, (_, i) => `LIB-${item.isbn}-${String(offset + i + 1).padStart(3, '0')}`);
+        offsets.set(item.isbn, offset + item.quantity);
+        const copies = await repo.createCopiesBatchWithSkip(book.id, barcodes, book.shelfLocation);
+        const status = created ? (noMeta ? 'warning' : 'imported') : copies.length ? 'updated' : 'skipped';
+        if (status === 'skipped') skipped += 1; else imported += 1;
+        results.push({ isbn: item.isbn, title: book.title, quantity: item.quantity, barcodes, status, message: `Them ${copies.length} ban sao${noMeta ? ' (khong co metadata tu OpenLibrary)' : ''}` });
+      } catch (error) {
+        errors += 1;
+        results.push({ isbn: item.isbn, title: '', quantity: item.quantity, barcodes: [], status: 'error', message: error instanceof Error ? error.message : 'Loi import' });
+      }
+    }
+    res.json({ success: errors === 0, total_rows: items.length, imported, skipped, errors, results });
   } catch (error) {
     next(error);
   }

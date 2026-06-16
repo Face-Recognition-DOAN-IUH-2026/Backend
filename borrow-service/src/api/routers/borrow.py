@@ -6,7 +6,7 @@ import logging
 import uuid
 from datetime import datetime
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from openpyxl import load_workbook
 from sqlalchemy import select, func
@@ -35,6 +35,7 @@ from src.lib.schemas import (
     BookImportResultRow,
     StaffReturnRequest,
     StaffReturnByPatronRequest,
+    StaffReturnRecordRequest,
     StaffPatronActiveBorrowsResponse,
     StaffActiveBorrowerSummary,
     StaffActiveBorrowersResponse,
@@ -526,6 +527,7 @@ async def staff_return_book_by_patron(
         returned_by_user_id=_current_user_uuid(current_user),
         returned_by_email=current_user.get("email"),
         return_method="staff_mobile",
+        note=body.note,
     )
     if copy:
         await repo.mark_copy_available(copy)
@@ -550,6 +552,7 @@ async def staff_return_book_by_patron(
 )
 async def staff_return_book_by_record(
     record_id: uuid.UUID,
+    body: StaffReturnRecordRequest = Body(...),
     db: AsyncSession = Depends(get_db_session),
     current_user: dict = Depends(get_current_user),
 ):
@@ -572,6 +575,7 @@ async def staff_return_book_by_record(
         returned_by_user_id=_current_user_uuid(current_user),
         returned_by_email=current_user.get("email"),
         return_method="staff_web",
+        note=body.note,
     )
     if copy:
         await repo.mark_copy_available(copy)
@@ -626,6 +630,7 @@ async def staff_return_book(
         returned_by_user_id=_current_user_uuid(current_user),
         returned_by_email=current_user.get("email"),
         return_method="staff_web",
+        note=body.note,
     )
     await repo.mark_copy_available(copy)
 

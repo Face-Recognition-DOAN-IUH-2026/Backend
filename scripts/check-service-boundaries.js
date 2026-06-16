@@ -79,6 +79,23 @@ const rules = [
       /api[\\/]routers[\\/]access\.py$/,
     ],
   },
+  {
+    service: 'ai-service',
+    include: ['src'],
+    extensions: ['.ts'],
+    forbidden: [
+      { pattern: /\busers\b/i, reason: 'ai-service must call user-service instead of querying users' },
+      { pattern: /\baccess_logs\b/i, reason: 'ai-service must call access-service instead of querying access logs' },
+      { pattern: /\bborrow_records\b/i, reason: 'ai-service must call borrow-service instead of querying borrow records' },
+      { pattern: /\bbook_copies\b/i, reason: 'ai-service must call borrow-service instead of querying inventory tables' },
+      { pattern: /\bstaff_schedules\b/i, reason: 'ai-service must call schedule-service instead of querying schedules' },
+    ],
+    allow: [
+      /config\.ts$/,
+      /entities[\\/]Ai/,
+      /migrations[\\/]/,
+    ],
+  },
 ];
 
 function walk(dir, files = []) {
