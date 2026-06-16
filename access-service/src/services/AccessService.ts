@@ -136,8 +136,11 @@ export class AccessService {
     return enrichLogs(logs);
   }
 
-  async getLogs(query: { dateFrom?: string; dateTo?: string; limit?: number }) {
+  async getLogs(query: { patronId?: string; dateFrom?: string; dateTo?: string; limit?: number }) {
     const where: any = { cameraId: In([...ACTIVE_CAMERA_IDS]) };
+    if (query.patronId) {
+      where.patronId = query.patronId;
+    }
     if (query.dateFrom || query.dateTo) {
       const from = query.dateFrom ? new Date(query.dateFrom) : new Date('1970-01-01T00:00:00Z');
       const to = query.dateTo ? new Date(query.dateTo) : new Date();

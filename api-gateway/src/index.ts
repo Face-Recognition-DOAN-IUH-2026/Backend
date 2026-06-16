@@ -181,6 +181,21 @@ const accessProxy = createProxyMiddleware({
 
 app.use('/api/access', faceLimiter, accessProxy);
 
+app.use('/api/ai', createProxyMiddleware({
+  target: config.services.aiService,
+  changeOrigin: true,
+  timeout: 120000,
+  proxyTimeout: 120000,
+  pathRewrite: stripApiPrefixFromOriginalPath,
+}));
+
+// Patron stats from user-service (must be before catch-all /api/patrons)
+app.use('/api/patrons/stats', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,
+}));
+
 // Patron CRUD + face enrollment (must be after specific routes above)
 app.use('/api/patrons', createProxyMiddleware({
   target: config.services.faceRecognitionApi,
@@ -239,6 +254,7 @@ app.get('/', (req, res) => {
       borrowService: config.services.borrowService,
       scheduleService: config.services.scheduleService,
       accessService: config.services.accessService,
+      aiService: config.services.aiService,
     },
   });
 });
