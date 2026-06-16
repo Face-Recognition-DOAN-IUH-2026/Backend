@@ -26,6 +26,7 @@ router.get('/recent', async (req, res, next) => {
 router.get('/logs', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     res.json(await accessService.getLogs({
+      patronId: req.query.patron_id as string | undefined,
       dateFrom: req.query.dateFrom as string | undefined,
       dateTo: req.query.dateTo as string | undefined,
       limit: Number(req.query.limit || 200),
