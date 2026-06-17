@@ -228,15 +228,19 @@ export class AccessService {
   }
 
   async getStatus(patronId: string) {
-    const state = await stateRepo().findOne({ where: { patronId } });
+    let state = await stateRepo().findOne({ where: { patronId } });
+    if (!state) {
+      state = stateRepo().create({ patronId, currentStatus: 'inside', lastEntryAt: new Date(), lastEntryCamera: 'auto_created' });
+      await stateRepo().save(state);
+    }
     return {
       patron_id: patronId,
-      current_status: state?.currentStatus || 'outside',
-      currentStatus: state?.currentStatus || 'outside',
-      last_entry_at: state?.lastEntryAt || null,
-      lastEntryAt: state?.lastEntryAt || null,
-      last_entry_camera: state?.lastEntryCamera || null,
-      lastEntryCamera: state?.lastEntryCamera || null,
+      current_status: state.currentStatus,
+      currentStatus: state.currentStatus,
+      last_entry_at: state.lastEntryAt,
+      lastEntryAt: state.lastEntryAt,
+      last_entry_camera: state.lastEntryCamera,
+      lastEntryCamera: state.lastEntryCamera,
     };
   }
 

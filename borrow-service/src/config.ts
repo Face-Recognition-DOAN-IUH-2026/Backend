@@ -26,6 +26,7 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET || 'change-me-in-production',
   jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
+  maxEntryHours: parseInt(process.env.PATRON_ACCESS_EXPIRY_HOURS || '24', 10),
   maxBorrowDays: parseInt(process.env.MAX_BORROW_DAYS || '14', 10),
   maxBorrowBooks: parseInt(process.env.MAX_BORROW_BOOKS || '3', 10),
   maxBorrowBooksPerSlip: parseInt(process.env.MAX_BORROW_BOOKS_PER_SLIP || '5', 10),

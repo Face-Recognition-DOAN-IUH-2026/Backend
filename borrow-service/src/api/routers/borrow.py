@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import os
 import uuid
 from datetime import datetime
 import httpx
@@ -47,6 +48,8 @@ from src.lib.schemas import (
     ReturnResponse,
     ErrorResponse,
     UpdateBookQuantityRequest,
+    BulkDeleteRequest,
+    BulkDeleteResponse,
 )
 from src.config import settings
 
@@ -214,9 +217,8 @@ async def _get_or_create_book_and_copy(repo: BorrowRepository, barcode: str, isb
         book = await repo.get_book_by_isbn(isbn)
 
     if not book:
-        meta = await _fetch_openlibrary(isbn)
-        if meta:
-            book = await repo.create_book(isbn, meta["title"], author=meta["author"], cover_url=meta["cover_url"])
+        # Only fetch metadata for display, do NOT auto-create book
+        meta = await _fetch_google_books(isbn)
 
     if not book:
         book = await repo.create_book(isbn or barcode, f"Barcode {barcode}")
@@ -263,14 +265,16 @@ async def borrow_book(
         lookup_isbn = body.isbn or barcode
         book = await repo.get_book_by_isbn(lookup_isbn)
         if not book:
-            book, copy = await _get_or_create_book_and_copy(repo, barcode, isbn=lookup_isbn)
-        else:
-            copy = await repo.get_available_copy(book.id)
-            if not copy:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Sach nay hien da het ban co the muon",
-                )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Sach voi ISBN {lookup_isbn} chua co trong thu vien",
+            )
+        copy = await repo.get_available_copy(book.id)
+        if not copy:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Sach nay hien da het ban co the muon",
+            )
     else:
         copy = await repo.get_copy_by_barcode(barcode)
         if not copy:
@@ -543,14 +547,16 @@ async def staff_create_borrow_slip(
                             detail=f"Ban sao {barcode} dang duoc muon",
                         )
             if not book:
-                book, copy = await _get_or_create_book_and_copy(repo, barcode, lookup_isbn)
-            elif not copy:
-                copy = await repo.get_available_copy(book.id)
-                if not copy:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=f"Sach {book.title} da het ban co the muon",
-                    )
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Sach voi ISBN {lookup_isbn} chua co trong thu vien",
+                )
+            copy = await repo.get_available_copy(book.id)
+            if not copy:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Sach {book.title} da het ban co the muon",
+                )
         else:
             copy = await repo.get_copy_by_barcode(barcode)
             if not copy:
@@ -847,11 +853,10 @@ async def get_book(
     repo = BorrowRepository(db)
     book = await repo.get_book_by_isbn(isbn.strip())
     if not book:
-        meta = await _fetch_openlibrary(isbn)
-        if meta:
-            book = await repo.create_book(isbn, meta["title"], author=meta["author"], cover_url=meta["cover_url"])
-            return BookResponse.model_validate(book)
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy sách")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sach voi ISBN {isbn} chua co trong thu vien",
+        )
     return BookResponse.model_validate(book)
 
 
@@ -920,41 +925,57 @@ async def search_books(
     return items
 
 
-async def _fetch_openlibrary(isbn: str) -> dict | None:
-    can_req = await openlibrary_circuit.can_request()
+async def _fetch_google_books(isbn: str) -> dict | None:
+    """Fetch book metadata from Google Books API."""
+    from lib.http_client import google_books_circuit
+
+    can_req = await google_books_circuit.can_request()
     if not can_req:
-        logger.warning("OpenLibrary circuit OPEN, skipping fetch for ISBN=%s", isbn)
+        logger.warning("Google Books circuit OPEN, skipping fetch for ISBN=%s", isbn)
         return None
     try:
         client = get_http_client()
-        resp = await client.get(
-            "https://openlibrary.org/api/books",
-            params={"bibkeys": f"ISBN:{isbn}", "format": "json", "jscmd": "data"},
-            timeout=10.0,
-        )
+        api_key = os.environ.get("GOOGLE_BOOKS_API_KEY", "")
+        if not api_key:
+            logger.warning("Google Books API key not configured")
+            return None
+        # Use Google Books API v1
+        url = "https://www.googleapis.com/books/v1/volumes"
+        params = {"q": f"isbn:{isbn}", "maxResults": 1, "key": api_key}
+        resp = await client.get(url, params=params, timeout=10.0)
         if resp.status_code == 200:
             data = resp.json()
-            book_data = data.get(f"ISBN:{isbn}", {})
-            if book_data:
-                await openlibrary_circuit.record_success()
+            items = data.get("items", [])
+            if items:
+                await google_books_circuit.record_success()
+                info = items[0].get("volumeInfo", {})
+                authors = info.get("authors", [])
+                author = ", ".join(authors) if authors else None
+                categories = info.get("categories", [])
+                cats = ", ".join(categories) if categories else None
+                thumbnail = info.get("imageLinks", {}).get("thumbnail") or info.get("imageLinks", {}).get("smallThumbnail")
                 return {
-                    "title": book_data.get("title", f"ISBN {isbn}"),
-                    "author": book_data.get("authors", [{}])[0].get("name") if book_data.get("authors") else None,
-                    "cover_url": (
-                        book_data.get("cover", {}).get("medium")
-                        or book_data.get("cover", {}).get("small")
-                    ),
+                    "title": info.get("title", f"ISBN {isbn}"),
+                    "subtitle": info.get("subtitle"),
+                    "author": author,
+                    "publisher": info.get("publisher"),
+                    "published_date": info.get("publishedDate"),
+                    "description": info.get("description"),
+                    "page_count": info.get("pageCount"),
+                    "categories": cats,
+                    "language": info.get("language"),
+                    "cover_url": thumbnail,
                 }
-        await openlibrary_circuit.record_success()
+        await google_books_circuit.record_success()
     except httpx.TimeoutException:
-        logger.warning("OpenLibrary timeout for ISBN=%s", isbn)
-        await openlibrary_circuit.record_failure()
+        logger.warning("Google Books timeout for ISBN=%s", isbn)
+        await google_books_circuit.record_failure()
     except httpx.HTTPError as e:
-        logger.warning("OpenLibrary HTTP error for ISBN=%s: %s", isbn, e)
-        await openlibrary_circuit.record_failure()
+        logger.warning("Google Books HTTP error for ISBN=%s: %s", isbn, e)
+        await google_books_circuit.record_failure()
     except Exception as e:
-        logger.error("OpenLibrary unexpected error for ISBN=%s: %s", isbn, e)
-        await openlibrary_circuit.record_failure()
+        logger.error("Google Books unexpected error for ISBN=%s: %s", isbn, e)
+        await google_books_circuit.record_failure()
     return None
 
 
@@ -1084,7 +1105,7 @@ async def preview_import(
     metadata_map: dict[str, dict | None] = {}
     if isbns_needed:
         async def fetch_one(client: httpx.AsyncClient, isbn: str) -> tuple[str, dict | None]:
-            return isbn, await _fetch_openlibrary(isbn)
+            return isbn, await _fetch_google_books(isbn)
         async with httpx.AsyncClient(timeout=30.0) as client:
             tasks = [fetch_one(client, isbn) for isbn in isbns_needed]
             fetched = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1118,15 +1139,32 @@ async def preview_import(
 
         valid_rows += 1
 
+        # Get metadata fields (prefer DB, fallback to API)
+        title = book.title if book else (meta.get("title") if meta else f"ISBN: {isbn}")
+        author = book.author if book else (meta.get("author") if meta else None)
+        cover_url = book.cover_url if book else (meta.get("cover_url") if meta else None)
+        subtitle = meta.get("subtitle") if meta else None
+        publisher = meta.get("publisher") if meta else None
+        published_date = meta.get("published_date") if meta else None
+        description = meta.get("description") if meta else None
+        page_count = meta.get("page_count") if meta else None
+        categories = meta.get("categories") if meta else None
+
         preview_rows.append(BookImportPreviewRow(
             isbn=isbn,
             quantity=quantity,
-            title=book.title if book else (meta.get("title") if meta else f"ISBN: {isbn}"),
-            author=book.author if book else (meta.get("author") if meta else None),
-            cover_url=book.cover_url if book else (meta.get("cover_url") if meta else None),
+            title=title,
+            author=author,
+            cover_url=cover_url,
+            subtitle=subtitle,
+            publisher=publisher,
+            published_date=published_date,
+            description=description,
+            page_count=page_count,
+            categories=categories,
             barcodes=barcodes,
             status=status_str,
-            message="Không có metadata từ OpenLibrary" if status_str == "warning" else None,
+            message="Không có metadata từ Google Books" if status_str == "warning" else None,
         ))
 
     return BookImportPreviewResponse(
@@ -1194,11 +1232,11 @@ async def import_books(
 
     metadata_map: dict[str, dict | None] = {}
     if isbns_needed:
-        tasks = [_fetch_openlibrary(isbn) for isbn in isbns_needed]
+        tasks = [_fetch_google_books(isbn) for isbn in isbns_needed]
         fetched = await asyncio.gather(*tasks, return_exceptions=True)
         for isbn, meta in zip(isbns_needed, fetched):
             if isinstance(meta, Exception):
-                logger.warning("OpenLibrary fetch failed for ISBN=%s: %s", isbn, meta)
+                logger.warning("Google Books fetch failed for ISBN=%s: %s", isbn, meta)
                 metadata_map[isbn] = None
             else:
                 metadata_map[isbn] = meta
@@ -1424,4 +1462,46 @@ async def update_book_quantity(
         total_copies=total_copies,
         available_copies=available_copies,
         created_at=book.created_at,
+    )
+
+
+@router.post(
+    "/books/delete",
+    response_model=BulkDeleteResponse,
+    responses={401: {"model": ErrorResponse}},
+)
+async def delete_books(
+    request: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db_session),
+    _: dict = Depends(get_current_user),
+):
+    """Delete multiple books by IDs."""
+    repo = BorrowRepository(db)
+    deleted = 0
+    errors: list[str] = []
+
+    for book_id in request.book_ids:
+        try:
+            book = await repo.get_book_by_id(book_id)
+            if not book:
+                errors.append(f"Sách ID {book_id} không tồn tại")
+                continue
+
+            # Check if copies are borrowed - cannot delete if any are on loan
+            if book.available_copies < book.total_copies:
+                errors.append(f"Sách '{book.title}' đang được mượn, không thể xóa")
+                continue
+
+            # Delete book (cascades to copies)
+            await repo.delete_book(book)
+            deleted += 1
+        except Exception as e:
+            logger.error("Delete book failed for ID=%s: %s", book_id, e)
+            errors.append(f"Sách ID {book_id}: {str(e)}")
+
+    await db.commit()
+    return BulkDeleteResponse(
+        deleted=deleted,
+        errors=errors,
+        success=deleted > 0 and len(errors) == 0,
     )
