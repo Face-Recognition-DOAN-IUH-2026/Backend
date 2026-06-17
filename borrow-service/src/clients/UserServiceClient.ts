@@ -2,7 +2,7 @@ import { config } from '../config';
 import { HttpError } from '../middlewares/errorHandler';
 import { CircuitBreaker } from '../utils/circuitBreaker';
 
-const circuit = new CircuitBreaker(3, 30_000);
+const circuit = new CircuitBreaker(5, 60_000);
 
 export interface PatronSummary {
   id: string;

@@ -6,8 +6,8 @@ import { AppDataSource } from '../data-source';
 import { auth, AuthRequest, requireRole } from '../middlewares/auth';
 import { HttpError } from '../middlewares/errorHandler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
-import { isPatronInside } from '../clients/AccessServiceClient';
-import { fetchOpenLibrary } from '../clients/OpenLibraryClient';
+import { isPatronInside, getPatronAccessStatus } from '../clients/AccessServiceClient';
+import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { lookupPatronById, lookupPatronByStudentCode, PatronSummary } from '../clients/UserServiceClient';
 import { serializeBook, serializeBookWithStats, serializeBorrowRecord, serializeBorrowSlip, serializeCopy } from '../services/serializers';
 import { config } from '../config';
@@ -98,19 +98,45 @@ async function getOrCreateBookAndCopy(repo: BorrowRepository, barcode: string, i
   if (existingCopy) return { book: existingCopy.book || await repo.getBookById(existingCopy.bookId), copy: existingCopy };
   let book = isbn ? await repo.getBookByIsbn(isbn) : null;
   if (!book && isbn) {
-    const meta = await fetchOpenLibrary(isbn);
-    if (meta) book = await repo.createBook(isbn, meta.title, meta.author, meta.cover_url);
+    const meta = await fetchGoogleBooks(isbn);
+    if (meta) book = await repo.createBook(isbn, meta.title, meta.author, meta.coverUrl);
   }
   if (!book) book = await repo.createBook(isbn || barcode, `Barcode ${barcode}`);
   const copy = await repo.createCopy(book.id, barcode, book.shelfLocation);
   return { book, copy };
 }
 
+const patronStatusMiddleware = requireRole(['patron', 'admin', 'staff'], 'Chi xem trang thai trong thu vien');
+router.get('/patron/inside-status', patronStatusMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = patronIdFrom(req.user);
+    const status = await getPatronAccessStatus(userId);
+    res.json({
+      inside: status.inside,
+      last_entry_at: status.lastEntryAt,
+      lastEntryAt: status.lastEntryAt,
+      expires_at: status.expiresAt,
+      expiresAt: status.expiresAt,
+      is_expired: status.isExpired,
+      isExpired: status.isExpired,
+      source: status.source,
+      max_entry_hours: config.maxEntryHours,
+      maxEntryHours: config.maxEntryHours,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/', requireRole(['patron'], 'Chi doc gia moi co the tu muon sach tren ung dung'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ barcode: z.string().min(1), isbn: z.string().optional() }).parse(req.body);
     const userId = patronIdFrom(req.user);
-    if (!await isPatronInside(userId)) {
+    const accessStatus = await getPatronAccessStatus(userId);
+    if (!accessStatus.inside) {
+      if (accessStatus.isExpired) {
+        throw new HttpError(403, `Phien lam viec da het han (${config.maxEntryHours}h). Vui long vao lai qua cong de muon sach.`);
+      }
       throw new HttpError(403, 'Ban phai co mat trong thu vien de muon sach. Vui long quet the tai cua vao.');
     }
     const repo = new BorrowRepository();
@@ -455,9 +481,9 @@ router.get('/book/:isbn', async (req, res, next) => {
     const repo = new BorrowRepository();
     let book = await repo.getBookByIsbn(req.params.isbn.trim());
     if (!book) {
-      const meta = await fetchOpenLibrary(req.params.isbn);
+      const meta = await fetchGoogleBooks(req.params.isbn);
       if (!meta) throw new HttpError(404, 'Khong tim thay sach');
-      book = await repo.createBook(req.params.isbn, meta.title, meta.author, meta.cover_url);
+      book = await repo.createBook(req.params.isbn, meta.title, meta.author, meta.coverUrl);
     }
     const total = await repo.countCopies(book.id);
     const available = await repo.countCopies(book.id, true);
@@ -535,17 +561,27 @@ router.post('/books/import/preview', upload.single('file'), async (req, res, nex
     const preview = [];
     for (const row of rows) {
       const book = existing.get(row.isbn);
-      const meta = book ? null : await fetchOpenLibrary(row.isbn);
+      const meta = book ? null : await fetchGoogleBooks(row.isbn);
       const offset = offsets.get(row.isbn) || 0;
       preview.push({
         isbn: row.isbn,
         quantity: row.quantity,
         title: book?.title || meta?.title || `ISBN: ${row.isbn}`,
+        subtitle: book?.subtitle || meta?.subtitle || null,
         author: book?.author || meta?.author || null,
-        cover_url: book?.coverUrl || meta?.cover_url || null,
+        publisher: book?.publisher || meta?.publisher || null,
+        published_date: book?.publishedDate || meta?.publishedDate || null,
+        page_count: book?.pageCount || meta?.pageCount || null,
+        categories: book?.categories || meta?.categories || null,
+        cover_url: book?.coverUrl || meta?.coverUrl || null,
+        description: book?.description || meta?.description || null,
+        average_rating: book?.averageRating ?? meta?.averageRating ?? null,
+        language: book?.language || meta?.language || null,
+        isbn10: book?.isbn10 || meta?.isbn10 || null,
+        isbn13: book?.isbn13 || meta?.isbn13 || null,
         barcodes: Array.from({ length: row.quantity }, (_, i) => `LIB-${row.isbn}-${String(offset + i + 1).padStart(3, '0')}`),
         status: book ? 'exists' : meta ? 'new' : 'warning',
-        message: !book && !meta ? 'Khong co metadata tu OpenLibrary' : null,
+        message: !book && !meta ? 'Khong co metadata tu Google Books' : null,
       });
     }
     res.json({ rows: preview, total_rows: preview.length, valid_rows: preview.length, invalid_rows: 0 });
@@ -571,9 +607,20 @@ router.post('/books/import', upload.single('file'), async (req, res, next) => {
         let created = false;
         let noMeta = false;
         if (!book) {
-          const meta = await fetchOpenLibrary(row.isbn);
+          const meta = await fetchGoogleBooks(row.isbn);
           noMeta = !meta;
-          const upserted = await repo.upsertBook(row.isbn, meta?.title || `ISBN: ${row.isbn}`, meta?.author, meta?.cover_url);
+          const upserted = await repo.upsertBook(row.isbn, meta?.title || `ISBN: ${row.isbn}`, meta?.author, meta?.coverUrl, meta ? {
+            subtitle: meta.subtitle ?? null,
+            publisher: meta.publisher ?? null,
+            publishedDate: meta.publishedDate ?? null,
+            description: meta.description ?? null,
+            pageCount: meta.pageCount ?? null,
+            categories: meta.categories ?? null,
+            averageRating: meta.averageRating ?? null,
+            language: meta.language ?? null,
+            isbn10: meta.isbn10 ?? null,
+            isbn13: meta.isbn13 ?? null,
+          } : undefined);
           book = upserted.book;
           created = upserted.created;
           existing.set(row.isbn, book);
@@ -586,6 +633,79 @@ router.post('/books/import', upload.single('file'), async (req, res, next) => {
         const status = created ? (noMeta ? 'warning' : 'imported') : copies.length ? 'updated' : 'skipped';
         if (status === 'skipped') skipped += 1; else imported += 1;
         results.push({ isbn: row.isbn, title: book.title, quantity: row.quantity, barcodes, status, message: `Them ${copies.length} ban sao${noMeta ? ' (khong co metadata tu OpenLibrary)' : ''}` });
+      } catch (error) {
+        errors += 1;
+        results.push({ isbn: row.isbn, title: '', quantity: row.quantity, barcodes: [], status: 'error', message: error instanceof Error ? error.message : 'Loi import' });
+      }
+    }
+    res.json({ success: errors === 0, total_rows: rows.length, imported, skipped, errors, results });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const ImportFilteredRowSchema = z.object({
+  isbn: z.string(),
+  quantity: z.number().int().positive(),
+  title: z.string().nullable().optional(),
+  subtitle: z.string().nullable().optional(),
+  author: z.string().nullable().optional(),
+  publisher: z.string().nullable().optional(),
+  published_date: z.string().nullable().optional(),
+  page_count: z.number().int().nullable().optional(),
+  categories: z.string().nullable().optional(),
+  cover_url: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  average_rating: z.number().nullable().optional(),
+  language: z.string().nullable().optional(),
+  isbn10: z.string().nullable().optional(),
+  isbn13: z.string().nullable().optional(),
+});
+
+router.post('/books/import/filtered', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the nhap sach'), async (req: AuthRequest, res, next) => {
+  try {
+    const { rows } = z.object({ rows: z.array(ImportFilteredRowSchema) }).parse(req.body);
+    if (!rows.length) throw new HttpError(400, 'Khong co du lieu de import');
+    const repo = new BorrowRepository();
+    const isbns = rows.map((r) => r.isbn);
+    const existing = await repo.getBooksByIsbns(isbns);
+    const offsets = await repo.getBarcodeOffsetsByBooks(isbns);
+    const results = [];
+    let imported = 0;
+    let skipped = 0;
+    let errors = 0;
+    for (const row of rows) {
+      try {
+        let book = existing.get(row.isbn);
+        let created = false;
+        if (!book) {
+          const title = row.title || `ISBN: ${row.isbn}`;
+          const author = row.author || null;
+          const coverUrl = row.cover_url || null;
+          const upserted = await repo.upsertBook(row.isbn, title, author, coverUrl, {
+            subtitle: row.subtitle ?? null,
+            publisher: row.publisher ?? null,
+            publishedDate: row.published_date ?? null,
+            description: row.description ?? null,
+            pageCount: row.page_count ?? null,
+            categories: row.categories ?? null,
+            averageRating: row.average_rating ?? null,
+            language: row.language ?? null,
+            isbn10: row.isbn10 ?? null,
+            isbn13: row.isbn13 ?? null,
+          });
+          book = upserted.book;
+          created = upserted.created;
+          existing.set(row.isbn, book);
+          offsets.set(row.isbn, 0);
+        }
+        const offset = offsets.get(row.isbn) || 0;
+        const barcodes = Array.from({ length: row.quantity }, (_, i) => `LIB-${row.isbn}-${String(offset + i + 1).padStart(3, '0')}`);
+        offsets.set(row.isbn, offset + row.quantity);
+        const copies = await repo.createCopiesBatchWithSkip(book.id, barcodes, book.shelfLocation);
+        const status = created ? 'imported' : copies.length ? 'updated' : 'skipped';
+        if (status === 'skipped') skipped += 1; else imported += 1;
+        results.push({ isbn: row.isbn, title: book.title, quantity: row.quantity, barcodes, status, message: `Them ${copies.length} ban sao` });
       } catch (error) {
         errors += 1;
         results.push({ isbn: row.isbn, title: '', quantity: row.quantity, barcodes: [], status: 'error', message: error instanceof Error ? error.message : 'Loi import' });
@@ -618,9 +738,20 @@ router.post('/isbn-import/batch', requireRole(['admin', 'staff'], 'Chi quan tri 
         let created = false;
         let noMeta = false;
         if (!book) {
-          const meta = await fetchOpenLibrary(item.isbn);
+          const meta = await fetchGoogleBooks(item.isbn);
           noMeta = !meta;
-          const upserted = await repo.upsertBook(item.isbn, meta?.title || `ISBN: ${item.isbn}`, meta?.author, meta?.cover_url);
+          const upserted = await repo.upsertBook(item.isbn, meta?.title || `ISBN: ${item.isbn}`, meta?.author, meta?.coverUrl, meta ? {
+            subtitle: meta.subtitle ?? null,
+            publisher: meta.publisher ?? null,
+            publishedDate: meta.publishedDate ?? null,
+            description: meta.description ?? null,
+            pageCount: meta.pageCount ?? null,
+            categories: meta.categories ?? null,
+            averageRating: meta.averageRating ?? null,
+            language: meta.language ?? null,
+            isbn10: meta.isbn10 ?? null,
+            isbn13: meta.isbn13 ?? null,
+          } : undefined);
           book = upserted.book;
           created = upserted.created;
           existing.set(item.isbn, book);
@@ -652,6 +783,31 @@ router.get('/barcodes', async (req, res, next) => {
     if (String(req.query.available_only || 'false') === 'true') qb.andWhere('copy.isAvailable = true');
     const copies = await qb.getMany();
     res.json(copies.map(serializeCopy));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/books/delete', requireRole(['admin'], 'Chi quan tri vien moi co the xoa sach'), async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({ book_ids: z.array(z.string().uuid()) }).parse(req.body);
+    if (body.book_ids.length > 50) throw new HttpError(400, 'Toi da 50 sach mot lan');
+    const repo = new BorrowRepository();
+    const result = await repo.bulkDeleteBooks(body.book_ids);
+    res.json({ ...result, success: result.deleted > 0 && result.errors.length === 0 });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/books/:book_id', async (req, res, next) => {
+  try {
+    const repo = new BorrowRepository();
+    const book = await repo.getBookById(req.params.book_id);
+    if (!book) throw new HttpError(404, 'Sach khong ton tai');
+    const total = await repo.countCopies(book.id);
+    const available = await repo.countCopies(book.id, true);
+    res.json(serializeBookWithStats(book, total, available));
   } catch (error) {
     next(error);
   }

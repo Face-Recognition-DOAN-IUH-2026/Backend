@@ -29,8 +29,7 @@ export const setupProxy = (app: any) => {
     changeOrigin: true,
     pathRewrite: (path: string, req: any) => {
       const originalUrl = req.originalUrl || req.url;
-      const newPath = '/borrow/' + (originalUrl.includes('?') ? '?' + originalUrl.split('?')[1] : '');
-      return newPath;
+      return originalUrl.replace(/^\/api\/borrow/, '/borrow');
     },
   }));
 

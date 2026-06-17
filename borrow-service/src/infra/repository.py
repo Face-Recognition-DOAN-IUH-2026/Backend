@@ -559,3 +559,16 @@ class BorrowRepository:
             if len(parts) == 2 and parts[1].isdigit():
                 return int(parts[1])
         return 0
+
+    async def delete_book(self, book: BookModel):
+        """Delete a book and all its copies."""
+        # First delete all copies
+        result = await self.db.execute(
+            select(BookCopyModel).where(BookCopyModel.book_id == book.id)
+        )
+        copies = list(result.scalars().all())
+        for c in copies:
+            await self.db.delete(c)
+        # Then delete the book
+        await self.db.delete(book)
+        await self.db.commit()

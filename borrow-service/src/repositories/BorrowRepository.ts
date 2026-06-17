@@ -79,20 +79,83 @@ export class BorrowRepository {
     return map;
   }
 
-  async createBook(isbn: string, title: string, author?: string | null, coverUrl?: string | null, shelfLocation?: string | null) {
-    const book = this.books.create({ isbn: this.normalizeCode(isbn), title, author: author || null, coverUrl: coverUrl || null, shelfLocation: shelfLocation || null });
+  async createBook(
+    isbn: string,
+    title: string,
+    author?: string | null,
+    coverUrl?: string | null,
+    shelfLocation?: string | null,
+    extra?: {
+      subtitle?: string | null;
+      publisher?: string | null;
+      publishedDate?: string | null;
+      description?: string | null;
+      pageCount?: number | null;
+      categories?: string | null;
+      averageRating?: number | null;
+      language?: string | null;
+      isbn10?: string | null;
+      isbn13?: string | null;
+    }
+  ) {
+    const book = this.books.create({
+      isbn: this.normalizeCode(isbn),
+      title,
+      author: author || null,
+      coverUrl: coverUrl || null,
+      shelfLocation: shelfLocation || null,
+      subtitle: extra?.subtitle || null,
+      publisher: extra?.publisher || null,
+      publishedDate: extra?.publishedDate || null,
+      description: extra?.description || null,
+      pageCount: extra?.pageCount || null,
+      categories: extra?.categories || null,
+      averageRating: extra?.averageRating || null,
+      language: extra?.language || null,
+      isbn10: extra?.isbn10 || null,
+      isbn13: extra?.isbn13 || null,
+    });
     return this.books.save(book);
   }
 
-  async upsertBook(isbn: string, title: string, author?: string | null, coverUrl?: string | null) {
+  async upsertBook(
+    isbn: string,
+    title: string,
+    author?: string | null,
+    coverUrl?: string | null,
+    extra?: {
+      subtitle?: string | null;
+      publisher?: string | null;
+      publishedDate?: string | null;
+      description?: string | null;
+      pageCount?: number | null;
+      categories?: string | null;
+      averageRating?: number | null;
+      language?: string | null;
+      isbn10?: string | null;
+      isbn13?: string | null;
+    }
+  ) {
     const existing = await this.getBookByIsbn(isbn);
     if (existing) {
       existing.title = title || existing.title;
       if (author !== undefined) existing.author = author;
       if (coverUrl !== undefined) existing.coverUrl = coverUrl;
+      if (extra) {
+        if (extra.subtitle !== undefined) existing.subtitle = extra.subtitle;
+        if (extra.publisher !== undefined) existing.publisher = extra.publisher;
+        if (extra.publishedDate !== undefined) existing.publishedDate = extra.publishedDate;
+        if (extra.description !== undefined) existing.description = extra.description;
+        if (extra.pageCount !== undefined) existing.pageCount = extra.pageCount;
+        if (extra.categories !== undefined) existing.categories = extra.categories;
+        if (extra.averageRating !== undefined) existing.averageRating = extra.averageRating;
+        if (extra.language !== undefined) existing.language = extra.language;
+        if (extra.isbn10 !== undefined) existing.isbn10 = extra.isbn10;
+        if (extra.isbn13 !== undefined) existing.isbn13 = extra.isbn13;
+      }
       return { book: await this.books.save(existing), created: false };
     }
-    return { book: await this.createBook(this.normalizeCode(isbn), title, author, coverUrl), created: true };
+    return { book: await this.createBook(this.normalizeCode(isbn), title, author, coverUrl, undefined, extra), created: true };
   }
 
   async createCopy(bookId: string, barcode: string, shelfLocation?: string | null) {
@@ -241,6 +304,42 @@ export class BorrowRepository {
 
   deleteCopies(copies: BookCopy[]) {
     return this.copies.remove(copies);
+  }
+
+  async hasActiveBorrows(bookId: string): Promise<boolean> {
+    const count = await this.records.createQueryBuilder('record')
+      .innerJoin('record.copy', 'copy')
+      .where('copy.bookId = :bookId', { bookId })
+      .andWhere('record.status = :status', { status: 'borrowed' })
+      .andWhere('record.returnAt IS NULL')
+      .getCount();
+    return count > 0;
+  }
+
+  async deleteBookAndCopies(bookId: string): Promise<void> {
+    await this.records.createQueryBuilder()
+      .delete()
+      .from(BorrowRecord)
+      .where('copyId IN (SELECT id FROM book_copies WHERE bookId = :bookId)', { bookId })
+      .execute();
+    await this.copies.delete({ bookId });
+    await this.books.delete(bookId);
+  }
+
+  async bulkDeleteBooks(bookIds: string[]): Promise<{ deleted: number; errors: string[] }> {
+    const errors: string[] = [];
+    let deleted = 0;
+    for (const bookId of bookIds) {
+      const hasActive = await this.hasActiveBorrows(bookId);
+      if (hasActive) {
+        const book = await this.books.findOne({ where: { id: bookId } });
+        errors.push(book ? `${book.title} (${book.isbn}) - đang có bản được mượn` : `ID ${bookId} - đang có bản được mượn`);
+        continue;
+      }
+      await this.deleteBookAndCopies(bookId);
+      deleted++;
+    }
+    return { deleted, errors };
   }
 
   // === Borrow Slip ===

@@ -154,6 +154,12 @@ class BookImportPreviewRow(BaseModel):
     title: str | None = None
     author: str | None = None
     cover_url: str | None = None
+    subtitle: str | None = None
+    publisher: str | None = None
+    published_date: str | None = None
+    description: str | None = None
+    page_count: int | None = None
+    categories: str | None = None
     barcodes: list[str] = []
     status: str = "pending"
     message: str | None = None
@@ -182,6 +188,16 @@ class BookImportResponse(BaseModel):
     skipped: int
     errors: int
     results: list[BookImportResultRow]
+
+
+class BulkDeleteRequest(BaseModel):
+    book_ids: list[str]
+
+
+class BulkDeleteResponse(BaseModel):
+    deleted: int
+    errors: list[str]
+    success: bool
 
 
 class UpdateBookQuantityRequest(BaseModel):
