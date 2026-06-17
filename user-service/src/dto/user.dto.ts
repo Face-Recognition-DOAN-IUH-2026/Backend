@@ -5,6 +5,8 @@ export interface UserPublicDto {
   role: string;
   studentCode?: string | null;
   className?: string | null;
+  course?: string | null;
+  permanentAddress?: string | null;
   identityNumber?: string | null;
   phone?: string | null;
   cardNumber?: string | null;

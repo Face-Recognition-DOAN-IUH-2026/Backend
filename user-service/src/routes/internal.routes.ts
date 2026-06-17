@@ -24,6 +24,7 @@ const toPublic = (user: any) => ({
   currentStatus: user.currentStatus,
   lastEntryAt: user.lastEntryAt,
   lastEntryCamera: user.lastEntryCamera,
+  membershipExpiry: user.membershipExpiry,
 });
 
 router.get('/users', async (_req, res) => {

@@ -5,7 +5,7 @@ import { patronService } from '../services';
 export class PatronController {
   async register(req: Request, res: Response) {
     try {
-      const { student_code, password, full_name, class_name, email } = req.body;
+      const { student_code, password, full_name, class_name, course, permanent_address, email } = req.body;
       if (!student_code || !password || !full_name) {
         res.status(400).json({ error: 'student_code, password, and full_name are required' });
         return;
@@ -18,6 +18,8 @@ export class PatronController {
         role: 'patron',
         studentCode: student_code,
         className: class_name,
+        course,
+        permanentAddress: permanent_address,
       });
       res.status(201).json(result);
     } catch (error: any) {
@@ -95,7 +97,7 @@ export class PatronController {
 
   async create(req: AuthRequest, res: Response) {
     try {
-      const { full_name, student_code, class_name, membership_expiry, issue_date, email, phone } = req.body;
+      const { full_name, student_code, class_name, course, permanent_address, membership_expiry, issue_date, email, phone } = req.body;
       if (!full_name || !student_code || !membership_expiry) {
         res.status(400).json({ error: 'full_name, student_code, and membership_expiry are required' });
         return;
@@ -104,6 +106,8 @@ export class PatronController {
         fullName: full_name,
         studentCode: student_code,
         className: class_name,
+        course,
+        permanentAddress: permanent_address,
         membershipExpiry: membership_expiry,
         issueDate: issue_date,
         email,
@@ -125,6 +129,8 @@ export class PatronController {
       const {
         full_name,
         class_name,
+        course,
+        permanent_address,
         identity_number,
         email,
         phone,
@@ -134,6 +140,8 @@ export class PatronController {
       const patron = await patronService.update(id, {
         fullName: full_name,
         className: class_name,
+        course,
+        permanentAddress: permanent_address,
         identityNumber: identity_number,
         email,
         phone,

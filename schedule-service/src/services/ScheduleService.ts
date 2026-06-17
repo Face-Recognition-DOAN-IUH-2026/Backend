@@ -387,6 +387,13 @@ export class ScheduleService {
     if (leave) throw new ConflictError('Staff has approved unavailable time on this date');
   }
 
+  private async ensureFutureDate(workDate: string) {
+    const today = localDate(new Date());
+    if (workDate < today) {
+      throw new BadRequestError('Work date must be today or in the future');
+    }
+  }
+
   private async ensureNoZoneConflictOnSameDay(staffId: string, zoneId: string, workDate: string, exceptId?: string) {
     const where: any = {
       staffId,
