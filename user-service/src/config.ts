@@ -20,4 +20,5 @@ export const config = {
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['*'],
   redisUrl: process.env.REDIS_URL || 'redis://redis:6379/0',
   internalApiKey: process.env.INTERNAL_API_KEY || 'change-me-in-production',
+  borrowServiceUrl: process.env.BORROW_SERVICE_URL || 'http://borrow-service:8000',
 };

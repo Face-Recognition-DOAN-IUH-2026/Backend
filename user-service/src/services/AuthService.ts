@@ -19,7 +19,12 @@ export class AuthService {
     private redis: RedisService,
   ) {}
 
+  private normalizeEmail(email: string): string {
+    return String(email || '').trim().toLowerCase();
+  }
+
   async register(dto: RegisterDto): Promise<AuthResponse> {
+    dto.email = this.normalizeEmail(dto.email);
     const existing = await this.userRepo.findByEmail(dto.email);
     if (existing) throw new ConflictError('Email already registered');
 
@@ -45,8 +50,10 @@ export class AuthService {
       Object.assign(userData, {
         studentCode: dto.studentCode ?? null,
         className: dto.className ?? null,
+        course: dto.course ?? null,
+        permanentAddress: dto.permanentAddress ?? null,
         cardNumber: dto.studentCode ? `THV-${dto.studentCode}` : null,
-        membershipExpiry: dto.membershipExpiry ?? '2099-12-31',
+        membershipExpiry: dto.membershipExpiry ?? this.calculateExpiryFromCourse(dto.course),
         issueDate: new Date().toISOString().split('T')[0],
       });
     }
@@ -61,6 +68,7 @@ export class AuthService {
     if (dto.studentCode) {
       user = await this.userRepo.findByStudentCode(dto.studentCode);
     } else if (dto.email) {
+      dto.email = this.normalizeEmail(dto.email);
       user = await this.userRepo.findByEmail(dto.email);
     }
 
@@ -89,11 +97,31 @@ export class AuthService {
     const payload = this.verifyToken(refreshTokenStr, 'refresh');
     const user = await this.userRepo.findById(payload.userId);
     if (!user) throw new UnauthorizedError('User not found');
+    if (user.status !== 'active') throw new ForbiddenError('Account is disabled');
+    if (user.role === UserRole.PATRON && user.membershipExpiry) {
+      const expiry = new Date(user.membershipExpiry);
+      if (expiry < new Date()) throw new ForbiddenError('Membership has expired');
+    }
     const accessToken = this.generateToken(
       { userId: user.id, email: user.email, role: user.role, fullName: user.fullName },
       'access',
     );
     return { access_token: accessToken, token_type: 'bearer' };
+  }
+
+  private calculateExpiryFromCourse(course: string | undefined): string {
+    if (!course) return '2099-12-31';
+    const rangeMatch = course.match(/(\d{4})\s*[-–]\s*(\d{4})/);
+    if (rangeMatch) {
+      const endYear = parseInt(rangeMatch[2], 10);
+      return `${endYear}-12-31`;
+    }
+    const singleMatch = course.match(/(\d{4})/);
+    if (singleMatch) {
+      const year = parseInt(singleMatch[1], 10);
+      return `${year}-12-31`;
+    }
+    return '2099-12-31';
   }
 
   verifyToken(token: string, expectedType?: 'access' | 'refresh'): TokenPayload {
@@ -172,6 +200,8 @@ export class AuthService {
     };
     if (user.studentCode) dto.studentCode = user.studentCode;
     if (user.className) dto.className = user.className;
+    if (user.course) dto.course = user.course;
+    if (user.permanentAddress) dto.permanentAddress = user.permanentAddress;
     if (user.identityNumber) dto.identityNumber = user.identityNumber;
     if (user.phone) dto.phone = user.phone;
     if (user.cardNumber) dto.cardNumber = user.cardNumber;

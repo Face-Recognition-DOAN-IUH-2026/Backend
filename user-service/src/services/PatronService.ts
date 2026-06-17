@@ -9,6 +9,7 @@ import {
   SearchResultDto,
 } from '../dto';
 import { ConflictError, NotFoundError } from '../errors';
+import { checkActiveBorrows } from '../clients/BorrowServiceClient';
 
 export class PatronService {
   constructor(
@@ -84,6 +85,8 @@ export class PatronService {
       role: 'patron',
       studentCode: dto.studentCode,
       className: dto.className ?? null,
+      course: dto.course ?? null,
+      permanentAddress: dto.permanentAddress ?? null,
       cardNumber: `THV-${dto.studentCode}`,
       membershipExpiry: dto.membershipExpiry,
       issueDate: dto.issueDate ?? new Date().toISOString().split('T')[0],
@@ -103,6 +106,8 @@ export class PatronService {
     const updated = await this.patronRepo.update(id, {
       fullName: dto.fullName,
       className: dto.className,
+      course: dto.course,
+      permanentAddress: dto.permanentAddress,
       identityNumber: dto.identityNumber,
       email: dto.email,
       phone: dto.phone,
@@ -113,14 +118,21 @@ export class PatronService {
     return this.toPatronPublic(updated!);
   }
 
-  async deletePatron(id: string): Promise<{ deleted: boolean; id: string }> {
+  async deletePatron(id: string): Promise<{ deleted: boolean; id: string; soft: boolean }> {
     const patron = await this.patronRepo.findById(id);
     if (!patron) throw new NotFoundError('Patron not found');
 
-    await this.patronRepo.delete(id);
+    const { hasActive } = await checkActiveBorrows(id).catch(() => {
+      throw new ConflictError('Không thể kiểm tra sách đang mượn. Vui lòng thử lại sau.');
+    });
+    if (hasActive) {
+      throw new ConflictError('Không thể xóa độc giả đang mượn sách. Vui lòng xử lý sách trước khi xóa.');
+    }
+
+    await this.patronRepo.update(id, { status: 'deleted' as any });
     await this.redis.publishUserDeleted(id, patron.email);
 
-    return { deleted: true, id };
+    return { deleted: true, id, soft: true };
   }
 
   async changePassword(id: string, currentPassword: string | null, newPassword: string): Promise<void> {
@@ -164,6 +176,8 @@ export class PatronService {
       fullName: patron.fullName,
       studentCode: patron.studentCode,
       className: patron.className,
+      course: patron.course ?? null,
+      permanentAddress: patron.permanentAddress ?? null,
       identityNumber: patron.identityNumber,
       email: patron.email,
       phone: patron.phone,

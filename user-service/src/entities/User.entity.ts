@@ -42,6 +42,12 @@ export class User {
   @Column({ type: 'varchar', length: 50, nullable: true })
   phone: string | null;
 
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  course: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'permanent_address' })
+  permanentAddress: string | null;
+
   @Column({ type: 'varchar', length: 50, unique: true, nullable: true, name: 'card_number' })
   cardNumber: string | null;
 

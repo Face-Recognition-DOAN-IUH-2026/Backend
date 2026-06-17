@@ -7,6 +7,8 @@ export interface RegisterDto {
   role?: string;
   studentCode?: string;
   className?: string;
+  course?: string;
+  permanentAddress?: string;
   membershipExpiry?: string;
 }
 

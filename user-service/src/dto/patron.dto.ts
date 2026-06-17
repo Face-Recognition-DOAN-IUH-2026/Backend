@@ -3,6 +3,8 @@ export interface PatronPublicDto {
   fullName: string;
   studentCode: string | null;
   className: string | null;
+  course: string | null;
+  permanentAddress: string | null;
   identityNumber: string | null;
   email: string | null;
   phone: string | null;
@@ -21,6 +23,8 @@ export interface CreatePatronDto {
   fullName: string;
   studentCode: string;
   className?: string;
+  course?: string;
+  permanentAddress?: string;
   membershipExpiry: string;
   issueDate?: string;
   email?: string;
@@ -30,6 +34,8 @@ export interface CreatePatronDto {
 export interface UpdatePatronDto {
   fullName?: string;
   className?: string;
+  course?: string;
+  permanentAddress?: string;
   identityNumber?: string;
   email?: string;
   phone?: string;
@@ -42,6 +48,8 @@ export interface PatronRegisterDto {
   password: string;
   fullName: string;
   className?: string;
+  course?: string;
+  permanentAddress?: string;
   email?: string;
 }
 
