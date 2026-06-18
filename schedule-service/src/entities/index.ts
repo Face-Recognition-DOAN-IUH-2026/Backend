@@ -5,3 +5,6 @@ export { StaffScheduleTemplate } from './StaffScheduleTemplate';
 export { StaffSchedule } from './StaffSchedule';
 export { StaffAttendance } from './StaffAttendance';
 export { ScheduleAuditLog } from './ScheduleAuditLog';
+export { ShiftBid } from './ShiftBid';
+export { ShiftSwap } from './ShiftSwap';
+export { GeofenceConfig } from './GeofenceConfig';

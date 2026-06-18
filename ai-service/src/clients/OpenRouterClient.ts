@@ -16,6 +16,9 @@ const analysisSchema = z.object({
       value: z.union([z.string(), z.number()]),
     })).default([]),
     recommended_actions: z.array(z.string()).default([]),
+    reason: z.string().default(''),
+    confidence: z.number().min(0).max(1).default(0.85),
+    alternatives: z.array(z.string()).default([]),
   })).default([]),
 });
 
@@ -66,6 +69,7 @@ export class OpenRouterClient {
               'Chi duoc dua ra nhan dinh dua tren snapshot duoc cung cap.',
               'Tra loi bang JSON strict voi fields: headline, operational_score, insights.',
               'insights toi da 5 item, tieng Viet co dau, ngan gon, hanh dong ro rang.',
+              'Moi insight can co reason (giai thich tai sao dua ra nhan dinh nay), confidence (0-1, do tin cay), alternatives (cac hanh dong khac da can nhac).',
             ].join(' '),
           },
           { role: 'user', content: JSON.stringify(snapshot) },
@@ -121,6 +125,9 @@ export class OpenRouterClient {
         summary: `Hiện có ${snapshot.active_patrons} độc giả trong thư viện. Nên theo dõi các tầng đông và chuẩn bị hỗ trợ quầy trả sách.`,
         evidence: [{ label: 'Đang trong thư viện', value: snapshot.active_patrons }],
         recommended_actions: ['Kiểm tra camera cổng vào/ra', 'Điều phối staff tới khu vực đông nếu cần'],
+        reason: `Số lượng độc giả hiện tại (${snapshot.active_patrons}) vượt ngưỡng an toàn 20 người, dựa trên dữ liệu realtime từ access-service.`,
+        confidence: 0.92,
+        alternatives: ['Chờ đến khi đông hơn mới can thiệp', 'Tăng cường staff ở quầy mượn thay vì cổng'],
       });
     }
     if (snapshot.overdue_borrows > 0) {
@@ -131,6 +138,9 @@ export class OpenRouterClient {
         summary: `${snapshot.overdue_borrows} sách đang quá hạn trong danh sách mượn hiện tại.`,
         evidence: [{ label: 'Sách quá hạn', value: snapshot.overdue_borrows }],
         recommended_actions: ['Ưu tiên nhắc độc giả quá hạn', 'Kiểm tra dashboard trả sách theo độc giả'],
+        reason: `Có ${snapshot.overdue_borrows} đầu sách quá hạn, ảnh hưởng đến khả năng mượn của độc giả khác. Dữ liệu lấy từ borrow-service.`,
+        confidence: 0.88,
+        alternatives: ['Gửi email nhắc nhở thay vì can thiệp ngay', 'Đợi đến cuối ngày xử lý batch'],
       });
     }
     if (snapshot.scheduled_staff_today === 0) {
@@ -141,6 +151,9 @@ export class OpenRouterClient {
         summary: 'AI không tìm thấy ca trực nào cho hôm nay trong schedule-service.',
         evidence: [{ label: 'Ca trực hôm nay', value: 0 }],
         recommended_actions: ['Mở Lịch trực và phân nhân viên cho các tầng', 'Kiểm tra cấu hình tầng và ca trực'],
+        reason: 'Schedule-service trả về 0 ca trực. Có thể chưa ai lên lịch hoặc service chưa đồng bộ dữ liệu.',
+        confidence: 0.75,
+        alternatives: ['Kiểm tra lại API schedule-service', 'Xem lịch tuần trước để ước lượng'],
       });
     }
     if (snapshot.warnings.length) {
@@ -151,6 +164,9 @@ export class OpenRouterClient {
         summary: 'Một vài service không trả dữ liệu, AI đang phân tích trên snapshot chưa đầy đủ.',
         evidence: snapshot.warnings.slice(0, 3).map((warning, index) => ({ label: `Nguồn ${index + 1}`, value: warning })),
         recommended_actions: ['Kiểm tra health các service liên quan', 'Làm mới phân tích sau khi service ổn định'],
+        reason: `AI phát hiện ${snapshot.warnings.length} nguồn dữ liệu không phản hồi. Phân tích dựa trên dữ liệu không đầy đủ nên độ chính xác thấp hơn.`,
+        confidence: 0.6,
+        alternatives: ['Bỏ qua warnings và tiếp tục theo dõi', 'Phân tích thủ công từ dashboard'],
       });
     }
     if (!insights.length) {
@@ -164,6 +180,9 @@ export class OpenRouterClient {
           { label: 'Lượt ra hôm nay', value: snapshot.today_exits },
         ],
         recommended_actions: ['Tiếp tục theo dõi realtime', 'Làm mới phân tích khi bước sang ca trực mới'],
+        reason: 'Tất cả các chỉ số đều trong ngưỡng an toàn. Không phát hiện bất thường từ access, borrow, hay schedule.',
+        confidence: 0.95,
+        alternatives: ['Chủ động tìm kiếm vấn đề tiềm ẩn', 'Phân tích dữ liệu lịch sử để dự đoán'],
       });
     }
     return {

@@ -24,6 +24,15 @@ export class AiInsight {
   @Column({ name: 'recommended_actions', type: 'jsonb', default: () => "'[]'::jsonb" })
   recommendedActions!: string[];
 
+  @Column({ type: 'text', default: '' })
+  reason!: string;
+
+  @Column({ type: 'float', default: 0.85 })
+  confidence!: number;
+
+  @Column({ type: 'jsonb', default: () => "'[]'::jsonb" })
+  alternatives!: string[];
+
   @Column({ type: 'varchar', length: 20, default: 'open' })
   status!: string;
 

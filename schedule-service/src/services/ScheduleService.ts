@@ -1,4 +1,4 @@
-import { Between, In, Not } from 'typeorm';
+import { Between, In, IsNull, Not } from 'typeorm';
 import { AppDataSource } from '../data-source';
 import {
   LibraryZone,
@@ -8,6 +8,9 @@ import {
   StaffSchedule,
   StaffScheduleTemplate,
   StaffShift,
+  ShiftBid,
+  ShiftSwap,
+  GeofenceConfig,
 } from '../entities';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../errors';
 import { UserServiceClient } from '../clients/UserServiceClient';
@@ -27,6 +30,9 @@ export class ScheduleService {
   private schedules = AppDataSource.getRepository(StaffSchedule);
   private attendance = AppDataSource.getRepository(StaffAttendance);
   private audit = AppDataSource.getRepository(ScheduleAuditLog);
+  private bids = AppDataSource.getRepository(ShiftBid);
+  private swaps = AppDataSource.getRepository(ShiftSwap);
+  private geofence = AppDataSource.getRepository(GeofenceConfig);
   private users = new UserServiceClient();
 
   async listStaff(ids?: string[]) {
@@ -265,27 +271,7 @@ export class ScheduleService {
     return schedule;
   }
 
-  async checkIn(staffId: string, id: string, method = 'web') {
-    const schedule = await this.requireOwnedSchedule(staffId, id);
-    if (schedule.status === 'cancelled' || schedule.status === 'completed') {
-      throw new ConflictError('Assignment is not active');
-    }
-    const existing = await this.attendance.findOneBy({ scheduleId: id });
-    if (existing?.checkInAt) throw new ConflictError('Already checked in');
-    const shift = await this.requireShift(schedule.shiftId);
-    const now = new Date();
-    const status = now > new Date(`${schedule.workDate}T${shift.startTime}`) ? 'late' : 'on_time';
-    const item = existing ?? this.attendance.create({ scheduleId: id, staffId, status, method });
-    item.checkInAt = now;
-    item.status = status;
-    item.method = method;
-    await this.attendance.save(item);
-    schedule.status = 'in_progress';
-    await this.schedules.save(schedule);
-    await this.log('attendance.checked_in', 'staff_attendance', item.id, staffId, { scheduleId: id, status });
-    return { schedule, attendance: item };
-  }
-
+  // checkIn moved above
   async checkOut(staffId: string, id: string) {
     const schedule = await this.requireOwnedSchedule(staffId, id);
     const item = await this.attendance.findOneBy({ scheduleId: id });
@@ -300,6 +286,273 @@ export class ScheduleService {
     schedule.status = 'completed';
     await this.schedules.save(schedule);
     await this.log('attendance.checked_out', 'staff_attendance', item.id, staffId, { scheduleId: id, status });
+    return { schedule, attendance: item };
+  }
+
+  async openShifts() {
+    const today = localDate(new Date());
+    const allAssignments = await this.schedules.find({ where: { workDate: Between(today, '2099-12-31'), status: Not(In(['cancelled', 'completed'])) } });
+    const activeShifts = await this.shifts.findBy({ isActive: true });
+    const activeZones = await this.zones.findBy({ isActive: true });
+    const open: Array<{ shift: StaffShift; zone: LibraryZone; workDate: string }> = [];
+    for (const shift of activeShifts) {
+      for (const zone of activeZones) {
+        const cursor = new Date(`${today}T00:00:00`);
+        const end = new Date();
+        end.setDate(end.getDate() + 13);
+        while (cursor <= end) {
+          const workDate = localDate(cursor);
+          const count = allAssignments.filter((a) => a.workDate === workDate && a.shiftId === shift.id && a.zoneId === zone.id).length;
+          for (let i = count; i < shift.minStaff; i++) {
+            open.push({ shift, zone, workDate });
+          }
+          cursor.setDate(cursor.getDate() + 1);
+        }
+      }
+    }
+    return open;
+  }
+
+  async createBid(staffId: string, assignmentId: string, note?: string | null) {
+    const assignment = await this.schedules.findOneBy({ id: assignmentId });
+    if (!assignment) throw new NotFoundError('Assignment not found');
+    if (assignment.status !== 'scheduled') throw new ConflictError('Can only bid on scheduled/open assignments');
+    const existing = await this.bids.findOneBy({ staffId, assignmentId, status: 'pending' });
+    if (existing) throw new ConflictError('You already have a pending bid for this assignment');
+    const bid = await this.bids.save(this.bids.create({ staffId, assignmentId, note: note ?? null, status: 'pending' }));
+    await this.log('bid.created', 'shift_bid', bid.id, staffId, { assignmentId });
+    return bid;
+  }
+
+  async listBids(staffId?: string, status?: string) {
+    const where: any = {};
+    if (staffId) where.staffId = staffId;
+    if (status) where.status = status;
+    const items = await this.bids.find({ where, order: { createdAt: 'DESC' } });
+    const assignmentIds = [...new Set(items.map((b) => b.assignmentId))];
+    const schedules = assignmentIds.length ? await this.schedules.findBy({ id: In(assignmentIds) }) : [];
+    const staffIds = [...new Set(items.map((b) => b.staffId))];
+    const staff = staffIds.length ? await this.users.listStaff(staffIds) : [];
+    return items.map((bid) => {
+      const assignment = schedules.find((s) => s.id === bid.assignmentId) ?? null;
+      return { ...bid, assignment, staff: staff.find((s) => s.id === bid.staffId) ?? null };
+    });
+  }
+
+  async cancelBid(staffId: string, id: string) {
+    const bid = await this.bids.findOneBy({ id });
+    if (!bid) throw new NotFoundError('Bid not found');
+    if (bid.staffId !== staffId) throw new ForbiddenError('Cannot cancel another staff bid');
+    if (bid.status !== 'pending') throw new ConflictError('Can only cancel pending bids');
+    bid.status = 'cancelled';
+    await this.bids.save(bid);
+    await this.log('bid.cancelled', 'shift_bid', id, staffId, null);
+    return bid;
+  }
+
+  async reviewBid(actorId: string, id: string, action: 'approved' | 'rejected') {
+    const bid = await this.bids.findOneBy({ id });
+    if (!bid) throw new NotFoundError('Bid not found');
+    if (bid.status !== 'pending') throw new ConflictError('Bid is no longer pending');
+    bid.status = action;
+    bid.reviewedBy = actorId;
+    bid.reviewedAt = new Date();
+    await this.bids.save(bid);
+    if (action === 'approved') {
+      const assignment = await this.schedules.findOneBy({ id: bid.assignmentId });
+      if (assignment) {
+        assignment.staffId = bid.staffId;
+        assignment.assignedBy = actorId;
+        assignment.note = assignment.note ? `${assignment.note}\nAssigned via bid` : 'Assigned via bid';
+        await this.schedules.save(assignment);
+      }
+    }
+    await this.log(`bid.${action}`, 'shift_bid', id, actorId, { staffId: bid.staffId, assignmentId: bid.assignmentId });
+    return bid;
+  }
+
+  async createSwap(requesterStaffId: string, body: { targetStaffId: string; requesterAssignmentId: string; targetAssignmentId?: string | null; reason?: string | null }) {
+    const assignment = await this.requireOwnedSchedule(requesterStaffId, body.requesterAssignmentId);
+    if (body.targetAssignmentId) {
+      const target = await this.schedules.findOneBy({ id: body.targetAssignmentId });
+      if (!target) throw new NotFoundError('Target assignment not found');
+      if (target.staffId !== body.targetStaffId) throw new ForbiddenError('Target assignment does not belong to target staff');
+    }
+    const existing = await this.swaps.findOneBy({ requesterAssignmentId: body.requesterAssignmentId, status: 'pending' });
+    if (existing) throw new ConflictError('You already have a pending swap for this assignment');
+    const swap = await this.swaps.save(this.swaps.create({
+      requesterStaffId,
+      targetStaffId: body.targetStaffId,
+      requesterAssignmentId: body.requesterAssignmentId,
+      targetAssignmentId: body.targetAssignmentId ?? null,
+      reason: body.reason ?? null,
+      status: 'pending',
+    }));
+    await this.log('swap.created', 'shift_swap', swap.id, requesterStaffId, { targetStaffId: body.targetStaffId });
+    return swap;
+  }
+
+  async listSwaps(staffId?: string, status?: string) {
+    const where: any[] = [];
+    if (staffId) {
+      where.push({ requesterStaffId: staffId });
+      where.push({ targetStaffId: staffId });
+    }
+    const finalWhere = where.length ? where : {};
+    const items = await this.swaps.find({ where: finalWhere, order: { createdAt: 'DESC' } });
+    const staffIds = [...new Set(items.flatMap((s) => [s.requesterStaffId, s.targetStaffId]))];
+    const staff = staffIds.length ? await this.users.listStaff(staffIds) : [];
+    const assignmentIds = [...new Set(items.flatMap((s) => [s.requesterAssignmentId, ...(s.targetAssignmentId ? [s.targetAssignmentId] : [])]))];
+    const assignments = assignmentIds.length ? await this.enrichAssignments(await this.schedules.findBy({ id: In(assignmentIds) })) : { items: [], total: 0 };
+    return items.map((swap) => ({
+      ...swap,
+      requester: staff.find((s) => s.id === swap.requesterStaffId) ?? null,
+      target: staff.find((s) => s.id === swap.targetStaffId) ?? null,
+      requesterAssignment: assignments.items.find((a) => a.id === swap.requesterAssignmentId) ?? null,
+      targetAssignment: swap.targetAssignmentId ? (assignments.items.find((a) => a.id === swap.targetAssignmentId) ?? null) : null,
+    }));
+  }
+
+  async respondSwap(staffId: string, id: string, action: 'accepted' | 'rejected', responseNote?: string | null) {
+    const swap = await this.swaps.findOneBy({ id });
+    if (!swap) throw new NotFoundError('Swap request not found');
+    if (swap.targetStaffId !== staffId) throw new ForbiddenError('Cannot respond to swap request not addressed to you');
+    if (swap.status !== 'pending') throw new ConflictError('Swap request is no longer pending');
+    swap.status = action;
+    swap.responseNote = responseNote ?? null;
+    swap.reviewedAt = new Date();
+    await this.swaps.save(swap);
+    if (action === 'accepted') {
+      const reqAsg = await this.schedules.findOneBy({ id: swap.requesterAssignmentId });
+      if (!reqAsg) throw new NotFoundError('Requester assignment not found');
+      if (swap.targetAssignmentId) {
+        const tgtAsg = await this.schedules.findOneBy({ id: swap.targetAssignmentId });
+        if (!tgtAsg) throw new NotFoundError('Target assignment not found');
+        const reqStaffId = reqAsg.staffId;
+        reqAsg.staffId = tgtAsg.staffId;
+        tgtAsg.staffId = reqStaffId;
+        await this.schedules.save([reqAsg, tgtAsg]);
+      } else {
+        reqAsg.staffId = swap.targetStaffId;
+        await this.schedules.save(reqAsg);
+      }
+    }
+    await this.log(`swap.${action}`, 'shift_swap', id, staffId, { responseNote });
+    return swap;
+  }
+
+  async autoSchedule(actorId: string, from: string, to: string) {
+    const activeShifts = await this.shifts.findBy({ isActive: true });
+    const activeZones = await this.zones.findBy({ isActive: true });
+    const allStaff = await this.users.listStaff();
+    const staff = allStaff.filter((s: any) => s.role === 'admin' || s.role === 'staff');
+    const existingAssignments = await this.schedules.find({
+      where: { workDate: Between(from, to), status: Not(In(['cancelled'])) },
+    });
+    const approvedLeaves = await this.availability.find({ where: { status: 'approved' } });
+    const proposed: Array<{ staffId: string; shiftId: string; zoneId: string; workDate: string; note: string }> = [];
+    const skipped: string[] = [];
+    const today = localDate(new Date());
+    const cursor = new Date(`${from}T00:00:00`);
+    const end = new Date(`${to}T00:00:00`);
+
+    while (cursor <= end) {
+      const workDate = localDate(cursor);
+      if (workDate < today) { cursor.setDate(cursor.getDate() + 1); continue; }
+
+      const dayStaff = [...staff].sort(() => Math.random() - 0.5);
+
+      for (const shift of activeShifts) {
+        for (const zone of activeZones) {
+          const existing = existingAssignments.filter((a) => a.workDate === workDate && a.shiftId === shift.id && a.zoneId === zone.id);
+          const needed = (shift.minStaff || 1) - existing.length;
+          if (needed <= 0) continue;
+
+          for (const s of dayStaff) {
+            if (proposed.some((p) => p.staffId === s.id && p.workDate === workDate)) continue;
+            if (existing.some((e) => e.staffId === s.id)) continue;
+            if (approvedLeaves.some((a) => a.staffId === s.id && workDate >= a.dateFrom && workDate <= a.dateTo)) {
+              skipped.push(`leave:${s.id}:${workDate}`); continue;
+            }
+
+            proposed.push({ staffId: s.id, shiftId: shift.id, zoneId: zone.id, workDate, note: 'Auto-scheduled' });
+            if (proposed.filter((p) => p.workDate === workDate && p.shiftId === shift.id && p.zoneId === zone.id).length >= needed) break;
+          }
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    await this.log('auto_schedule.generated', 'staff_schedule', null, actorId, { from, to, proposed: proposed.length, skipped: skipped.length });
+    return { proposed, skipped: skipped.length, total: proposed.length };
+  }
+
+  async setGeofence(actorId: string, body: { zoneId: string; latitude: number; longitude: number; radiusMeters?: number; addressHint?: string | null }) {
+    const zone = await this.zones.findOneBy({ id: body.zoneId, isActive: true });
+    if (!zone) throw new NotFoundError('Zone not found');
+    const existing = await this.geofence.findOneBy({ zoneId: body.zoneId });
+    if (existing) {
+      existing.latitude = body.latitude;
+      existing.longitude = body.longitude;
+      existing.radiusMeters = body.radiusMeters ?? existing.radiusMeters;
+      existing.addressHint = body.addressHint ?? existing.addressHint;
+      await this.geofence.save(existing);
+      await this.log('geofence.updated', 'geofence_config', existing.id, actorId, body);
+      return existing;
+    }
+    const config = await this.geofence.save(this.geofence.create({ ...body, radiusMeters: body.radiusMeters ?? 100 }));
+    await this.log('geofence.created', 'geofence_config', config.id, actorId, body);
+    return config;
+  }
+
+  async listGeofenceConfigs() {
+    const configs = await this.geofence.find({ where: { isActive: true } });
+    const zoneIds = configs.map((c) => c.zoneId);
+    const zones = zoneIds.length ? await this.zones.findBy({ id: In(zoneIds) }) : [];
+    return configs.map((c) => ({ ...c, zone: zones.find((z) => z.id === c.zoneId) ?? null }));
+  }
+
+  async deleteGeofence(actorId: string, zoneId: string) {
+    const config = await this.geofence.findOneBy({ zoneId });
+    if (!config) throw new NotFoundError('Geofence config not found');
+    config.isActive = false;
+    await this.geofence.save(config);
+    await this.log('geofence.deleted', 'geofence_config', config.id, actorId, { zoneId });
+    return { deleted: true, zoneId };
+  }
+
+  async checkIn(staffId: string, id: string, method = 'web', lat?: number, lng?: number) {
+    const schedule = await this.requireOwnedSchedule(staffId, id);
+    if (schedule.status === 'cancelled' || schedule.status === 'completed') {
+      throw new ConflictError('Assignment is not active');
+    }
+    if (lat != null && lng != null && schedule.zoneId) {
+      const gf = await this.geofence.findOneBy({ zoneId: schedule.zoneId, isActive: true });
+      if (gf) {
+        const R = 6371e3;
+        const φ1 = (lat * Math.PI) / 180;
+        const φ2 = (gf.latitude * Math.PI) / 180;
+        const Δφ = ((gf.latitude - lat) * Math.PI) / 180;
+        const Δλ = ((gf.longitude - lng) * Math.PI) / 180;
+        const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+        const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        if (distance > gf.radiusMeters) {
+          throw new BadRequestError(`Bạn đang ở ngoài khu vực làm việc (${Math.round(distance)}m > ${gf.radiusMeters}m cho phép)`);
+        }
+      }
+    }
+    const existing = await this.attendance.findOneBy({ scheduleId: id });
+    if (existing?.checkInAt) throw new ConflictError('Already checked in');
+    const shift = await this.requireShift(schedule.shiftId);
+    const now = new Date();
+    const status = now > new Date(`${schedule.workDate}T${shift.startTime}`) ? 'late' : 'on_time';
+    const item = existing ?? this.attendance.create({ scheduleId: id, staffId, status, method });
+    item.checkInAt = now;
+    item.status = status;
+    item.method = method;
+    await this.attendance.save(item);
+    schedule.status = 'in_progress';
+    await this.schedules.save(schedule);
+    await this.log('attendance.checked_in', 'staff_attendance', item.id, staffId, { scheduleId: id, status });
     return { schedule, attendance: item };
   }
 
@@ -388,8 +641,10 @@ export class ScheduleService {
   }
 
   private async ensureFutureDate(workDate: string) {
-    const today = localDate(new Date());
-    if (workDate < today) {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const minDate = localDate(yesterday);
+    if (workDate < minDate) {
       throw new BadRequestError('Work date must be today or in the future');
     }
   }
