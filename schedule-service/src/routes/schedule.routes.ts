@@ -165,17 +165,90 @@ router.post('/me/availability', auth, asyncHandler(async (req, res) => {
   res.status(201).json(await scheduleService.createAvailability(req.user!.userId, availabilitySchema.parse(req.body)));
 }));
 
+router.get('/open-shifts', requireRole('admin', 'staff'), asyncHandler(async (_req, res) => {
+  res.json(await scheduleService.openShifts());
+}));
+
+const bidSchema = z.object({ assignmentId: z.string().uuid(), note: z.string().nullable().optional() });
+router.post('/bids', auth, asyncHandler(async (req, res) => {
+  const { assignmentId, note } = bidSchema.parse(req.body);
+  res.status(201).json(await scheduleService.createBid(req.user!.userId, assignmentId, note));
+}));
+router.get('/bids', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
+  const staffId = req.query.staff_id as string | undefined;
+  const status = req.query.status as string | undefined;
+  res.json(await scheduleService.listBids(staffId, status));
+}));
+router.post('/bids/:id/cancel', auth, asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.cancelBid(req.user!.userId, id));
+}));
+router.post('/bids/:id/approve', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.reviewBid(req.user!.userId, id, 'approved'));
+}));
+router.post('/bids/:id/reject', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.reviewBid(req.user!.userId, id, 'rejected'));
+}));
+
+const swapSchema = z.object({
+  targetStaffId: z.string().uuid(),
+  requesterAssignmentId: z.string().uuid(),
+  targetAssignmentId: z.string().uuid().nullable().optional(),
+  reason: z.string().nullable().optional(),
+});
+router.post('/swaps', auth, asyncHandler(async (req, res) => {
+  res.status(201).json(await scheduleService.createSwap(req.user!.userId, swapSchema.parse(req.body)));
+}));
+router.get('/swaps', auth, asyncHandler(async (req, res) => {
+  const staffId = req.user!.userId;
+  const status = req.query.status as string | undefined;
+  res.json(await scheduleService.listSwaps(staffId, status));
+}));
+const swapResponseSchema = z.object({ action: z.enum(['accepted', 'rejected']), responseNote: z.string().nullable().optional() });
+router.post('/swaps/:id/respond', auth, asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  const { action, responseNote } = swapResponseSchema.parse(req.body);
+  res.json(await scheduleService.respondSwap(req.user!.userId, id, action, responseNote));
+}));
+
 router.post('/assignments/:id/confirm', auth, asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.confirmAssignment(req.user!.userId, id));
 }));
 router.post('/assignments/:id/check-in', auth, asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
-  res.json(await scheduleService.checkIn(req.user!.userId, id, req.body?.method || 'web'));
+  const lat = req.body?.lat != null ? Number(req.body.lat) : undefined;
+  const lng = req.body?.lng != null ? Number(req.body.lng) : undefined;
+  res.json(await scheduleService.checkIn(req.user!.userId, id, req.body?.method || 'web', lat, lng));
 }));
 router.post('/assignments/:id/check-out', auth, asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.checkOut(req.user!.userId, id));
+}));
+
+router.post('/auto-schedule', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { from, to } = rangeSchema.parse(req.body);
+  res.json(await scheduleService.autoSchedule(req.user!.userId, from, to));
+}));
+
+const geofenceSchema = z.object({
+  zoneId: z.string().uuid(),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  radiusMeters: z.number().int().min(10).max(10000).optional(),
+  addressHint: z.string().nullable().optional(),
+});
+router.get('/geofence', requireRole('admin'), asyncHandler(async (_req, res) => {
+  res.json(await scheduleService.listGeofenceConfigs());
+}));
+router.put('/geofence', requireRole('admin'), asyncHandler(async (req, res) => {
+  res.json(await scheduleService.setGeofence(req.user!.userId, geofenceSchema.parse(req.body)));
+}));
+router.delete('/geofence/:zoneId', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { zoneId } = z.object({ zoneId: z.string().uuid() }).parse(req.params);
+  res.json(await scheduleService.deleteGeofence(req.user!.userId, zoneId));
 }));
 
 router.get('/audit-logs', requireRole('admin'), asyncHandler(async (_req, res) => {

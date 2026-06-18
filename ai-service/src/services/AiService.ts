@@ -6,7 +6,7 @@ import { config } from '../config';
 import { HttpError } from '../middlewares/errorHandler';
 import { OpenRouterClient } from '../clients/OpenRouterClient';
 import { DataCollector } from './DataCollector';
-import { AiInsightDto, CommandCenterSummary, LibraryOperationsSnapshot } from './types';
+import { AiInsightDto, BookRecommendation, BookRecommendationResponse, CommandCenterSummary, InsightExplanation, LibraryOperationsSnapshot } from './types';
 
 const insightRepo = () => AppDataSource.getRepository(AiInsight);
 const runRepo = () => AppDataSource.getRepository(AiRun);
@@ -22,6 +22,9 @@ function dto(entity: AiInsight): AiInsightDto {
     summary: entity.summary,
     evidence: entity.evidence || [],
     recommended_actions: entity.recommendedActions || [],
+    reason: entity.reason || '',
+    confidence: entity.confidence ?? 0.85,
+    alternatives: entity.alternatives || [],
     status: entity.status as any,
     generated_at: entity.generatedAt.toISOString(),
   };
@@ -74,6 +77,129 @@ export class AiService {
     if (!insight) throw new HttpError(404, 'Insight not found');
     insight.status = 'dismissed';
     return dto(await insightRepo().save(insight));
+  }
+
+  async recommendBooks(token: string, studentCode: string): Promise<BookRecommendationResponse> {
+    const [historyRes, booksRes] = await Promise.all([
+      this.fetchWithAuth(`${config.borrowServiceUrl}/borrow/staff/patrons/${studentCode}/history`, token),
+      this.fetchWithAuth(`${config.borrowServiceUrl}/borrow/books?skip=0&limit=200`, token),
+    ]);
+
+    const patronHistory = Array.isArray(historyRes) ? historyRes : [];
+    const availableBooks = Array.isArray(booksRes?.items) ? booksRes.items : (Array.isArray(booksRes) ? booksRes : []);
+
+    const patronName = patronHistory.length > 0
+      ? (patronHistory[0] as any)?.patron_name || (patronHistory[0] as any)?.patron?.name || studentCode
+      : studentCode;
+
+    const borrowedAuthorCategory = new Set<string>();
+    const borrowedIsbns = new Set<string>();
+    for (const record of patronHistory) {
+      const r = record as any;
+      if (r.book?.author) borrowedAuthorCategory.add(r.book.author.toLowerCase());
+      if (r.book?.category) borrowedAuthorCategory.add(r.book.category.toLowerCase());
+      if (r.isbn || r.book?.isbn) borrowedIsbns.add((r.isbn || r.book?.isbn).replace(/-/g, ''));
+    }
+
+    const recommendations: BookRecommendation[] = [];
+    const scored: Array<{ book: any; score: number; reasons: string[] }> = [];
+
+    for (const book of availableBooks) {
+      const b = book as any;
+      const bookIsbn = (b.isbn || '').replace(/-/g, '');
+      if (borrowedIsbns.has(bookIsbn)) continue;
+      if (b.available_copies != null && b.available_copies <= 0) continue;
+
+      const reasons: string[] = [];
+      let score = 0;
+
+      if (b.author && borrowedAuthorCategory.has(b.author.toLowerCase())) {
+        score += 30;
+        reasons.push(`Độc giả đã từng mượn sách của tác giả "${b.author}"`);
+      }
+      if (b.category && borrowedAuthorCategory.has(b.category.toLowerCase())) {
+        score += 25;
+        reasons.push(`Cùng thể loại với sách đã mượn trước đây`);
+      }
+      if (b.category && !borrowedAuthorCategory.has(b.category.toLowerCase())) {
+        score += 5;
+      }
+      if (b.total_copies && b.available_copies && b.available_copies / b.total_copies > 0.5) {
+        score += 10;
+        reasons.push(`Sách đang có sẵn nhiều bản sao`);
+      }
+      if (b.available_copies != null && b.available_copies === 1) {
+        score -= 5;
+      }
+
+      if (reasons.length === 0 && score > 0) {
+        reasons.push('Sách mới, phù hợp với sở thích chung');
+      }
+      if (score > 0 || reasons.length === 0) {
+        scored.push({ book: b, score, reasons });
+      }
+    }
+
+    scored.sort((a, b) => b.score - a.score);
+    const topBooks = scored.slice(0, 8);
+
+    for (const item of topBooks) {
+      const b = item.book;
+      recommendations.push({
+        book_id: b.id || '',
+        isbn: b.isbn || '',
+        title: b.title || 'Không rõ tên',
+        author: b.author || 'Không rõ',
+        cover_url: b.cover_url || '',
+        category: b.category || '',
+        reason: item.reasons.length > 0 ? item.reasons[0] : 'Sách phổ biến trong thư viện',
+        relevance_score: Math.min(100, Math.max(10, item.score + (item.reasons.length * 5))),
+      });
+    }
+
+    return {
+      patron_id: studentCode,
+      patron_name: patronName,
+      recommendations,
+      generated_at: new Date().toISOString(),
+      model: 'recommendation-engine',
+    };
+  }
+
+  private async fetchWithAuth(url: string, token: string): Promise<any> {
+    try {
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return [];
+      return await res.json();
+    } catch {
+      return [];
+    }
+  }
+
+  async explainInsight(id: string): Promise<InsightExplanation> {
+    const insight = await insightRepo().findOneBy({ id });
+    if (!insight) throw new HttpError(404, 'Insight not found');
+
+    const run = insight.runId ? await runRepo().findOneBy({ id: insight.runId }) : null;
+    const reasoningTrace = run?.reasoningTrace || buildReasoningTrace(insight);
+
+    return {
+      id: insight.id,
+      title: insight.title,
+      category: insight.category as any,
+      severity: insight.severity as any,
+      summary: insight.summary,
+      evidence: insight.evidence || [],
+      reason: insight.reason || '',
+      confidence: insight.confidence ?? 0.85,
+      alternatives: insight.alternatives || [],
+      recommended_actions: insight.recommendedActions || [],
+      reasoning_trace: reasoningTrace,
+      generated_at: insight.generatedAt.toISOString(),
+    };
   }
 
   async chat(token: string, body: unknown) {
@@ -130,6 +256,9 @@ export class AiService {
         summary: item.summary,
         evidence: item.evidence || [],
         recommendedActions: item.recommended_actions || [],
+        reason: item.reason || '',
+        confidence: item.confidence ?? 0.85,
+        alternatives: item.alternatives || [],
         status: 'open',
         runId: savedRun.id,
       }));
@@ -152,3 +281,30 @@ export class AiService {
 }
 
 export const aiService = new AiService();
+
+function buildReasoningTrace(insight: AiInsight): string {
+  const lines: string[] = [];
+  lines.push(`=== Reasoning Trace for: ${insight.title} ===`);
+  lines.push(`Category: ${insight.category}`);
+  lines.push(`Severity: ${insight.severity}`);
+  lines.push(`Confidence: ${(insight.confidence * 100).toFixed(0)}%`);
+  lines.push('');
+  lines.push('1. Data Sources Analyzed:');
+  for (const ev of insight.evidence || []) {
+    lines.push(`   - ${ev.label}: ${ev.value}`);
+  }
+  lines.push('');
+  lines.push('2. Assessment:');
+  lines.push(`   ${insight.reason || insight.summary}`);
+  lines.push('');
+  lines.push('3. Alternatives Considered:');
+  for (const alt of insight.alternatives || []) {
+    lines.push(`   - ${alt}`);
+  }
+  lines.push('');
+  lines.push('4. Recommended Actions:');
+  for (const action of insight.recommendedActions || []) {
+    lines.push(`   - ${action}`);
+  }
+  return lines.join('\n');
+}

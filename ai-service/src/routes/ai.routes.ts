@@ -35,8 +35,17 @@ router.post('/insights/:id/dismiss', asyncHandler(async (req, res) => {
   res.json(await aiService.dismissInsight(id));
 }));
 
+router.get('/insights/:id/explain', asyncHandler(async (req, res) => {
+  const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+  res.json(await aiService.explainInsight(id));
+}));
+
 router.post('/chat', asyncHandler(async (req, res) => {
   res.json(await aiService.chat(req.user!.token, req.body));
+}));
+
+router.get('/recommendations/patron/:studentCode', asyncHandler(async (req, res) => {
+  res.json(await aiService.recommendBooks(req.user!.token, req.params.studentCode));
 }));
 
 export default router;

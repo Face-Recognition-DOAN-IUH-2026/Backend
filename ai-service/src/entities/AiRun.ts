@@ -27,6 +27,9 @@ export class AiRun {
   @Column({ name: 'error_message', type: 'text', nullable: true })
   errorMessage!: string | null;
 
+  @Column({ name: 'reasoning_trace', type: 'text', nullable: true })
+  reasoningTrace!: string | null;
+
   @Column({ name: 'created_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   createdAt!: Date;
 }
