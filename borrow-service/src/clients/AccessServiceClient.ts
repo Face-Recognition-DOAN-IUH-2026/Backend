@@ -139,6 +139,47 @@ export async function getPatronAccessStatus(patronId: string): Promise<PatronAcc
   return buildFromUserService(patronId);
 }
 
+export async function getPatronRawAccessStatus(patronId: string): Promise<PatronAccessStatus> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await fetch(`${config.accessServiceUrl}/internal/access/patrons/${patronId}/status`, {
+        headers: { 'x-internal-api-key': config.internalApiKey },
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (res.status === 404) {
+        circuit.recordSuccess();
+        return buildFromUserService(patronId);
+      }
+
+      if (res.ok) {
+        circuit.recordSuccess();
+        const data = await res.json() as any;
+        const lastEntryAt = data.lastEntryAt || data.last_entry_at || null;
+        const inside = (data.currentStatus || data.current_status) === 'inside';
+        return { inside, lastEntryAt, expiresAt: null, source: 'access-service', isExpired: false };
+      }
+
+      if (res.status >= 500) {
+        circuit.recordFailure();
+      }
+
+      if (attempt < 3) {
+        await sleep(1000 * Math.pow(2, attempt));
+        continue;
+      }
+    } catch (error) {
+      circuit.recordFailure();
+      if (attempt < 3) {
+        await sleep(1000 * Math.pow(2, attempt));
+        continue;
+      }
+    }
+  }
+
+  return buildFromUserService(patronId);
+}
+
 export async function isPatronInside(patronId: string): Promise<boolean> {
   if (!circuit.canRequest()) {
     const userStatus = await getUserStatus(patronId);

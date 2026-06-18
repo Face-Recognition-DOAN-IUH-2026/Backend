@@ -6,7 +6,7 @@ import { AppDataSource } from '../data-source';
 import { auth, AuthRequest, requireRole } from '../middlewares/auth';
 import { HttpError } from '../middlewares/errorHandler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
-import { isPatronInside, getPatronAccessStatus } from '../clients/AccessServiceClient';
+import { isPatronInside, getPatronAccessStatus, getPatronRawAccessStatus } from '../clients/AccessServiceClient';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { lookupPatronById, lookupPatronByStudentCode, PatronSummary } from '../clients/UserServiceClient';
 import { serializeBook, serializeBookWithStats, serializeBorrowRecord, serializeBorrowSlip, serializeCopy } from '../services/serializers';
@@ -201,12 +201,15 @@ router.post('/staff/slip/lookup', requireRole(['admin', 'staff', 'patron'], 'Chi
     const patron = await lookupPatronById(body.patron_id);
     if (!patron) throw new HttpError(404, 'Khong tim thay doc gia');
 
-    const accessStatus = await getPatronAccessStatus(body.patron_id);
+    const isStaff = req.user?.role === 'admin' || req.user?.role === 'staff';
+    const accessStatus = isStaff
+      ? await getPatronRawAccessStatus(body.patron_id)
+      : await getPatronAccessStatus(body.patron_id);
     if (!accessStatus.inside) {
       if (accessStatus.isExpired) {
         throw new HttpError(403, `Phien lam viec da het han (${config.maxEntryHours}h). Vui long vao lai qua cong.`);
       }
-      throw new HttpError(403, 'Doc gia phai co mat trong thu vien de muon sach.');
+      throw new HttpError(403, 'Doc gia khong co mat trong thu vien.');
     }
 
     const results: {
@@ -288,12 +291,15 @@ router.post('/staff/slip/confirm', requireRole(['admin', 'staff', 'patron'], 'Ch
     const patron = await lookupPatronById(body.patron_id);
     if (!patron) throw new HttpError(404, 'Khong tim thay doc gia');
 
-    const accessStatus = await getPatronAccessStatus(body.patron_id);
+    const isStaff = req.user?.role === 'admin' || req.user?.role === 'staff';
+    const accessStatus = isStaff
+      ? await getPatronRawAccessStatus(body.patron_id)
+      : await getPatronAccessStatus(body.patron_id);
     if (!accessStatus.inside) {
       if (accessStatus.isExpired) {
         throw new HttpError(403, `Phien lam viec da het han (${config.maxEntryHours}h). Vui long vao lai qua cong.`);
       }
-      throw new HttpError(403, 'Doc gia phai co mat trong thu vien de muon sach.');
+      throw new HttpError(403, 'Doc gia khong co mat trong thu vien.');
     }
 
     const bookIds: string[] = [];
@@ -398,6 +404,10 @@ router.get('/staff/patrons/:student_code/active', requireRole(['admin', 'staff']
       throw new HttpError(403, 'The doc gia da bi khoa/het han. Vui long lien he thu vien.');
     }
     const patron = patronSummary(raw);
+    const accessStatus = await getPatronRawAccessStatus(patron.id);
+    if (!accessStatus.inside) {
+      throw new HttpError(403, 'Doc gia chua vao thu vien.');
+    }
     const repo = new BorrowRepository();
     const records = await repo.getActiveBorrowsByPatron(patron.id);
     const now = Date.now();
