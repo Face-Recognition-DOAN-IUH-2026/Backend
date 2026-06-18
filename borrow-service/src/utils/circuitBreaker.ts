@@ -7,6 +7,14 @@ export class CircuitBreaker {
     private cooldownMs = 30_000,
   ) {}
 
+  get isOpen(): boolean {
+    return Date.now() < this.openUntil;
+  }
+
+  get failuresCount(): number {
+    return this.failures;
+  }
+
   canRequest() {
     if (Date.now() >= this.openUntil) return true;
     return false;
@@ -22,5 +30,10 @@ export class CircuitBreaker {
     if (this.failures >= this.threshold) {
       this.openUntil = Date.now() + this.cooldownMs;
     }
+  }
+
+  reset() {
+    this.failures = 0;
+    this.openUntil = 0;
   }
 }
