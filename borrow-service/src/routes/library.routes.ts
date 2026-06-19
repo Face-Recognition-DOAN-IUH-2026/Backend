@@ -1,23 +1,19 @@
 import { Router } from 'express';
 import { AppDataSource } from '../data-source';
-import { auth } from '../middlewares/auth';
-import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
-import { In } from 'typeorm';
 
 const router = Router();
 
-router.use(auth);
+const PER_TIER = 5;
 
-const KNOWN_POSITIONS: Record<string, [number, number, number]> = {
-  'A-12-3': [-4, 0, -2],
-  'A-12-2': [-4, 0, 2],
-  'A-12-1': [-4, 0, 6],
-  'B-05-1': [0, 0, -2],
-  'B-05-2': [0, 0, 2],
-  'C-01-1': [4, 0, -2],
-  'C-01-2': [4, 0, 2],
-};
+const AUTO_POSITIONS: [number, number, number][] = [
+  [-4, 0, -2], [-4, 0, 2], [-4, 0, 6],
+  [0, 0, -2],  [0, 0, 2],  [0, 0, 6],
+  [4, 0, -2],  [4, 0, 2],  [4, 0, 6],
+  [-2, 0, -4], [-2, 0, 4],
+  [2, 0, -4],  [2, 0, 4],
+  [-4, 0, -6], [0, 0, -6], [4, 0, -6],
+];
 
 interface BookItem {
   id: string;
@@ -36,13 +32,24 @@ interface ShelfItem {
   books: BookItem[];
 }
 
+function createShelf(books: BookItem[], index: number, position: [number, number, number]): ShelfItem {
+  const numTiers = Math.ceil(books.length / PER_TIER);
+  return {
+    id: `shelf-${index}`,
+    code: `Kệ ${index}`,
+    position,
+    numTiers,
+    books: books.map((b, i) => ({ ...b, tierIndex: Math.floor(i / PER_TIER) })),
+  };
+}
+
 router.get('/shelves', async (_req, res, next) => {
   try {
-    const bookRepo = AppDataSource.getRepository(Book);
     const copyRepo = AppDataSource.getRepository(BookCopy);
 
     const copies = await copyRepo.find({
       relations: ['book'],
+      order: { book: { title: 'ASC' } },
       select: {
         id: true,
         barcode: true,
@@ -57,42 +64,32 @@ router.get('/shelves', async (_req, res, next) => {
       },
     });
 
-    const shelfMap = new Map<string, BookItem[]>();
+    const shelves: ShelfItem[] = [];
+    let batch: BookItem[] = [];
+    let shelfIndex = 0;
+    let gridIndex = 0;
 
     for (const copy of copies) {
-      const location = copy.shelfLocation || 'Chưa phân loại';
-      if (!shelfMap.has(location)) {
-        shelfMap.set(location, []);
-      }
-      shelfMap.get(location)!.push({
+      const item: BookItem = {
         id: copy.id,
         title: copy.book.title,
         author: copy.book.author || 'Không rõ',
         isbn: copy.book.isbn,
         status: copy.isAvailable ? 'available' : 'borrowed',
         tierIndex: 0,
-      });
+      };
+
+      batch.push(item);
+
+      if (batch.length === PER_TIER * 3) {
+        shelves.push(createShelf(batch, ++shelfIndex, AUTO_POSITIONS[gridIndex % AUTO_POSITIONS.length]));
+        gridIndex++;
+        batch = [];
+      }
     }
 
-    const shelves: ShelfItem[] = [];
-    let index = 0;
-    for (const [code, books] of shelfMap.entries()) {
-      const position = KNOWN_POSITIONS[code] || [0, 0, 0];
-      const totalBooks = books.length;
-      const numTiers = Math.max(3, Math.ceil(totalBooks / 5));
-      const booksPerTier = Math.ceil(totalBooks / numTiers);
-      const tieredBooks = books.map((book, i) => ({
-        ...book,
-        tierIndex: Math.min(Math.floor(i / booksPerTier), numTiers - 1),
-      }));
-      shelves.push({
-        id: `shelf-${index + 1}`,
-        code,
-        position,
-        numTiers,
-        books: tieredBooks,
-      });
-      index++;
+    if (batch.length > 0) {
+      shelves.push(createShelf(batch, ++shelfIndex, AUTO_POSITIONS[gridIndex % AUTO_POSITIONS.length]));
     }
 
     res.json({ shelves });
