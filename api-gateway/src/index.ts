@@ -131,6 +131,12 @@ app.use('/api/borrow', createProxyMiddleware({
   pathRewrite: stripApiPrefixFromOriginalPath,  // /api/borrow → /borrow
 }));
 
+app.use('/api/library', createProxyMiddleware({
+  target: config.services.borrowService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,  // /api/library → /library
+}));
+
 app.use('/api/schedules', createProxyMiddleware({
   target: config.services.scheduleService,
   changeOrigin: true,

@@ -128,7 +128,7 @@ router.get('/patron/inside-status', patronStatusMiddleware, async (req: AuthRequ
   }
 });
 
-router.post('/', requireRole(['patron'], 'Chi doc gia moi co the tu muon sach tren ung dung'), async (req: AuthRequest, res, next) => {
+router.post('/', requireRole(['admin', 'staff'], 'Chi nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ barcode: z.string().min(1), isbn: z.string().optional() }).parse(req.body);
     const userId = patronIdFrom(req.user);

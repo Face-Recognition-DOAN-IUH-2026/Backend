@@ -4,12 +4,14 @@ import cors from 'cors';
 import { config } from './config';
 import { AppDataSource } from './data-source';
 import borrowRoutes from './routes/borrow.routes';
+import libraryRoutes from './routes/library.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use('/borrow', borrowRoutes);
+app.use('/library', libraryRoutes);
 
 app.get('/healthz', (_req, res) => {
   res.json({ status: 'ok', service: config.serviceName });
