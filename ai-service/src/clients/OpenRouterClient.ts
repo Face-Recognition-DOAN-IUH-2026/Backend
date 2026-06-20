@@ -49,18 +49,11 @@ export class OpenRouterClient {
     }
 
     const started = Date.now();
-    const res = await fetch(`${config.openRouter.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.openRouter.apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'http://localhost',
-        'X-Title': 'IUH Library AI Command Center',
-      },
-      body: JSON.stringify({
+
+    const makeRequest = async (withResponseFormat: boolean) => {
+      const body: any = {
         model: config.openRouter.model,
         temperature: 0.2,
-        response_format: { type: 'json_object' },
         messages: [
           {
             role: 'system',
@@ -74,8 +67,27 @@ export class OpenRouterClient {
           },
           { role: 'user', content: JSON.stringify(snapshot) },
         ],
-      }),
-    });
+      };
+      if (withResponseFormat) {
+        body.response_format = { type: 'json_object' };
+      }
+      return fetch(`${config.openRouter.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.openRouter.apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'http://localhost',
+          'X-Title': 'IUH Library AI Command Center',
+        },
+        body: JSON.stringify(body),
+      });
+    };
+
+    let res = await makeRequest(true);
+    if (!res.ok) {
+      console.warn(`OpenRouter response_format failed (${res.status}), retrying without...`);
+      res = await makeRequest(false);
+    }
     const latencyMs = Date.now() - started;
     if (!res.ok) await throwOpenRouterError(res);
     const data: any = await res.json();

@@ -11,6 +11,7 @@ export const config = {
     scheduleService: process.env.SCHEDULE_SERVICE || 'http://schedule-service:3002',
     accessService: process.env.ACCESS_SERVICE || 'http://access-service:3003',
     aiService: process.env.AI_SERVICE || 'http://ai-service:3004',
+    agentService: process.env.AGENT_SERVICE || 'http://agent-service:3005',
   },
   frontendUrl: process.env.FRONTEND_URL || 'http://host.docker.internal:3000',
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['*'],

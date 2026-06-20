@@ -4,6 +4,7 @@ import cors from 'cors';
 import { config } from './config';
 import { AppDataSource } from './data-source';
 import scheduleRoutes from './routes/schedule.routes';
+import scheduleInternalRoutes from './routes/schedule-internal.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
@@ -11,6 +12,7 @@ const app = express();
 app.use(cors({ origin: config.corsOrigins.includes('*') ? true : config.corsOrigins, credentials: true }));
 app.use(express.json());
 
+app.use('/schedules', scheduleInternalRoutes);
 app.use('/schedules', scheduleRoutes);
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'schedule-service' }));
 
