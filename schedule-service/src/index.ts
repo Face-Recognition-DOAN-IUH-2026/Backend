@@ -6,6 +6,7 @@ import { AppDataSource } from './data-source';
 import scheduleRoutes from './routes/schedule.routes';
 import scheduleInternalRoutes from './routes/schedule-internal.routes';
 import { errorHandler } from './middlewares/errorHandler';
+import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
 
 const app = express();
 
@@ -21,6 +22,7 @@ app.use(errorHandler);
 async function start() {
   try {
     await AppDataSource.initialize();
+    await startUserEventSubscriber();
     app.listen(config.port, () => {
       console.log(`Schedule service running on port ${config.port}`);
     });

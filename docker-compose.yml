@@ -20,8 +20,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -135,7 +138,6 @@ services:
       PORT: 3001
       DB_HOST: postgres
       DB_NAME: userdb
-      REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
@@ -158,7 +160,6 @@ services:
       DB_NAME: scheduledb
       DB_SCHEMA: schedule
       USER_SERVICE_URL: http://user-service:3001
-      REDIS_URL: redis://redis:6379/0
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
       TZ: Asia/Ho_Chi_Minh
     depends_on:
@@ -191,7 +192,6 @@ services:
       DB_NAME: accessdb
       DB_SCHEMA: access
       USER_SERVICE_URL: http://user-service:3001
-      REDIS_URL: redis://redis:6379/0
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
     depends_on:
       postgres:
@@ -310,7 +310,6 @@ services:
       PORT: 3006
       DB_HOST: postgres
       DB_NAME: notificationdb
-      REDIS_URL: redis://redis:6379/0
       JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
       JWT_ISSUER: ${JWT_ISSUER:-face-recognition}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-face-recognition-users}
@@ -341,7 +340,6 @@ services:
       PORT: 3007
       DB_HOST: postgres
       DB_NAME: automationdb
-      REDIS_URL: redis://redis:6379/0
       JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
       JWT_ISSUER: ${JWT_ISSUER:-face-recognition}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-face-recognition-users}
@@ -412,7 +410,6 @@ services:
       USER_SERVICE_URL: http://user-service:3001
       ACCESS_SERVICE_URL: http://access-service:3003
       FACE_RECOGNITION_API: http://face-recognition-api:8000
-      REDIS_URL: redis://redis:6379/0
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
     depends_on:
       postgres:

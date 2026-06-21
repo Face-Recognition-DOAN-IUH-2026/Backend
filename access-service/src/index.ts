@@ -10,6 +10,7 @@ import internalRoutes from './routes/internal.routes';
 import { errorHandler } from './middlewares/errorHandler';
 import { decodeToken } from './middlewares/auth';
 import { realtimeHub } from './realtime/RealtimeHub';
+import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
 
 const app = express();
 
@@ -26,6 +27,7 @@ async function start() {
   try {
     await AppDataSource.initialize();
     await realtimeHub.connectRedis();
+    await startUserEventSubscriber();
 
     const server = http.createServer(app);
     const wss = new WebSocketServer({ noServer: true });

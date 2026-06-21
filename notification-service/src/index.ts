@@ -10,6 +10,7 @@ import internalRoutes from './routes/internal.routes';
 import { errorHandler } from './middlewares/errorHandler';
 import { decodeToken } from './middlewares/auth';
 import { notificationHub } from './realtime/NotificationHub';
+import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
 
 const app = express();
 
@@ -29,6 +30,7 @@ async function start() {
     await AppDataSource.runMigrations();
     console.log('Migrations completed');
     await notificationHub.connectRedis();
+    await startUserEventSubscriber();
 
     const server = http.createServer(app);
     const wss = new WebSocketServer({ noServer: true });
