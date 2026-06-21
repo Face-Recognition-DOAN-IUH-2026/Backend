@@ -220,6 +220,23 @@ app.use('/api/patrons', createProxyMiddleware({
   pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
+// ---- NOTIFICATION-SERVICE ----
+const notificationProxy = createProxyMiddleware({
+  target: config.services.notificationService,
+  changeOrigin: true,
+  ws: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,  // /api/notifications → /notifications
+});
+
+app.use('/api/notifications', notificationProxy);
+
+// ---- AUTOMATION-SERVICE ----
+app.use('/api/automation', createProxyMiddleware({
+  target: config.services.automationService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,  // /api/automation → /automation
+}));
+
 // Users admin routes (list/delete patrons with face status)
 app.use('/api/users', createProxyMiddleware({
   target: config.services.faceRecognitionApi,
@@ -320,6 +337,10 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 server.on('upgrade', (req, socket, head) => {
   if (req.url?.startsWith('/api/access/ws')) {
     accessProxy.upgrade(req, socket as any, head);
+    return;
+  }
+  if (req.url?.startsWith('/notifications/ws')) {
+    notificationProxy.upgrade(req, socket as any, head);
     return;
   }
   socket.destroy();

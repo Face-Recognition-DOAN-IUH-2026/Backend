@@ -158,10 +158,13 @@ services:
       DB_NAME: scheduledb
       DB_SCHEMA: schedule
       USER_SERVICE_URL: http://user-service:3001
+      REDIS_URL: redis://redis:6379/0
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
       TZ: Asia/Ho_Chi_Minh
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       user-service:
         condition: service_started
@@ -295,6 +298,75 @@ services:
       retries: 3
       start_period: 10s
 
+  notification-service:
+    build:
+      context: notification-service
+      dockerfile: Dockerfile
+    container_name: notification-service
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      PORT: 3006
+      DB_HOST: postgres
+      DB_NAME: notificationdb
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      JWT_ISSUER: ${JWT_ISSUER:-face-recognition}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-face-recognition-users}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - face-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3006/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  automation-service:
+    build:
+      context: automation-service
+      dockerfile: Dockerfile
+    container_name: automation-service
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      PORT: 3007
+      DB_HOST: postgres
+      DB_NAME: automationdb
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      JWT_ISSUER: ${JWT_ISSUER:-face-recognition}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-face-recognition-users}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
+      NOTIFICATION_SERVICE_URL: http://notification-service:3006
+      BORROW_SERVICE_URL: http://borrow-service:8000
+      SCHEDULE_SERVICE_URL: http://schedule-service:3002
+      ACCESS_SERVICE_URL: http://access-service:3003
+      USER_SERVICE_URL: http://user-service:3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      notification-service:
+        condition: service_started
+    networks:
+      - face-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3007/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   gateway:
     build:
       context: api-gateway
@@ -310,6 +382,8 @@ services:
       ACCESS_SERVICE: http://access-service:3003
       AI_SERVICE: http://ai-service:3004
       AGENT_SERVICE: http://agent-service:3005
+      NOTIFICATION_SERVICE: http://notification-service:3006
+      AUTOMATION_SERVICE: http://automation-service:3007
     depends_on:
       - face-recognition-api
       - user-service
@@ -318,6 +392,8 @@ services:
       - access-service
       - ai-service
       - agent-service
+      - notification-service
+      - automation-service
       - chromadb
     networks:
       - face-network
@@ -336,9 +412,12 @@ services:
       USER_SERVICE_URL: http://user-service:3001
       ACCESS_SERVICE_URL: http://access-service:3003
       FACE_RECOGNITION_API: http://face-recognition-api:8000
+      REDIS_URL: redis://redis:6379/0
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       user-service:
         condition: service_started

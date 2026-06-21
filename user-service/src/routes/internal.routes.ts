@@ -27,9 +27,39 @@ const toPublic = (user: any) => ({
   membershipExpiry: user.membershipExpiry,
 });
 
-router.get('/users', async (_req, res) => {
-  const [users] = await userRepo.findAll();
-  res.json(users.map(toPublic));
+router.get('/users', async (req, res) => {
+  const role = typeof req.query.role === 'string' ? req.query.role : undefined;
+  if (role) {
+    const all = await userRepo.findAll(0, 1000);
+    const filtered = all[0].filter((u: any) => u.role === role);
+    res.json(filtered.map(toPublic));
+  } else {
+    const [users] = await userRepo.findAll();
+    res.json(users.map(toPublic));
+  }
+});
+
+router.get('/users/expiring-membership', async (req, res) => {
+  try {
+    const days = parseInt(typeof req.query.days === 'string' ? req.query.days : '7', 10) || 7;
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() + days);
+
+    const [users] = await userRepo.findAll(0, 10000);
+    const expiring = users.filter((u: any) => {
+      if (u.role !== 'patron' || !u.membershipExpiry) return false;
+      const expiry = new Date(u.membershipExpiry);
+      return expiry <= cutoffDate && expiry >= new Date();
+    });
+
+    res.json(expiring.map((u: any) => ({
+      id: u.id,
+      fullName: u.fullName,
+      membershipExpiry: u.membershipExpiry,
+    })));
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to check expiring memberships' });
+  }
 });
 
 router.get('/users/:id', async (req, res) => {
