@@ -22,7 +22,7 @@ export const config = {
   postgres: parsePostgresUrl(postgresUrl),
   userServiceUrl: process.env.USER_SERVICE_URL || 'http://user-service:3001',
   accessServiceUrl: process.env.ACCESS_SERVICE_URL || 'http://access-service:3003',
-  internalApiKey: process.env.INTERNAL_API_KEY || 'internal-secret-key',
+  internalApiKey: process.env.INTERNAL_API_KEY || 'change-me-in-production',
   jwtSecret: process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET || 'change-me-in-production',
   jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',

@@ -155,31 +155,59 @@ export class AccessService {
   }
 
   async getActive() {
+    const MAX_INSIDE_HOURS = 24;
     const states = await stateRepo().find({
       where: { currentStatus: 'inside' },
       order: { lastEntryAt: 'DESC' },
     });
+
     const userMap = await users.getUsers(states.map((state) => state.patronId));
-    return states
-      .filter((state) => !state.lastEntryCamera || ACTIVE_CAMERA_IDS.includes(state.lastEntryCamera as any))
-      .map((state) => {
-        const user = userMap.get(state.patronId);
-        return {
-          id: state.patronId,
-          patron_id: state.patronId,
-          full_name: user?.fullName || null,
-          fullName: user?.fullName || null,
-          email: user?.email || null,
-          student_code: user?.studentCode || null,
-          studentCode: user?.studentCode || null,
-          current_status: state.currentStatus,
-          currentStatus: state.currentStatus,
-          last_entry_at: state.lastEntryAt,
-          lastEntryAt: state.lastEntryAt,
-          last_entry_camera: state.lastEntryCamera,
-          lastEntryCamera: state.lastEntryCamera,
-        };
+
+    const now = Date.now();
+    const results: any[] = [];
+    const staleIds: string[] = [];
+
+    for (const state of states) {
+      const user = userMap.get(state.patronId);
+
+      if (!user || user.status === 'deleted') {
+        staleIds.push(state.patronId);
+        continue;
+      }
+
+      const entryTime = state.lastEntryAt ? new Date(state.lastEntryAt).getTime() : 0;
+      const hoursInside = (now - entryTime) / (1000 * 60 * 60);
+      if (hoursInside > MAX_INSIDE_HOURS) {
+        staleIds.push(state.patronId);
+        continue;
+      }
+
+      if (state.lastEntryCamera && !ACTIVE_CAMERA_IDS.includes(state.lastEntryCamera as any)) {
+        continue;
+      }
+
+      results.push({
+        id: state.patronId,
+        patron_id: state.patronId,
+        full_name: user.fullName || null,
+        fullName: user.fullName || null,
+        email: user.email || null,
+        student_code: user.studentCode || null,
+        studentCode: user.studentCode || null,
+        current_status: state.currentStatus,
+        currentStatus: state.currentStatus,
+        last_entry_at: state.lastEntryAt,
+        lastEntryAt: state.lastEntryAt,
+        last_entry_camera: state.lastEntryCamera,
+        lastEntryCamera: state.lastEntryCamera,
       });
+    }
+
+    if (staleIds.length > 0) {
+      stateRepo().update(staleIds, { currentStatus: 'outside' }).catch(() => {});
+    }
+
+    return results;
   }
 
   async getFrequency(days = 7) {

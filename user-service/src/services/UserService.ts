@@ -1,3 +1,5 @@
+import { AppDataSource } from '../data-source';
+import { User } from '../entities/User.entity';
 import { UserRepository } from '../repositories/UserRepository';
 import { PatronRepository } from '../repositories/PatronRepository';
 import { RedisService } from './RedisService';
@@ -59,8 +61,20 @@ export class UserService {
     const user = await this.userRepo.findById(id);
     if (!user) throw new NotFoundError('User not found');
 
-    await this.userRepo.delete(id);
-    await this.redis.publishUserDeleted(id, user.email);
+    const queryRunner = AppDataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      await queryRunner.manager.delete(User, id);
+      await this.redis.publishUserDeleted(id, user.email);
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
 
     return { deleted: true, id };
   }

@@ -29,7 +29,7 @@ export async function checkActiveBorrows(patronId: string): Promise<ActiveBorrow
     throw new Error('Borrow-service temporarily unavailable');
   }
   try {
-    const res = await fetch(`${config.borrowServiceUrl}/borrow/internal/patrons/${patronId}/active-borrows`, {
+    const res = await fetch(`${config.borrowServiceUrl}/borrow/internal/active-borrowers?patronId=${patronId}`, {
       headers: { 'x-internal-api-key': config.internalApiKey },
       signal: AbortSignal.timeout(5000),
     });

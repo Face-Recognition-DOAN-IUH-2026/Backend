@@ -1,4 +1,6 @@
 import bcrypt from 'bcryptjs';
+import { AppDataSource } from '../data-source';
+import { User } from '../entities/User.entity';
 import { PatronRepository } from '../repositories/PatronRepository';
 import { RedisService } from './RedisService';
 import {
@@ -129,8 +131,20 @@ export class PatronService {
       throw new ConflictError('Không thể xóa độc giả đang mượn sách. Vui lòng xử lý sách trước khi xóa.');
     }
 
-    await this.patronRepo.update(id, { status: 'deleted' as any });
-    await this.redis.publishUserDeleted(id, patron.email);
+    const queryRunner = AppDataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      await queryRunner.manager.update(User, id, { status: 'deleted' as any });
+      await this.redis.publishUserDeleted(id, patron.email);
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
+    }
 
     return { deleted: true, id, soft: true };
   }

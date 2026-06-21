@@ -631,12 +631,12 @@ def liveness_task(self, object_key: str | None = None, image_data: str | None = 
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
 def delete_user_task(self, user_id: str) -> dict:
-    """Delete face embeddings and all enrollment images for a user.
+    """Delete face embeddings, enrollment images, and PG records for a user.
 
     Handles both single-angle (enrollments/{id}.jpg) and
     multi-angle (enrollments/{id}_{angle}.jpg) storage patterns.
     """
-    logger.info("Deleting user %s embeddings and images", user_id)
+    logger.info("Deleting user %s embeddings, images, and PG records", user_id)
     try:
         angles = ["", "_frontal", "_right", "_left", "_down"]
         for suffix in angles:
@@ -645,6 +645,20 @@ def delete_user_task(self, user_id: str) -> dict:
             except Exception:
                 pass
         _get_milvus().delete_by_user_id(user_id=user_id)
+
+        # Cleanup patron_faces PG rows
+        try:
+            conn = _get_pg_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM patron_faces WHERE patron_id = %s", (user_id,))
+                    logger.info("Deleted %s patron_faces PG rows for %s", cur.rowcount, user_id)
+                conn.commit()
+            finally:
+                _close_pg_connection(conn)
+        except Exception as pg_err:
+            logger.warning("Failed to delete patron_faces PG rows for %s: %s", user_id, pg_err)
+
         return {"status": "success", "user_id": user_id}
     except Exception as exc:
         logger.exception("Delete failed for %s", user_id)
