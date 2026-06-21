@@ -4,8 +4,8 @@ dotenv.config();
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
-  jwtSecret: process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET || 'your-secret-key-change-in-production',
-  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+  jwtSecret: process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET || '',
+  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || '',
   jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
   jwtAccessExpiresMinutes: parseInt(process.env.JWT_ACCESS_EXPIRES_MINUTES || '15', 10),
@@ -19,6 +19,6 @@ export const config = {
   },
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['*'],
   redisUrl: process.env.REDIS_URL || 'redis://redis:6379/0',
-  internalApiKey: process.env.INTERNAL_API_KEY || 'change-me-in-production',
+  internalApiKey: process.env.INTERNAL_API_KEY || '',
   borrowServiceUrl: process.env.BORROW_SERVICE_URL || 'http://borrow-service:8000',
 };

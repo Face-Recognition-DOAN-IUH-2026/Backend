@@ -59,3 +59,15 @@ export async function lookupPatronById(id: string): Promise<PatronSummary | null
   if (res.status !== 200) throw new HttpError(503, 'Cannot lookup patron right now');
   return res.json() as Promise<PatronSummary>;
 }
+
+export async function lookupPatronsByIds(ids: string[]): Promise<Map<string, PatronSummary>> {
+  if (ids.length === 0) return new Map();
+  const res = await request('/internal/users/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+  if (res.status !== 200) throw new HttpError(503, 'Cannot batch lookup patrons');
+  const data = await res.json() as Record<string, PatronSummary>;
+  return new Map(Object.entries(data));
+}

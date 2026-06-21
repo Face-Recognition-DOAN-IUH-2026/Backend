@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { AppDataSource } from '../data-source';
+import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowRepository } from '../repositories/BorrowRepository';
@@ -145,44 +146,64 @@ router.post('/return', async (req: Request, res: Response) => {
       return;
     }
 
-    const record = await records().findOne({
-      where: { copy: { barcode } as any, status: 'borrowed' as any },
-      relations: { book: true, copy: true },
+    const result = await AppDataSource.transaction(async (manager) => {
+      const record = await manager.findOne(BorrowRecord, {
+        where: { copy: { barcode } as any, status: 'borrowed' as any },
+        relations: { book: true, copy: true },
+      });
+
+      if (!record) {
+        throw new Error('NOT_FOUND');
+      }
+
+      const now = new Date();
+      record.returnAt = now;
+      record.status = 'returned';
+
+      if (now > new Date(record.dueAt)) {
+        const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
+        const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
+        record.fineAmount = overdueDays * config.finePerDay;
+      }
+
+      await manager.save(record);
+
+      if (record.copy) {
+        record.copy.isAvailable = true;
+        await manager.save(record.copy);
+      }
+
+      return record;
     });
 
-    if (!record) {
+    if (result === null) {
       res.status(404).json({ success: false, detail: 'Không tìm thấy phiếu mượn với barcode này hoặc sách đã được trả.' });
       return;
     }
 
-    record.returnAt = new Date();
-    record.status = 'returned';
-    await records().save(record);
-
-    if (record.copy) {
-      record.copy.isAvailable = true;
-      await AppDataSource.getRepository('BookCopy').save(record.copy);
-    }
-
-    // Publish book.returned event for automation-service
     publishEvent('book.returned', {
-      bookId: record.bookId,
-      title: record.book?.title,
-      patronId: record.patronId,
+      bookId: result.bookId,
+      title: result.book?.title,
+      patronId: result.patronId,
       barcode,
     });
 
     res.json({
       success: true,
-      message: 'Trả sách thành công',
+      message: result.fineAmount > 0 ? `Tra sach thanh cong. Phi phat: ${result.fineAmount.toLocaleString('vi-VN')}d` : 'Tra sach thanh cong',
       data: {
-        record_id: record.id,
-        book_title: record.book?.title,
-        patron_id: record.patronId,
-        returned_at: record.returnAt,
+        record_id: result.id,
+        book_title: result.book?.title,
+        patron_id: result.patronId,
+        returned_at: result.returnAt,
+        fine_amount: result.fineAmount,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message === 'NOT_FOUND') {
+      res.status(404).json({ success: false, detail: 'Không tìm thấy phiếu mượn với barcode này hoặc sách đã được trả.' });
+      return;
+    }
     console.error('Error returning book:', error);
     res.status(500).json({ success: false, detail: 'Internal server error' });
   }
@@ -202,31 +223,39 @@ router.post('/renew', async (req: Request, res: Response) => {
     });
 
     if (!record) {
-      res.status(404).json({ success: false, detail: 'Không tìm thấy phiếu mượn hoặc sách đã được trả.' });
+      res.status(404).json({ success: false, detail: 'Khong tim thay phieu muon hoac sach da duoc tra.' });
+      return;
+    }
+
+    if (record.renewalCount >= config.maxRenewals) {
+      res.status(409).json({ success: false, detail: `Da dat gioi han gia han toi da ${config.maxRenewals} lan` });
       return;
     }
 
     const currentDue = new Date(record.dueAt);
     const now = new Date();
     if (currentDue <= now) {
-      res.status(400).json({ success: false, detail: 'Phiếu mượn đã quá hạn, không thể gia hạn.' });
+      res.status(400).json({ success: false, detail: 'Phieu muon da qua han, khong the gia han.' });
       return;
     }
 
     const newDue = new Date(currentDue);
-    newDue.setDate(newDue.getDate() + 14);
+    newDue.setDate(newDue.getDate() + config.maxBorrowDays);
     record.dueAt = newDue;
+    record.renewalCount = (record.renewalCount || 0) + 1;
     await records().save(record);
 
     res.json({
       success: true,
-      message: 'Gia hạn thành công',
+      message: `Gia han thanh cong (${record.renewalCount}/${config.maxRenewals})`,
       data: {
         record_id: record.id,
         book_title: record.book?.title,
         patron_id: record.patronId,
         old_due_at: currentDue.toISOString(),
         new_due_at: record.dueAt.toISOString(),
+        renewal_count: record.renewalCount,
+        max_renewals: config.maxRenewals,
       },
     });
   } catch (error) {

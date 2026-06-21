@@ -138,6 +138,11 @@ services:
       PORT: 3001
       DB_HOST: postgres
       DB_NAME: userdb
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
     depends_on:
       postgres:
         condition: service_healthy
@@ -162,6 +167,11 @@ services:
       USER_SERVICE_URL: http://user-service:3001
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
       TZ: Asia/Ho_Chi_Minh
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
     depends_on:
       postgres:
         condition: service_healthy
@@ -193,6 +203,11 @@ services:
       DB_SCHEMA: access
       USER_SERVICE_URL: http://user-service:3001
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
     depends_on:
       postgres:
         condition: service_healthy
@@ -246,6 +261,12 @@ services:
       SCHEDULE_SERVICE_URL: http://schedule-service:3002
       USER_SERVICE_URL: http://user-service:3001
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
+      JWT_SECRET: ${JWT_SECRET}
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
     depends_on:
       chromadb:
         condition: service_healthy
@@ -280,6 +301,11 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-oss-20b:free}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
     depends_on:
       postgres:
         condition: service_healthy
@@ -314,6 +340,11 @@ services:
       JWT_ISSUER: ${JWT_ISSUER:-face-recognition}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-face-recognition-users}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
     depends_on:
       postgres:
         condition: service_healthy
@@ -349,6 +380,11 @@ services:
       SCHEDULE_SERVICE_URL: http://schedule-service:3002
       ACCESS_SERVICE_URL: http://access-service:3003
       USER_SERVICE_URL: http://user-service:3001
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
     depends_on:
       postgres:
         condition: service_healthy
@@ -411,6 +447,11 @@ services:
       ACCESS_SERVICE_URL: http://access-service:3003
       FACE_RECOGNITION_API: http://face-recognition-api:8000
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
     depends_on:
       postgres:
         condition: service_healthy

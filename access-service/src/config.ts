@@ -4,10 +4,10 @@ dotenv.config();
 export const config = {
   port: parseInt(process.env.PORT || '3003', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
-  jwtSecret: process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET || 'your-secret-key-change-in-production',
+  jwtSecret: process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET || '',
   jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
-  internalApiKey: process.env.INTERNAL_API_KEY || 'change-me-in-production',
+  internalApiKey: process.env.INTERNAL_API_KEY || '',
   userServiceUrl: process.env.USER_SERVICE_URL || 'http://user-service:3001',
   db: {
     host: process.env.DB_HOST || 'localhost',

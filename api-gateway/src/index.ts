@@ -22,9 +22,6 @@ const globalLimiter = rateLimit({
   skip: (req) => {
     if (config.nodeEnv === 'production') return false;
     return [
-      '/auth/login',
-      '/auth/register',
-      '/auth/refresh',
       '/api/auth/login',
       '/api/auth/register',
       '/api/auth/refresh',
@@ -35,6 +32,15 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request, vui lòng thử lại sau' },
+});
+
+// Auth rate limiter — stricter, always active even in dev mode
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts', detail: 'Quá nhiều lần đăng nhập, vui lòng thử lại sau 15 phút' },
 });
 
 // Face endpoints are intentionally not rate-limited in local development.
@@ -72,7 +78,7 @@ const stripApiPrefixFromOriginalPath = (_path: string, req: any) => {
 // ---- USER-SERVICE (Auth, Patron Auth, User Info) ----
 
 // Backward-compatible auth routes: /auth/login, /auth/register, /auth/refresh
-app.use('/auth', createProxyMiddleware({
+app.use('/auth', authLimiter, createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
   pathRewrite: preserveOriginalPath,
@@ -85,20 +91,20 @@ app.use('/api/auth/face-login', faceLimiter, createProxyMiddleware({
 }));
 
 // Auth routes: /api/auth/login, /api/auth/register, /api/auth/refresh
-app.use('/api/auth', createProxyMiddleware({
+app.use('/api/auth', authLimiter, createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,  // /api/auth/login → /auth/login
 }));
 
 // Patron auth routes: login, register
-app.use('/api/patrons/login', createProxyMiddleware({
+app.use('/api/patrons/login', authLimiter, createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,  // → /patrons/login
 }));
 
-app.use('/api/patrons/register', createProxyMiddleware({
+app.use('/api/patrons/register', authLimiter, createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,  // → /patrons/register
@@ -347,3 +353,18 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 server.keepAliveTimeout = 120000; // 120s keep-alive (up from 60s to accommodate SSE keepalive)
+
+const shutdown = async () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    console.log('HTTP server closed');
+    process.exit(0);
+  });
+  setTimeout(() => {
+    console.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
