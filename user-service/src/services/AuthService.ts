@@ -139,17 +139,20 @@ export class AuthService {
       };
     } catch (err: any) {
       if (err.message?.includes('Invalid token type')) throw err;
-      secret = config.jwtRefreshSecret;
-      const decoded: any = jwt.verify(token, secret);
-      if (expectedType && decoded.typ !== expectedType) {
-        throw new Error(`Invalid token type: expected ${expectedType}`);
+      try {
+        const decoded: any = jwt.verify(token, config.jwtRefreshSecret);
+        if (expectedType && decoded.typ !== expectedType) {
+          throw new Error(`Invalid token type: expected ${expectedType}`);
+        }
+        return {
+          userId: decoded.sub,
+          email: decoded.email || '',
+          role: decoded.roles?.[0] || 'user',
+          fullName: decoded.full_name || null,
+        };
+      } catch {
+        throw new UnauthorizedError('Invalid or expired token');
       }
-      return {
-        userId: decoded.sub,
-        email: decoded.email || '',
-        role: decoded.roles?.[0] || 'user',
-        fullName: decoded.full_name || null,
-      };
     }
   }
 
