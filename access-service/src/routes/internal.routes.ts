@@ -42,4 +42,20 @@ router.post('/access/patrons/:id/status', async (req, res, next) => {
   }
 });
 
+router.get('/access/stats', async (_req, res, next) => {
+  try {
+    res.json(await accessService.getStats());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/access/active', async (_req, res, next) => {
+  try {
+    res.json(await accessService.getActive());
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

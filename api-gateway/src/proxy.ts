@@ -33,6 +33,36 @@ export const setupProxy = (app: any) => {
     },
   }));
 
+  // Notification Service proxy
+  app.use('/notifications', createProxyMiddleware({
+    target: config.services.notificationService,
+    changeOrigin: true,
+    pathRewrite: (path: string, req: any) => {
+      const originalPath = req.originalUrl || req.url;
+      return originalPath;
+    },
+  }));
+
+  // Notification Service proxy (with /api prefix for web frontend)
+  app.use('/api/notifications', createProxyMiddleware({
+    target: config.services.notificationService,
+    changeOrigin: true,
+    pathRewrite: (path: string, req: any) => {
+      const originalPath = req.originalUrl || req.url;
+      return originalPath.replace(/^\/api/, '');
+    },
+  }));
+
+  // Automation Service proxy
+  app.use('/automation', createProxyMiddleware({
+    target: config.services.automationService,
+    changeOrigin: true,
+    pathRewrite: (path: string, req: any) => {
+      const originalPath = req.originalUrl || req.url;
+      return originalPath;
+    },
+  }));
+
   // Face API proxy
   app.use('/api', createProxyMiddleware({
     target: config.services.faceRecognitionApi,

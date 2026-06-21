@@ -14,6 +14,7 @@ import {
 } from '../entities';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../errors';
 import { UserServiceClient } from '../clients/UserServiceClient';
+import { publishEvent } from '../utils/eventPublisher';
 
 function localDate(value: Date) {
   const year = value.getFullYear();
@@ -194,6 +195,15 @@ export class ScheduleService {
       status: body.status ?? 'scheduled',
     }));
     await this.log('assignment.created', 'staff_schedule', schedule.id, actorId, body);
+
+    // Publish schedule.changed event for automation-service
+    publishEvent('schedule.changed', {
+      staffId: body.staffId,
+      shiftId: body.shiftId,
+      workDate: body.workDate,
+      changeType: 'assigned',
+    });
+
     return schedule;
   }
 
@@ -209,6 +219,15 @@ export class ScheduleService {
     Object.assign(schedule, body);
     const saved = await this.schedules.save(schedule);
     await this.log('assignment.updated', 'staff_schedule', id, actorId, body);
+
+    // Publish schedule.changed event for automation-service
+    publishEvent('schedule.changed', {
+      staffId: next.staffId,
+      shiftId: next.shiftId,
+      workDate: next.workDate,
+      changeType: 'updated',
+    });
+
     return saved;
   }
 
@@ -224,6 +243,15 @@ export class ScheduleService {
     schedule.status = 'cancelled';
     await this.schedules.save(schedule);
     await this.log('assignment.cancelled', 'staff_schedule', id, actorId, null);
+
+    // Publish schedule.changed event for automation-service
+    publishEvent('schedule.changed', {
+      staffId: schedule.staffId,
+      shiftId: schedule.shiftId,
+      workDate: schedule.workDate,
+      changeType: 'cancelled',
+    });
+
     return { deleted: true, id };
   }
 

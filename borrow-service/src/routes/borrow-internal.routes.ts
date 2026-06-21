@@ -4,6 +4,7 @@ import { Book } from '../entities/Book';
 import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { internalAuth } from '../middlewares/internal-auth';
+import { publishEvent } from '../utils/eventPublisher';
 
 const router = Router();
 router.use(internalAuth);
@@ -145,8 +146,8 @@ router.post('/return', async (req: Request, res: Response) => {
     }
 
     const record = await records().findOne({
-      where: { bookCopy: { barcode }, status: 'borrowed' as any },
-      relations: { book: true, bookCopy: true },
+      where: { copy: { barcode } as any, status: 'borrowed' as any },
+      relations: { book: true, copy: true },
     });
 
     if (!record) {
@@ -154,14 +155,22 @@ router.post('/return', async (req: Request, res: Response) => {
       return;
     }
 
-    record.returnAt = new Date().toISOString();
+    record.returnAt = new Date();
     record.status = 'returned';
     await records().save(record);
 
-    if (record.bookCopy) {
-      record.bookCopy.status = 'available';
-      await AppDataSource.getRepository('BookCopy').save(record.bookCopy);
+    if (record.copy) {
+      record.copy.isAvailable = true;
+      await AppDataSource.getRepository('BookCopy').save(record.copy);
     }
+
+    // Publish book.returned event for automation-service
+    publishEvent('book.returned', {
+      bookId: record.bookId,
+      title: record.book?.title,
+      patronId: record.patronId,
+      barcode,
+    });
 
     res.json({
       success: true,
@@ -206,7 +215,7 @@ router.post('/renew', async (req: Request, res: Response) => {
 
     const newDue = new Date(currentDue);
     newDue.setDate(newDue.getDate() + 14);
-    record.dueAt = newDue.toISOString();
+    record.dueAt = newDue;
     await records().save(record);
 
     res.json({
@@ -217,7 +226,7 @@ router.post('/renew', async (req: Request, res: Response) => {
         book_title: record.book?.title,
         patron_id: record.patronId,
         old_due_at: currentDue.toISOString(),
-        new_due_at: record.dueAt,
+        new_due_at: record.dueAt.toISOString(),
       },
     });
   } catch (error) {
@@ -237,8 +246,8 @@ router.post('/batch-return', async (req: Request, res: Response) => {
     const results: any[] = [];
     for (const barcode of barcodes) {
       const record = await records().findOne({
-        where: { bookCopy: { barcode }, status: 'borrowed' as any },
-        relations: { book: true, bookCopy: true },
+        where: { copy: { barcode } as any, status: 'borrowed' as any },
+        relations: { book: true, copy: true },
       });
 
       if (!record) {
@@ -246,14 +255,22 @@ router.post('/batch-return', async (req: Request, res: Response) => {
         continue;
       }
 
-      record.returnAt = new Date().toISOString();
+      record.returnAt = new Date();
       record.status = 'returned';
       await records().save(record);
 
-      if (record.bookCopy) {
-        record.bookCopy.status = 'available';
-        await AppDataSource.getRepository('BookCopy').save(record.bookCopy);
+      if (record.copy) {
+        record.copy.isAvailable = true;
+        await AppDataSource.getRepository('BookCopy').save(record.copy);
       }
+
+      // Publish book.returned event for automation-service
+      publishEvent('book.returned', {
+        bookId: record.bookId,
+        title: record.book?.title,
+        patronId: record.patronId,
+        barcode,
+      });
 
       results.push({
         barcode,
@@ -388,6 +405,38 @@ router.put('/books/:book_id/quantity', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error updating book quantity:', error);
     res.status(500).json({ success: false, detail: 'Internal server error' });
+  }
+});
+
+router.get('/active-borrowers', async (_req: Request, res: Response) => {
+  try {
+    const overdue = await records().createQueryBuilder('record')
+      .where('record.status = :status', { status: 'borrowed' })
+      .andWhere('record.returnAt IS NULL')
+      .leftJoinAndSelect('record.book', 'book')
+      .getMany();
+
+    const grouped = new Map<string, typeof overdue>();
+    overdue.forEach((r) => {
+      const list = grouped.get(r.patronId) || [];
+      list.push(r);
+      grouped.set(r.patronId, list);
+    });
+
+    const now = Date.now();
+    const items: any[] = [];
+    for (const [patronId, patronRecords] of grouped.entries()) {
+      items.push({
+        patron_id: patronId,
+        total_borrowed: patronRecords.length,
+        overdue_count: patronRecords.filter((r) => r.dueAt.getTime() < now).length,
+      });
+    }
+
+    res.json({ items, total: items.length });
+  } catch (error) {
+    console.error('Error fetching active borrowers:', error);
+    res.status(500).json({ detail: 'Internal server error' });
   }
 });
 
