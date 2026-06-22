@@ -119,6 +119,7 @@ export type MockBorrowRepository = {
   getActiveBorrow: jest.Mock;
   getActiveBorrowsByPatronAndBook: jest.Mock;
   getActiveBorrowByCopy: jest.Mock;
+  getBookByNormalizedIsbn: jest.Mock;
   getBorrowRecordById: jest.Mock;
   getAllActiveBorrows: jest.Mock;
   getActiveBorrowsByPatron: jest.Mock;
@@ -167,6 +168,7 @@ export function createMockBorrowRepository(): MockBorrowRepository {
     getActiveBorrow: jest.fn().mockResolvedValue(null),
     getActiveBorrowsByPatronAndBook: jest.fn().mockResolvedValue([]),
     getActiveBorrowByCopy: jest.fn().mockResolvedValue(null),
+    getBookByNormalizedIsbn: jest.fn().mockResolvedValue(null),
     getBorrowRecordById: jest.fn().mockResolvedValue(null),
     getAllActiveBorrows: jest.fn().mockResolvedValue([]),
     getActiveBorrowsByPatron: jest.fn().mockResolvedValue([]),

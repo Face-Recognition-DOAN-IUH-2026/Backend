@@ -3,8 +3,9 @@ import { User } from '../entities/User.entity';
 import { UserRepository } from '../repositories/UserRepository';
 import { PatronRepository } from '../repositories/PatronRepository';
 import { RedisService } from './RedisService';
+import { CloudinaryService } from './CloudinaryService';
 import { UserPublicDto } from '../dto';
-import { NotFoundError } from '../errors';
+import { NotFoundError, BadRequestError } from '../errors';
 
 export class UserService {
   constructor(
@@ -13,9 +14,12 @@ export class UserService {
     private redis: RedisService,
   ) {}
 
-  async getAllUsers(): Promise<UserPublicDto[]> {
-    const [users] = await this.userRepo.findAll();
-    return users.map(this.toPublic);
+  async getAllUsers(): Promise<{ users: UserPublicDto[]; total: number }> {
+    const [users, total] = await this.userRepo.findAll();
+    return {
+      users: users.map(this.toPublic),
+      total,
+    };
   }
 
   async getUserById(id: string): Promise<any> {
@@ -24,19 +28,39 @@ export class UserService {
     return {
       id: user.id,
       email: user.email,
-      fullName: user.fullName,
+      full_name: user.fullName,
       role: user.role,
-      studentCode: user.studentCode,
-      className: user.className,
+      student_code: user.studentCode,
+      class_name: user.className,
       phone: user.phone,
-      cardNumber: user.cardNumber,
+      card_number: user.cardNumber,
       status: user.status,
-      currentStatus: user.currentStatus,
-      lastEntryAt: user.lastEntryAt,
-      lastEntryCamera: user.lastEntryCamera,
-      membershipExpiry: user.membershipExpiry,
-      createdAt: user.createdAt,
+      current_status: user.currentStatus,
+      last_entry_at: user.lastEntryAt,
+      last_entry_camera: user.lastEntryCamera,
+      membership_expiry: user.membershipExpiry,
+      avatar_url: user.avatarUrl,
+      created_at: user.createdAt,
     };
+  }
+
+  async updateAvatar(userId: string, buffer: Buffer, mimeType: string): Promise<string> {
+    const user = await this.userRepo.findById(userId);
+    if (!user) throw new NotFoundError('User not found');
+
+    const cloudinarySvc = new CloudinaryService();
+    const avatarUrl = await cloudinarySvc.uploadAvatar(userId, buffer, mimeType);
+    await this.userRepo.update(userId, { avatarUrl });
+    return avatarUrl;
+  }
+
+  async deleteAvatar(userId: string): Promise<void> {
+    const user = await this.userRepo.findById(userId);
+    if (!user) throw new NotFoundError('User not found');
+
+    const cloudinarySvc = new CloudinaryService();
+    await cloudinarySvc.deleteAvatar(userId);
+    await this.userRepo.update(userId, { avatarUrl: null });
   }
 
   async updateAccessStatus(
@@ -57,7 +81,7 @@ export class UserService {
     return this.getUserById(updated!.id);
   }
 
-  async deleteUser(id: string): Promise<{ deleted: boolean; id: string }> {
+  async deleteUser(id: string): Promise<{ deleted: boolean; id: string; soft: boolean }> {
     const user = await this.userRepo.findById(id);
     if (!user) throw new NotFoundError('User not found');
 
@@ -66,7 +90,7 @@ export class UserService {
     await queryRunner.startTransaction();
 
     try {
-      await queryRunner.manager.delete(User, id);
+      await queryRunner.manager.update(User, id, { status: 'deleted' as any });
       await this.redis.publishUserDeleted(id, user.email);
       await queryRunner.commitTransaction();
     } catch (error) {
@@ -76,7 +100,21 @@ export class UserService {
       await queryRunner.release();
     }
 
-    return { deleted: true, id };
+    return { deleted: true, id, soft: true };
+  }
+
+  async restoreUser(id: string): Promise<UserPublicDto> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    if (user.status !== 'deleted') {
+      throw new BadRequestError('User is not deleted');
+    }
+
+    await this.userRepo.update(id, { status: 'active' });
+    this.redis.publishUserUpdated(id, user.email);
+
+    return this.getUserById(id);
   }
 
   private toPublic(user: any): UserPublicDto {
@@ -85,6 +123,8 @@ export class UserService {
       email: user.email,
       fullName: user.fullName,
       role: user.role,
+      status: user.status,
+      avatarUrl: user.avatarUrl,
     };
   }
 }

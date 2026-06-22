@@ -20,7 +20,7 @@ export class UserRepository {
     return this.repo.findOneBy({ cardNumber: card });
   }
 
-  async findAll(skip = 0, limit = 20): Promise<[User[], number]> {
+  async findAll(skip = 0, limit = 200): Promise<[User[], number]> {
     return this.repo.findAndCount({
       skip,
       take: limit,

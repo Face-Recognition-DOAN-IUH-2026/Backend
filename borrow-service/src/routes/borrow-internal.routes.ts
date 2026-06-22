@@ -47,6 +47,43 @@ router.get('/overdue', async (_req: Request, res: Response) => {
   }
 });
 
+router.get('/due-soon', async (req: Request, res: Response) => {
+  try {
+    const daysBefore = parseInt(req.query.days_before as string) || 3;
+    const now = new Date();
+    const futureDate = new Date(now.getTime() + daysBefore * 24 * 60 * 60 * 1000);
+
+    const dueSoon = await records().createQueryBuilder('record')
+      .where('record.status = :status', { status: 'borrowed' })
+      .andWhere('record.returnAt IS NULL')
+      .andWhere('record.dueAt > :now', { now })
+      .andWhere('record.dueAt <= :futureDate', { futureDate })
+      .leftJoinAndSelect('record.book', 'book')
+      .orderBy('record.dueAt', 'ASC')
+      .getMany();
+
+    const serialized = dueSoon.map(r => ({
+      id: r.id,
+      patron_id: r.patronId,
+      book_id: r.bookId,
+      borrow_at: r.borrowAt,
+      due_at: r.dueAt,
+      status: r.status,
+      book: r.book ? {
+        id: r.book.id,
+        title: r.book.title,
+        author: r.book.author,
+        isbn: r.book.isbn,
+      } : undefined,
+    }));
+
+    res.json(serialized);
+  } catch (error) {
+    console.error('Error fetching due-soon borrows:', error);
+    res.status(500).json({ detail: 'Internal server error' });
+  }
+});
+
 router.get('/patron/:patronId', async (req: Request, res: Response) => {
   const { patronId } = req.params;
   try {
@@ -186,7 +223,18 @@ router.post('/return', async (req: Request, res: Response) => {
       title: result.book?.title,
       patronId: result.patronId,
       barcode,
+      fineAmount: result.fineAmount || 0,
     });
+
+    if (result.fineAmount && result.fineAmount > 0) {
+      publishEvent('fine.incurred', {
+        patronId: result.patronId,
+        bookTitle: result.book?.title,
+        fineAmount: result.fineAmount,
+        daysOverdue: Math.ceil((new Date(result.returnAt!).getTime() - new Date(result.dueAt).getTime()) / (1000 * 60 * 60 * 24)),
+        borrowRecordId: result.id,
+      });
+    }
 
     res.json({
       success: true,

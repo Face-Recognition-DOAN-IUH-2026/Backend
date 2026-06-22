@@ -68,6 +68,10 @@ export const borrowClient = {
     return request(`${config.services.borrowService}/borrow/internal/overdue`);
   },
 
+  async getDueSoonBorrows(daysBefore = 3) {
+    return request(`${config.services.borrowService}/borrow/internal/due-soon?days_before=${daysBefore}`);
+  },
+
   async getActiveBorrowers() {
     return request(`${config.services.borrowService}/borrow/internal/active-borrowers`);
   },
@@ -80,6 +84,10 @@ export const borrowClient = {
 export const scheduleClient = {
   async getTodayAssignments() {
     return request(`${config.services.scheduleService}/schedules/today`);
+  },
+
+  async getUpcomingAssignments(from: string, to: string) {
+    return request(`${config.services.scheduleService}/schedules/internal/upcoming?from=${from}&to=${to}`);
   },
 
   async getAttendance(scheduleId: string) {
@@ -99,6 +107,13 @@ export const accessClient = {
   async getAccessLogs(dateFrom: string, limit = 200) {
     return request(`${config.services.accessService}/access/logs?dateFrom=${dateFrom}&limit=${limit}`);
   },
+
+  async forceExitPatron(patronId: string) {
+    return request(`${config.services.accessService}/internal/access/force-exit`, {
+      method: 'POST',
+      body: { patron_id: patronId },
+    });
+  },
 };
 
 export const userClient = {
@@ -115,5 +130,28 @@ export const userClient = {
 
   async getUsersByRole(role: string) {
     return request(`${config.services.userService}/internal/users?role=${role}`);
+  },
+};
+
+export const emailClient = {
+  async sendOverdueEmail(toEmail: string, bookTitle: string, daysOverdue: number) {
+    return request(`${config.services.notificationService}/internal/send-overdue-email`, {
+      method: 'POST',
+      body: { toEmail, bookTitle, daysOverdue },
+    });
+  },
+
+  async sendFineEmail(toEmail: string, bookTitle: string, fineAmount: number, daysOverdue: number) {
+    return request(`${config.services.notificationService}/internal/send-fine-email`, {
+      method: 'POST',
+      body: { toEmail, bookTitle, fineAmount, daysOverdue },
+    });
+  },
+
+  async sendMembershipExpiryEmail(toEmail: string, expiryDate: string) {
+    return request(`${config.services.notificationService}/internal/send-membership-expiry-email`, {
+      method: 'POST',
+      body: { toEmail, expiryDate },
+    });
   },
 };

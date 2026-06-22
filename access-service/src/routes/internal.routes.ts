@@ -58,4 +58,16 @@ router.get('/access/active', async (_req, res, next) => {
   }
 });
 
+router.post('/access/force-exit', async (req, res, next) => {
+  try {
+    const body = z.object({
+      patron_id: z.string(),
+    }).parse(req.body || {});
+    await accessService.setStatus(body.patron_id, 'outside', 'manual_override');
+    res.json({ ok: true, message: 'Đã đánh dấu độc giả đã ra' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

@@ -13,7 +13,7 @@ function internalAuth(req: Request, res: Response, next: any) {
   next();
 }
 
-router.get('/today', internalAuth, async (_req: Request, res: Response) => {
+router.get('/today', internalAuth, async (req: Request, res: Response) => {
   try {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -29,6 +29,26 @@ router.get('/today', internalAuth, async (_req: Request, res: Response) => {
     res.json(assignments);
   } catch (error) {
     console.error('Error fetching today schedule:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/upcoming', internalAuth, async (req: Request, res: Response) => {
+  try {
+    const { from, to } = req.query;
+    if (!from || !to) {
+      res.status(400).json({ error: 'Missing from or to query parameter (YYYY-MM-DD)' });
+      return;
+    }
+
+    const assignments = await scheduleService.listAssignments({
+      from: from as string,
+      to: to as string,
+    });
+
+    res.json(assignments);
+  } catch (error) {
+    console.error('Error fetching upcoming schedule:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

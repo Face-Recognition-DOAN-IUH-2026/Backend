@@ -1,5 +1,7 @@
 import { accessClient, notificationClient, userClient } from '../clients/serviceClients';
 
+const STALE_HOURS = 8;
+
 export async function accessAnomalyAlert(config: Record<string, any>): Promise<any> {
   let activePatrons;
   try {
@@ -14,7 +16,17 @@ export async function accessAnomalyAlert(config: Record<string, any>): Promise<a
     return { checked: 1, alerts: 0, message: 'No patrons currently inside' };
   }
 
-  // Get admin user IDs dynamically
+  const now = Date.now();
+  const staleThreshold = now - STALE_HOURS * 60 * 60 * 1000;
+  const stalePatrons = patronList.filter((p: any) => {
+    const entryTime = new Date(p.last_entry_at || p.lastEntryAt || p.entered_at).getTime();
+    return entryTime < staleThreshold;
+  });
+
+  if (stalePatrons.length === 0) {
+    return { checked: 1, alerts: 0, message: `No stale patrons (>${STALE_HOURS}h)` };
+  }
+
   let adminUserIds: string[] = config.admin_user_ids || [];
 
   if (adminUserIds.length === 0) {
@@ -25,22 +37,24 @@ export async function accessAnomalyAlert(config: Record<string, any>): Promise<a
   }
 
   if (adminUserIds.length > 0) {
-    const now = new Date();
-    const hour = now.getHours();
-    const formattedList = patronList
-      .map((p: any) => `- ${p.full_name || p.patron_id || 'Unknown'} (${p.camera_id || 'N/A'})`)
+    const formattedList = stalePatrons
+      .map((p: any) => {
+        const entryTime = new Date(p.last_entry_at || p.lastEntryAt || p.entered_at).getTime();
+        const hours = Math.round((now - entryTime) / (1000 * 60 * 60));
+        return `- ${p.full_name || p.student_code || p.patron_id || 'Unknown'} (${hours}h, ${p.last_entry_camera || p.lastEntryCamera || 'không rõ'})`;
+      })
       .join('\n');
 
     const notifications = adminUserIds.map((userId) => ({
       userId,
       type: 'anomaly_alert',
-      title: `Cảnh báo: ${patronList.length} người trong thư viện`,
-      body: `Phát hiện ${patronList.length} người trong thư viện (${hour}h):\n${formattedList}`,
-      data: { patrons: patronList, hour, timestamp: now.toISOString() },
+      title: `Cảnh báo: ${stalePatrons.length} độc giả ở quá ${STALE_HOURS}h`,
+      body: `Phát hiện ${stalePatrons.length} độc giả ở trong thư viện quá ${STALE_HOURS} giờ:\n${formattedList}\n\nCó thể gate không detect exit. Kiểm tra trang "Đang hiện diện".`,
+      data: { stale_patrons: stalePatrons, timestamp: new Date().toISOString() },
     }));
 
     await notificationClient.createBulkNotifications(notifications);
   }
 
-  return { checked: 1, alerts: 1, activePatrons: patronList.length };
+  return { checked: 1, alerts: 1, total_inside: patronList.length, stale_count: stalePatrons.length };
 }

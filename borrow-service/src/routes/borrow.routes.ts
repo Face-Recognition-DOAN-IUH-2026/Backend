@@ -10,6 +10,7 @@ import { isPatronInside, getPatronAccessStatus, getPatronRawAccessStatus } from 
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { lookupPatronById, lookupPatronByStudentCode, lookupPatronsByIds, PatronSummary } from '../clients/UserServiceClient';
 import { serializeBook, serializeBookWithStats, serializeBorrowRecord, serializeBorrowSlip, serializeCopy } from '../services/serializers';
+import { publishEvent } from '../utils/eventPublisher';
 import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
@@ -174,6 +175,14 @@ router.post('/', requireRole(['admin', 'staff'], 'Chi nhan vien thu vien moi co 
       record.book = book!;
       record.copy = copy!;
       return { record, book: book! };
+    });
+
+    publishEvent('book.borrowed', {
+      bookId: book.id,
+      title: book.title,
+      patronId: userId,
+      borrowRecordId: record.id,
+      dueAt: record.dueAt,
     });
 
     res.json({ status: 'success', message: `Muon sach thanh cong. Vui long tra truoc ngay ${record.dueAt.toLocaleDateString('vi-VN')}.`, record: serializeBorrowRecord(record), book: serializeBook(book) });
@@ -353,6 +362,16 @@ router.post('/staff/slip/confirm', requireRole(['admin', 'staff', 'patron'], 'Ch
     for (let i = 0; i < records.length; i += 1) {
       records[i].book = (await repo.getBookById(bookIds[i]))!;
       records[i].copy = copyIds[i] ? await repo.getCopyById(copyIds[i]!) : null;
+    }
+
+    for (const record of records) {
+      publishEvent('book.borrowed', {
+        bookId: record.bookId,
+        title: record.book?.title,
+        patronId: record.patronId,
+        borrowRecordId: record.id,
+        dueAt: record.dueAt,
+      });
     }
 
     res.json({
@@ -550,6 +569,16 @@ router.post('/staff/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri 
       records[i].copy = copyIds[i] ? await repo.getCopyById(copyIds[i]!) : null;
     }
 
+    for (const record of records) {
+      publishEvent('book.borrowed', {
+        bookId: record.bookId,
+        title: record.book?.title,
+        patronId: record.patronId,
+        borrowRecordId: record.id,
+        dueAt: record.dueAt,
+      });
+    }
+
     res.json({
       status: 'success',
       message: `Tao phieu muon thanh cong voi ${records.length} cuon. Han tra: ${slip.dueAt.toLocaleDateString('vi-VN')}.`,
@@ -578,6 +607,15 @@ router.post('/staff-return/by-patron', requireRole(['admin', 'staff'], 'Chi quan
     const copy = legacyCopy || (record.copyId ? await repo.getCopyById(record.copyId) : null);
     await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_mobile', body.note);
     if (copy) await repo.setCopyAvailable(copy, true);
+
+    publishEvent('book.returned', {
+      bookId: book.id,
+      title: book.title,
+      patronId: patron.id,
+      barcode: copy?.barcode,
+      fineAmount: record.fineAmount || 0,
+    });
+
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
     next(error);
@@ -621,6 +659,15 @@ router.post('/staff-return/batch', requireRole(['admin', 'staff'], 'Chi quan tri
         const copy = legacyCopy || (record.copyId ? await repo.getCopyById(record.copyId) : null);
         await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_mobile', item.note || null);
         if (copy) await repo.setCopyAvailable(copy, true);
+
+        publishEvent('book.returned', {
+          bookId: book.id,
+          title: book.title,
+          patronId: patron.id,
+          barcode: copy?.barcode,
+          fineAmount: record.fineAmount || 0,
+        });
+
         results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'success', message: 'Tra sach thanh cong' });
         ok += 1;
       } catch (err) {
@@ -646,6 +693,15 @@ router.post('/staff-return/record/:record_id', requireRole(['admin', 'staff'], '
     const copy = record.copyId ? await repo.getCopyById(record.copyId) : null;
     await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_web', body.note);
     if (copy) await repo.setCopyAvailable(copy, true);
+
+    publishEvent('book.returned', {
+      bookId: record.bookId,
+      title: record.book?.title,
+      patronId: record.patronId,
+      barcode: copy?.barcode,
+      fineAmount: record.fineAmount || 0,
+    });
+
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
     next(error);
@@ -662,6 +718,15 @@ router.post('/staff-return', requireRole(['admin', 'staff'], 'Chi quan tri vien 
     if (!record) throw new HttpError(404, 'Khong co ban ghi muon dang hoat dong cho ban sao nay');
     await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_web', body.note);
     await repo.setCopyAvailable(copy, true);
+
+    publishEvent('book.returned', {
+      bookId: record.bookId,
+      title: record.book?.title,
+      patronId: record.patronId,
+      barcode: copy.barcode,
+      fineAmount: record.fineAmount || 0,
+    });
+
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
     next(error);

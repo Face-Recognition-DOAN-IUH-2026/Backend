@@ -21,4 +21,10 @@ export const config = {
   redisUrl: process.env.REDIS_URL || 'redis://redis:6379/0',
   internalApiKey: process.env.INTERNAL_API_KEY || '',
   borrowServiceUrl: process.env.BORROW_SERVICE_URL || 'http://borrow-service:8000',
+  notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:3006',
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
+    apiKey: process.env.CLOUDINARY_API_KEY || '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+  },
 };

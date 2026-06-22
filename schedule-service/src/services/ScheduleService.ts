@@ -8,6 +8,7 @@ import {
   StaffSchedule,
   StaffScheduleTemplate,
   StaffShift,
+  StaffShiftPreference,
   ShiftBid,
   ShiftSwap,
   GeofenceConfig,
@@ -33,6 +34,7 @@ export class ScheduleService {
   private audit = AppDataSource.getRepository(ScheduleAuditLog);
   private bids = AppDataSource.getRepository(ShiftBid);
   private swaps = AppDataSource.getRepository(ShiftSwap);
+  private preferences = AppDataSource.getRepository(StaffShiftPreference);
   private geofence = AppDataSource.getRepository(GeofenceConfig);
   private users = new UserServiceClient();
 
@@ -131,6 +133,50 @@ export class ScheduleService {
     await this.templates.save(template);
     await this.log('template.deactivated', 'staff_schedule_template', id, actorId, null);
     return { deleted: true, id };
+  }
+
+  async listPreferences(staffId?: string) {
+    const where: any = { isActive: true };
+    if (staffId) where.staffId = staffId;
+    const items = await this.preferences.find({ where, order: { priority: 'ASC', createdAt: 'DESC' } });
+    const shiftIds = [...new Set(items.map((i) => i.shiftId))];
+    const zoneIds = [...new Set(items.map((i) => i.zoneId))];
+    const [shifts, zones] = await Promise.all([
+      shiftIds.length ? this.shifts.findBy({ id: In(shiftIds) }) : [],
+      zoneIds.length ? this.zones.findBy({ id: In(zoneIds) }) : [],
+    ]);
+    return items.map((item) => ({
+      ...item,
+      shift: shifts.find((s) => s.id === item.shiftId) ?? null,
+      zone: zones.find((z) => z.id === item.zoneId) ?? null,
+    }));
+  }
+
+  async createPreference(actorId: string, body: { staffId: string; shiftId: string; zoneId: string; priority?: number }) {
+    const existing = await this.preferences.findOneBy({ staffId: body.staffId, shiftId: body.shiftId, zoneId: body.zoneId });
+    if (existing) {
+      existing.priority = body.priority ?? existing.priority;
+      existing.isActive = true;
+      await this.preferences.save(existing);
+      await this.log('preference.updated', 'staff_shift_preference', existing.id, actorId, body);
+      return existing;
+    }
+    const pref = await this.preferences.save(this.preferences.create({ ...body, priority: body.priority ?? 1 }));
+    await this.log('preference.created', 'staff_shift_preference', pref.id, actorId, body);
+    return pref;
+  }
+
+  async deletePreference(actorId: string, id: string) {
+    const pref = await this.preferences.findOneBy({ id });
+    if (!pref) throw new NotFoundError('Preference not found');
+    pref.isActive = false;
+    await this.preferences.save(pref);
+    await this.log('preference.deactivated', 'staff_shift_preference', id, actorId, null);
+    return { deleted: true, id };
+  }
+
+  async getPreferencesForStaff(staffId: string) {
+    return this.preferences.find({ where: { staffId, isActive: true }, order: { priority: 'ASC' } });
   }
 
   async generateFromTemplate(actorId: string, from: string, to: string) {
@@ -469,7 +515,7 @@ export class ScheduleService {
     return swap;
   }
 
-  async autoSchedule(actorId: string, from: string, to: string) {
+async autoSchedule(actorId: string, from: string, to: string) {
     const activeShifts = await this.shifts.findBy({ isActive: true });
     const activeZones = await this.zones.findBy({ isActive: true });
     const allStaff = await this.users.listStaff();
@@ -478,17 +524,62 @@ export class ScheduleService {
       where: { workDate: Between(from, to), status: Not(In(['cancelled'])) },
     });
     const approvedLeaves = await this.availability.find({ where: { status: 'approved' } });
+    const templates = await this.templates.findBy({ isActive: true });
+
+    let preferences: StaffShiftPreference[] = [];
+    try {
+      preferences = await this.preferences.find({ where: { isActive: true } });
+    } catch {
+      // Table might not exist yet, continue without preferences
+    }
+
     const proposed: Array<{ staffId: string; shiftId: string; zoneId: string; workDate: string; note: string }> = [];
     const skipped: string[] = [];
     const today = localDate(new Date());
     const cursor = new Date(`${from}T00:00:00`);
     const end = new Date(`${to}T00:00:00`);
 
+    const staffWorkload = new Map<string, number>();
+    for (const s of staff) {
+      const count = existingAssignments.filter((a) => a.staffId === s.id).length;
+      staffWorkload.set(s.id, count);
+    }
+
+    const templatesByDayOfWeek = new Map<number, typeof templates>();
+    for (const t of templates) {
+      const list = templatesByDayOfWeek.get(t.dayOfWeek) || [];
+      list.push(t);
+      templatesByDayOfWeek.set(t.dayOfWeek, list);
+    }
+
+    const preferencesByShiftZone = new Map<string, string[]>();
+    for (const p of preferences) {
+      const key = `${p.shiftId}:${p.zoneId}`;
+      const list = preferencesByShiftZone.get(key) || [];
+      list.push(p.staffId);
+      preferencesByShiftZone.set(key, list);
+    }
+
     while (cursor <= end) {
       const workDate = localDate(cursor);
       if (workDate < today) { cursor.setDate(cursor.getDate() + 1); continue; }
 
-      const dayStaff = [...staff].sort(() => Math.random() - 0.5);
+      const dayOfWeek = cursor.getDay();
+      const dayTemplates = templatesByDayOfWeek.get(dayOfWeek) || [];
+
+      const dayStaff = [...staff].sort((a, b) => {
+        const aTmpl = dayTemplates.some((t) => t.staffId === a.id);
+        const bTmpl = dayTemplates.some((t) => t.staffId === b.id);
+        if (aTmpl && !bTmpl) return -1;
+        if (!aTmpl && bTmpl) return 1;
+        const aHasPref = preferences.some((p) => p.staffId === a.id);
+        const bHasPref = preferences.some((p) => p.staffId === b.id);
+        if (aHasPref && !bHasPref) return -1;
+        if (!aHasPref && bHasPref) return 1;
+        const aLoad = staffWorkload.get(a.id) || 0;
+        const bLoad = staffWorkload.get(b.id) || 0;
+        return aLoad - bLoad;
+      });
 
       for (const shift of activeShifts) {
         for (const zone of activeZones) {
@@ -496,15 +587,35 @@ export class ScheduleService {
           const needed = (shift.minStaff || 1) - existing.length;
           if (needed <= 0) continue;
 
+          const templateMatchFirst = dayTemplates
+            .filter((t) => t.shiftId === shift.id && t.zoneId === zone.id)
+            .map((t) => t.staffId);
+
+          const prefKey = `${shift.id}:${zone.id}`;
+          const prefMatchFirst = preferencesByShiftZone.get(prefKey) || [];
+
+          let assigned = 0;
           for (const s of dayStaff) {
+            if (assigned >= needed) break;
             if (proposed.some((p) => p.staffId === s.id && p.workDate === workDate)) continue;
             if (existing.some((e) => e.staffId === s.id)) continue;
             if (approvedLeaves.some((a) => a.staffId === s.id && workDate >= a.dateFrom && workDate <= a.dateTo)) {
               skipped.push(`leave:${s.id}:${workDate}`); continue;
             }
 
-            proposed.push({ staffId: s.id, shiftId: shift.id, zoneId: zone.id, workDate, note: 'Auto-scheduled' });
-            if (proposed.filter((p) => p.workDate === workDate && p.shiftId === shift.id && p.zoneId === zone.id).length >= needed) break;
+            const proposedCount = proposed.filter((p) => p.staffId === s.id).length + (staffWorkload.get(s.id) || 0);
+            const maxShifts = 10;
+            if (proposedCount >= maxShifts) { skipped.push(`max:${s.id}:${workDate}`); continue; }
+
+            const isTemplate = templateMatchFirst.includes(s.id);
+            const isPref = prefMatchFirst.includes(s.id);
+            let note = 'Auto-scheduled';
+            if (isTemplate) note = 'Auto-scheduled (template)';
+            else if (isPref) note = 'Auto-scheduled (preference)';
+
+            proposed.push({ staffId: s.id, shiftId: shift.id, zoneId: zone.id, workDate, note });
+            staffWorkload.set(s.id, (staffWorkload.get(s.id) || 0) + 1);
+            assigned++;
           }
         }
       }

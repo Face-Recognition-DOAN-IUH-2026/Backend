@@ -16,6 +16,7 @@ export interface UserPublicDto {
   currentStatus?: string;
   createdAt?: string | null;
   updatedAt?: string | null;
+  avatarUrl?: string | null;
 }
 
 export interface CreateUserDto {

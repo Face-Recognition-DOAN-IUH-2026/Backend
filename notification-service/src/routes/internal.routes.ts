@@ -3,9 +3,12 @@ import { z } from 'zod';
 import { internalAuth } from '../middlewares/internalAuth';
 import { notificationService } from '../services/NotificationService';
 import { notificationHub } from '../realtime/NotificationHub';
+import { EmailService } from '../services/EmailService';
 
 const router = Router();
 router.use(internalAuth);
+
+const emailService = new EmailService();
 
 const createNotificationSchema = z.object({
   userId: z.string().uuid(),
@@ -17,6 +20,11 @@ const createNotificationSchema = z.object({
 
 const createManySchema = z.object({
   notifications: z.array(createNotificationSchema).min(1).max(100),
+});
+
+const sendPasswordResetSchema = z.object({
+  toEmail: z.string().email(),
+  code: z.string().length(6),
 });
 
 router.post('/', async (req, res, next) => {
@@ -52,6 +60,58 @@ router.get('/:id', async (req, res, next) => {
       return;
     }
     res.json(notification);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/send-password-reset', async (req, res, next) => {
+  try {
+    const { toEmail, code } = sendPasswordResetSchema.parse(req.body);
+    await emailService.sendPasswordResetCode(toEmail, code);
+    res.json({ success: true, message: 'Email sent successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/send-overdue-email', async (req, res, next) => {
+  try {
+    const { toEmail, bookTitle, daysOverdue } = z.object({
+      toEmail: z.string().email(),
+      bookTitle: z.string().min(1),
+      daysOverdue: z.number().int().positive(),
+    }).parse(req.body);
+    await emailService.sendOverdueEmail(toEmail, bookTitle, daysOverdue);
+    res.json({ success: true, message: 'Overdue email sent successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/send-fine-email', async (req, res, next) => {
+  try {
+    const { toEmail, bookTitle, fineAmount, daysOverdue } = z.object({
+      toEmail: z.string().email(),
+      bookTitle: z.string().min(1),
+      fineAmount: z.number().positive(),
+      daysOverdue: z.number().int().positive(),
+    }).parse(req.body);
+    await emailService.sendFineEmail(toEmail, bookTitle, fineAmount, daysOverdue);
+    res.json({ success: true, message: 'Fine email sent successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/send-membership-expiry-email', async (req, res, next) => {
+  try {
+    const { toEmail, expiryDate } = z.object({
+      toEmail: z.string().email(),
+      expiryDate: z.string().datetime(),
+    }).parse(req.body);
+    await emailService.sendMembershipExpiryEmail(toEmail, new Date(expiryDate));
+    res.json({ success: true, message: 'Membership expiry email sent successfully' });
   } catch (error) {
     next(error);
   }

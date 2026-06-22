@@ -8,3 +8,4 @@ export { ScheduleAuditLog } from './ScheduleAuditLog';
 export { ShiftBid } from './ShiftBid';
 export { ShiftSwap } from './ShiftSwap';
 export { GeofenceConfig } from './GeofenceConfig';
+export { StaffShiftPreference } from './StaffShiftPreference';

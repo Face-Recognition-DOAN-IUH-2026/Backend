@@ -1,4 +1,4 @@
-import { userClient, notificationClient } from '../clients/serviceClients';
+import { userClient, notificationClient, emailClient } from '../clients/serviceClients';
 import { config as appConfig } from '../config';
 
 export async function membershipExpiryCheck(taskConfig: Record<string, any>): Promise<any> {
@@ -34,6 +34,17 @@ export async function membershipExpiryCheck(taskConfig: Record<string, any>): Pr
     }));
 
     await notificationClient.createBulkNotifications(notifications);
+
+    // Send membership expiry emails
+    for (const user of users) {
+      if (user.email) {
+        try {
+          await emailClient.sendMembershipExpiryEmail(user.email, user.membershipExpiry);
+        } catch (err) {
+          console.error(`[membershipExpiryCheck] Failed to send expiry email to ${user.email}:`, err);
+        }
+      }
+    }
 
     return { checked: users.length, notified: notifications.length };
   } catch {
