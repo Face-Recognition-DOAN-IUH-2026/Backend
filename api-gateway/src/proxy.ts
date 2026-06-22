@@ -63,6 +63,26 @@ export const setupProxy = (app: any) => {
     },
   }));
 
+  // User Service proxy for /api/users
+  app.use('/api/users', createProxyMiddleware({
+    target: config.services.userService,
+    changeOrigin: true,
+    pathRewrite: (path: string, req: any) => {
+      const originalPath = req.originalUrl || req.url;
+      return originalPath.replace(/^\/api\/users/, '/users');
+    },
+  }));
+
+  // Auth proxy for /api/auth (login, register, forgot-password, etc.)
+  app.use('/api/auth', createProxyMiddleware({
+    target: config.services.userService,
+    changeOrigin: true,
+    pathRewrite: (path: string, req: any) => {
+      const originalPath = req.originalUrl || req.url;
+      return originalPath.replace(/^\/api\/auth/, '/auth');
+    },
+  }));
+
   // Face API proxy
   app.use('/api', createProxyMiddleware({
     target: config.services.faceRecognitionApi,

@@ -70,6 +70,56 @@ export class AuthController {
     }
   }
 
+  async forgotPassword(req: Request, res: Response) {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        res.status(400).json({ error: 'Email la bat buoc' });
+        return;
+      }
+      await authService.forgotPassword(email);
+      res.json({ message: 'Da gui ma reset qua email' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async verifyResetCode(req: Request, res: Response) {
+    try {
+      const { email, code } = req.body;
+      if (!email || !code) {
+        res.status(400).json({ error: 'Email va ma reset la bat buoc' });
+        return;
+      }
+      const isValid = await authService.verifyResetCode(email, code);
+      if (!isValid) {
+        res.status(400).json({ error: 'Ma reset khong hop le hoac da het han' });
+        return;
+      }
+      res.json({ valid: true });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  }
+
+  async resetPassword(req: Request, res: Response) {
+    try {
+      const { email, code, new_password } = req.body;
+      if (!email || !code || !new_password) {
+        res.status(400).json({ error: 'Email, ma reset, va mat khau moi la bat buoc' });
+        return;
+      }
+      if (new_password.length < 6) {
+        res.status(400).json({ error: 'Mat khau moi phai it nhat 6 ki tu' });
+        return;
+      }
+      await authService.resetPassword(email, code, new_password);
+      res.json({ message: 'Dat lai mat khau thanh cong' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
 }
 
 export const authController = new AuthController();

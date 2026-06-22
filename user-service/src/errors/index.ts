@@ -3,3 +3,4 @@ export { NotFoundError } from './NotFoundError';
 export { UnauthorizedError } from './UnauthorizedError';
 export { ConflictError } from './ConflictError';
 export { ForbiddenError } from './ForbiddenError';
+export { BadRequestError } from './BadRequestError';

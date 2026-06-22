@@ -1,4 +1,4 @@
-import { borrowClient, notificationClient, userClient } from '../clients/serviceClients';
+import { borrowClient, notificationClient, userClient, emailClient } from '../clients/serviceClients';
 
 export async function checkOverdueBorrows(config: Record<string, any>): Promise<any> {
   const overdue = await borrowClient.getOverdueBorrows();
@@ -13,14 +13,15 @@ export async function checkOverdueBorrows(config: Record<string, any>): Promise<
     const patronId = record.patron_id || record.patronId;
     if (!patronId) continue;
 
-    // Get patron info for name
     let patronName = 'Bạn';
+    let patronEmail = '';
     try {
       const patron = await userClient.getUser(patronId);
       if (patron?.fullName) patronName = patron.fullName;
+      if (patron?.email) patronEmail = patron.email;
     } catch {}
 
-    const bookTitle = record.title || record.book_title || 'Sách';
+    const bookTitle = record.title || record.book_title || record.book?.title || 'Sách';
     const dueDate = record.due_at || record.dueAt;
     const daysOverdue = dueDate
       ? Math.floor((Date.now() - new Date(dueDate).getTime()) / (1000 * 60 * 60 * 24))
@@ -38,6 +39,15 @@ export async function checkOverdueBorrows(config: Record<string, any>): Promise<
         daysOverdue,
       },
     });
+
+    // Send overdue email
+    if (patronEmail) {
+      try {
+        await emailClient.sendOverdueEmail(patronEmail, bookTitle, daysOverdue);
+      } catch (err) {
+        console.error(`[checkOverdueBorrows] Failed to send overdue email to ${patronEmail}:`, err);
+      }
+    }
   }
 
   if (notifications.length > 0) {

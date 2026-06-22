@@ -8,6 +8,12 @@ jest.mock('./src/clients/OpenLibraryClient');
 jest.mock('./src/data-source', () => ({
   AppDataSource: {
     initialize: jest.fn().mockResolvedValue(undefined),
+    transaction: jest.fn().mockImplementation(async (fn) => {
+      const mockManager = {
+        save: jest.fn().mockImplementation(async (entity) => entity),
+      };
+      return fn(mockManager);
+    }),
     getRepository: jest.fn().mockReturnValue({
       createQueryBuilder: jest.fn().mockReturnValue({
         leftJoinAndSelect: jest.fn().mockReturnThis(),

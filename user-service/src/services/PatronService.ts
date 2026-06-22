@@ -10,7 +10,7 @@ import {
   LookupResultDto,
   SearchResultDto,
 } from '../dto';
-import { ConflictError, NotFoundError } from '../errors';
+import { ConflictError, NotFoundError, BadRequestError } from '../errors';
 import { checkActiveBorrows } from '../clients/BorrowServiceClient';
 
 export class PatronService {
@@ -92,6 +92,7 @@ export class PatronService {
       cardNumber: `THV-${dto.studentCode}`,
       membershipExpiry: dto.membershipExpiry,
       issueDate: dto.issueDate ?? new Date().toISOString().split('T')[0],
+      identityNumber: dto.identityNumber ?? null,
       phone: dto.phone ?? null,
       status: 'active',
       currentStatus: 'outside',
@@ -147,6 +148,38 @@ export class PatronService {
     }
 
     return { deleted: true, id, soft: true };
+  }
+
+  async restorePatron(id: string): Promise<PatronPublicDto> {
+    const patron = await this.patronRepo.findById(id);
+    if (!patron) throw new NotFoundError('Patron not found');
+
+    if (patron.status !== 'deleted') {
+      throw new BadRequestError('Patron is not deleted');
+    }
+
+    let newExpiry: string;
+    const membershipExpiry = patron.membershipExpiry ? new Date(patron.membershipExpiry) : null;
+
+    if (membershipExpiry && membershipExpiry >= new Date()) {
+      newExpiry = membershipExpiry.toISOString().split('T')[0];
+    } else {
+      const oneYearFromNow = new Date();
+      oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+      newExpiry = oneYearFromNow.toISOString().split('T')[0];
+    }
+
+    await this.patronRepo.update(id, {
+      status: 'active',
+      membershipExpiry: newExpiry,
+    });
+
+    const restored = await this.patronRepo.findById(id);
+    if (!restored) throw new NotFoundError('Patron not found after restore');
+
+    this.redis.publishUserUpdated(restored.id, restored.email);
+
+    return this.toPatronPublic(restored);
   }
 
   async changePassword(id: string, currentPassword: string | null, newPassword: string): Promise<void> {

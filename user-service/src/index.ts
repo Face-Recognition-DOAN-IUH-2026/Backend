@@ -28,10 +28,26 @@ async function start() {
     await AppDataSource.initialize();
     console.log('Database initialized via TypeORM');
 
-    app.listen(config.port, () => {
+    const server = app.listen(config.port, () => {
       console.log(`User service running on port ${config.port}`);
       console.log(`Environment: ${config.nodeEnv}`);
     });
+
+    const shutdown = async () => {
+      console.log('SIGTERM received, shutting down gracefully');
+      server.close(async () => {
+        await AppDataSource.destroy();
+        console.log('Database connections closed');
+        process.exit(0);
+      });
+      setTimeout(() => {
+        console.error('Forced shutdown after timeout');
+        process.exit(1);
+      }, 10000);
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
   } catch (error) {
     console.error('Failed to start:', error);
     process.exit(1);

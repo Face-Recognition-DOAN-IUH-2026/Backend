@@ -27,7 +27,7 @@ export async function scheduleChangeNotify(
       message = `Lịch trực ngày ${workDate} đã được đổi. Ca mới: ${newShift || 'Chưa xác định'}.`;
       break;
     case 'assigned':
-      message = `Bạn đã được phân ca trực ngày ${workDate}: ${newShift}.`;
+      message = `Bạn đã được phân ca trực ngày ${workDate}: ${newShift || 'Chưa xác định'}.`;
       break;
     case 'cancelled':
       message = `Ca trực ngày ${workDate} (${oldShift}) đã bị hủy.`;

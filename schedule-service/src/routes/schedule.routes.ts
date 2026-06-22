@@ -110,6 +110,22 @@ router.delete('/templates/:id', requireRole('admin'), asyncHandler(async (req, r
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.deleteTemplate(req.user!.userId, id));
 }));
+router.get('/preferences', requireRole('admin'), asyncHandler(async (req, res) => {
+  res.json(await scheduleService.listPreferences(req.query.staff_id as string | undefined));
+}));
+router.post('/preferences', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
+  const body = {
+    staffId: req.body.staffId || req.user!.userId,
+    shiftId: req.body.shiftId,
+    zoneId: req.body.zoneId,
+    priority: req.body.priority,
+  };
+  res.status(201).json(await scheduleService.createPreference(req.user!.userId, body));
+}));
+router.delete('/preferences/:id', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.deletePreference(req.user!.userId, id));
+}));
 router.post('/generate-from-template', requireRole('admin'), asyncHandler(async (req, res) => {
   const { from, to } = rangeSchema.parse(req.body);
   res.json(await scheduleService.generateFromTemplate(req.user!.userId, from, to));

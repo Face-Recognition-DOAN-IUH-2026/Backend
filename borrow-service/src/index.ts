@@ -33,9 +33,25 @@ app.use(errorHandler);
 async function start() {
   try {
     await AppDataSource.initialize();
-    app.listen(config.port, '0.0.0.0', () => {
+    const server = app.listen(config.port, '0.0.0.0', () => {
       console.log(`Borrow service running on port ${config.port}`);
     });
+
+    const shutdown = async () => {
+      console.log('SIGTERM received, shutting down gracefully');
+      server.close(async () => {
+        await AppDataSource.destroy();
+        console.log('Database connections closed');
+        process.exit(0);
+      });
+      setTimeout(() => {
+        console.error('Forced shutdown after timeout');
+        process.exit(1);
+      }, 10000);
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
   } catch (error) {
     console.error('Failed to start borrow-service:', error);
     process.exit(1);

@@ -8,11 +8,13 @@ import { HttpError } from '../middlewares/errorHandler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { isPatronInside, getPatronAccessStatus, getPatronRawAccessStatus } from '../clients/AccessServiceClient';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
-import { lookupPatronById, lookupPatronByStudentCode, PatronSummary } from '../clients/UserServiceClient';
+import { lookupPatronById, lookupPatronByStudentCode, lookupPatronsByIds, PatronSummary } from '../clients/UserServiceClient';
 import { serializeBook, serializeBookWithStats, serializeBorrowRecord, serializeBorrowSlip, serializeCopy } from '../services/serializers';
+import { publishEvent } from '../utils/eventPublisher';
 import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
+import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowSlip } from '../entities/BorrowSlip';
 
 const router = Router();
@@ -141,32 +143,48 @@ router.post('/', requireRole(['admin', 'staff'], 'Chi nhan vien thu vien moi co 
     }
     const repo = new BorrowRepository();
     const barcode = body.barcode.trim();
-    let book: Book | null | undefined;
-    let copy: BookCopy | null | undefined;
-    if (body.isbn || (/^\d+$/.test(barcode) && [10, 13].includes(barcode.length))) {
-      const isbn = body.isbn || barcode;
-      book = await repo.getBookByIsbn(isbn);
-      if (!book) {
-        throw new HttpError(404, 'Khong co sach nay trong thu vien');
+
+    const { record, book } = await AppDataSource.transaction(async (manager) => {
+      let book: Book | null | undefined;
+      let copy: BookCopy | null | undefined;
+      if (body.isbn || (/^\d+$/.test(barcode) && [10, 13].includes(barcode.length))) {
+        const isbn = body.isbn || barcode;
+        book = await repo.getBookByIsbn(isbn);
+        if (!book) {
+          throw new HttpError(404, 'Khong co sach nay trong thu vien');
+        } else {
+          copy = await repo.getAvailableCopy(book.id);
+          if (!copy) throw new HttpError(409, 'Sach nay hien da het ban co the muon');
+        }
       } else {
-        copy = await repo.getAvailableCopy(book.id);
-        if (!copy) throw new HttpError(409, 'Sach nay hien da het ban co the muon');
+        copy = await repo.getCopyByBarcode(barcode);
+        if (!copy) throw new HttpError(404, `Khong tim thay ban sao nao voi ma vach ${barcode}`);
+        book = copy.book || await repo.getBookById(copy.bookId);
+        if (!book) throw new HttpError(404, 'Khong tim thay sach');
+        if (!copy.isAvailable) throw new HttpError(409, 'Ban sao nay hien dang duoc muon');
       }
-    } else {
-      copy = await repo.getCopyByBarcode(barcode);
-      if (!copy) throw new HttpError(404, `Khong tim thay ban sao nao voi ma vach ${barcode}`);
-      book = copy.book || await repo.getBookById(copy.bookId);
-      if (!book) throw new HttpError(404, 'Khong tim thay sach');
-      if (!copy.isAvailable) throw new HttpError(409, 'Ban sao nay hien dang duoc muon');
-    }
-    if (!book || !copy) throw new HttpError(404, 'Khong tim thay sach');
-    if (await repo.getActiveBorrow(userId, book.id)) throw new HttpError(409, 'Sach nay ban dang muon');
-    if ((await repo.getOverdueBorrows(userId)).length) throw new HttpError(409, 'Ban co sach qua han. Vui long tra sach truoc khi muon them.');
-    if (await repo.countActiveBorrows(userId) >= config.maxBorrowBooks) throw new HttpError(409, `Da qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
-    await repo.setCopyAvailable(copy, false);
-    const record = await repo.createBorrowRecord(userId, book.id, copy.id, copy.shelfLocation || book.shelfLocation);
-    record.book = book;
-    record.copy = copy;
+      if (!book || !copy) throw new HttpError(404, 'Khong tim thay sach');
+      if (await repo.getActiveBorrow(userId, book.id)) throw new HttpError(409, 'Sach nay ban dang muon');
+      if ((await repo.getOverdueBorrows(userId)).length) throw new HttpError(409, 'Ban co sach qua han. Vui long tra sach truoc khi muon them.');
+      if (await repo.countActiveBorrows(userId) >= config.maxBorrowBooks) throw new HttpError(409, `Da qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
+
+      copy!.isAvailable = false;
+      await manager.save(copy!);
+
+      const record = await repo.createBorrowRecord(userId, book!.id, copy!.id, copy!.shelfLocation || book!.shelfLocation);
+      record.book = book!;
+      record.copy = copy!;
+      return { record, book: book! };
+    });
+
+    publishEvent('book.borrowed', {
+      bookId: book.id,
+      title: book.title,
+      patronId: userId,
+      borrowRecordId: record.id,
+      dueAt: record.dueAt,
+    });
+
     res.json({ status: 'success', message: `Muon sach thanh cong. Vui long tra truoc ngay ${record.dueAt.toLocaleDateString('vi-VN')}.`, record: serializeBorrowRecord(record), book: serializeBook(book) });
   } catch (error) {
     next(error);
@@ -346,6 +364,16 @@ router.post('/staff/slip/confirm', requireRole(['admin', 'staff', 'patron'], 'Ch
       records[i].copy = copyIds[i] ? await repo.getCopyById(copyIds[i]!) : null;
     }
 
+    for (const record of records) {
+      publishEvent('book.borrowed', {
+        bookId: record.bookId,
+        title: record.book?.title,
+        patronId: record.patronId,
+        borrowRecordId: record.id,
+        dueAt: record.dueAt,
+      });
+    }
+
     res.json({
       status: 'success',
       message: `Tao phieu muon thanh cong ${records.length} cuon sach`,
@@ -376,10 +404,14 @@ router.get('/staff/active-borrowers', requireRole(['admin', 'staff'], 'Chi quan 
     const records = await repo.getAllActiveBorrows();
     const grouped = new Map<string, typeof records>();
     records.forEach((record) => grouped.set(record.patronId, [...(grouped.get(record.patronId) || []), record]));
+
+    const patronIds = Array.from(grouped.keys());
+    const patronMap = await lookupPatronsByIds(patronIds);
+
     const now = Date.now();
     const items = [];
     for (const [patronId, patronRecords] of grouped.entries()) {
-      const patron = await lookupPatronById(patronId);
+      const patron = patronMap.get(patronId) || null;
       const summary = patron ? patronSummary(patron) : { id: patronId, full_name: null, student_code: patronId, email: null, card_number: null, current_status: null };
       items.push({
         patron: summary,
@@ -537,6 +569,16 @@ router.post('/staff/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri 
       records[i].copy = copyIds[i] ? await repo.getCopyById(copyIds[i]!) : null;
     }
 
+    for (const record of records) {
+      publishEvent('book.borrowed', {
+        bookId: record.bookId,
+        title: record.book?.title,
+        patronId: record.patronId,
+        borrowRecordId: record.id,
+        dueAt: record.dueAt,
+      });
+    }
+
     res.json({
       status: 'success',
       message: `Tao phieu muon thanh cong voi ${records.length} cuon. Han tra: ${slip.dueAt.toLocaleDateString('vi-VN')}.`,
@@ -565,6 +607,15 @@ router.post('/staff-return/by-patron', requireRole(['admin', 'staff'], 'Chi quan
     const copy = legacyCopy || (record.copyId ? await repo.getCopyById(record.copyId) : null);
     await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_mobile', body.note);
     if (copy) await repo.setCopyAvailable(copy, true);
+
+    publishEvent('book.returned', {
+      bookId: book.id,
+      title: book.title,
+      patronId: patron.id,
+      barcode: copy?.barcode,
+      fineAmount: record.fineAmount || 0,
+    });
+
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
     next(error);
@@ -608,6 +659,15 @@ router.post('/staff-return/batch', requireRole(['admin', 'staff'], 'Chi quan tri
         const copy = legacyCopy || (record.copyId ? await repo.getCopyById(record.copyId) : null);
         await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_mobile', item.note || null);
         if (copy) await repo.setCopyAvailable(copy, true);
+
+        publishEvent('book.returned', {
+          bookId: book.id,
+          title: book.title,
+          patronId: patron.id,
+          barcode: copy?.barcode,
+          fineAmount: record.fineAmount || 0,
+        });
+
         results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'success', message: 'Tra sach thanh cong' });
         ok += 1;
       } catch (err) {
@@ -633,6 +693,15 @@ router.post('/staff-return/record/:record_id', requireRole(['admin', 'staff'], '
     const copy = record.copyId ? await repo.getCopyById(record.copyId) : null;
     await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_web', body.note);
     if (copy) await repo.setCopyAvailable(copy, true);
+
+    publishEvent('book.returned', {
+      bookId: record.bookId,
+      title: record.book?.title,
+      patronId: record.patronId,
+      barcode: copy?.barcode,
+      fineAmount: record.fineAmount || 0,
+    });
+
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
     next(error);
@@ -649,6 +718,15 @@ router.post('/staff-return', requireRole(['admin', 'staff'], 'Chi quan tri vien 
     if (!record) throw new HttpError(404, 'Khong co ban ghi muon dang hoat dong cho ban sao nay');
     await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_web', body.note);
     await repo.setCopyAvailable(copy, true);
+
+    publishEvent('book.returned', {
+      bookId: record.bookId,
+      title: record.book?.title,
+      patronId: record.patronId,
+      barcode: copy.barcode,
+      fineAmount: record.fineAmount || 0,
+    });
+
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
     next(error);
@@ -1042,6 +1120,113 @@ router.put('/books/:book_id/quantity', async (req, res, next) => {
     const nextTotal = await repo.countCopies(book.id);
     const nextAvailable = await repo.countCopies(book.id, true);
     res.json(serializeBookWithStats(book, nextTotal, nextAvailable));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/reserve', auth, async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({ book_id: z.string().uuid() }).parse(req.body);
+    const userId = patronIdFrom(req.user);
+    const repo = new BorrowRepository();
+    const book = await repo.getBookById(body.book_id);
+    if (!book) throw new HttpError(404, 'Khong tim thay sach');
+
+    const availableCopies = await repo.countCopies(book.id, true);
+    if (availableCopies > 0) {
+      throw new HttpError(409, 'Sach nay con ban, ban co the muon truc tiep');
+    }
+
+    const reservationRepo = AppDataSource.getRepository('BookReservation');
+    const existing = await reservationRepo.findOne({
+      where: { patronId: userId, bookId: book.id, status: 'pending' },
+    });
+    if (existing) throw new HttpError(409, 'Ban da dat sach nay roi');
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + config.reservationExpiryDays);
+
+    const reservation = reservationRepo.create({
+      patronId: userId,
+      bookId: book.id,
+      expiresAt,
+      status: 'pending',
+    });
+    await reservationRepo.save(reservation);
+
+    const queuePosition = await reservationRepo.count({ where: { bookId: book.id, status: 'pending' as any } });
+    res.json({
+      status: 'success',
+      message: `Dat sach thanh cong. Hang doi: #${queuePosition}. Sach se duoc giu ${config.reservationExpiryDays} ngay.`,
+      reservation,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/reservations', auth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = patronIdFrom(req.user);
+    const reservationRepo = AppDataSource.getRepository('BookReservation');
+    const reservations = await reservationRepo.find({
+      where: { patronId: userId, status: 'pending' as any },
+      relations: { book: true },
+      order: { reservedAt: 'ASC' },
+    });
+    res.json({ items: reservations, total: reservations.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/reservations/:id', auth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = patronIdFrom(req.user);
+    const reservationRepo = AppDataSource.getRepository('BookReservation');
+    const reservation = await reservationRepo.findOne({
+      where: { id: req.params.id, patronId: userId },
+    });
+    if (!reservation) throw new HttpError(404, 'Khong tim thay dat hang');
+    await reservationRepo.remove(reservation);
+    res.json({ status: 'success', message: 'Huy dat hang thanh cong' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/renew', auth, async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({ record_id: z.string().uuid() }).parse(req.body);
+    const userId = patronIdFrom(req.user);
+
+    const record = await AppDataSource.getRepository(BorrowRecord).findOne({
+      where: { id: body.record_id, patronId: userId, status: 'borrowed' as any },
+      relations: { book: true, copy: true },
+    });
+    if (!record) throw new HttpError(404, 'Khong tim thay phieu muon');
+    if (record.status !== 'borrowed') throw new HttpError(409, 'Phieu muon nay da het hieu luc');
+    if (record.renewalCount >= config.maxRenewals) {
+      throw new HttpError(409, `Da dat gioi han gia han toi da ${config.maxRenewals} lan`);
+    }
+
+    const now = new Date();
+    if (now > new Date(record.dueAt)) {
+      throw new HttpError(409, 'Khong the gia han sach qua han. Vui long tra sach va muon lai.');
+    }
+
+    const newDueAt = new Date(record.dueAt);
+    newDueAt.setDate(newDueAt.getDate() + config.maxBorrowDays);
+    record.dueAt = newDueAt;
+    record.renewalCount += 1;
+    await AppDataSource.getRepository(BorrowRecord).save(record);
+
+    res.json({
+      status: 'success',
+      message: `Gia han thanh cong. Han tra moi: ${newDueAt.toLocaleDateString('vi-VN')}`,
+      record: serializeBorrowRecord(record),
+    });
   } catch (error) {
     next(error);
   }

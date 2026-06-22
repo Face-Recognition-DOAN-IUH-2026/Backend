@@ -9,6 +9,7 @@ import { indexDocuments } from './rag/indexer';
 import chatRouter from './routes/chat';
 import confirmRouter from './routes/confirm';
 import healthRouter from './routes/health';
+import { auth } from './middlewares/auth';
 
 async function main(): Promise<void> {
   console.log('Starting agent-service...');
@@ -37,15 +38,29 @@ async function main(): Promise<void> {
   app.use(express.json());
 
   app.use('/health', healthRouter);
-  app.use('/chat', chatRouter);
-  app.use('/confirm', confirmRouter);
+  app.use('/chat', auth, chatRouter);
+  app.use('/confirm', auth, confirmRouter);
 
-  app.listen(config.port, () => {
+  const server = app.listen(config.port, () => {
     console.log(`agent-service running on port ${config.port}`);
     console.log(`NVIDIA Model: ${config.nvidiaModel}`);
     console.log(`Embed Model: ${config.nvidiaEmbedModel}`);
     console.log(`ChromaDB: ${config.chromaDbUrl}`);
   });
+
+  const shutdown = () => {
+    console.log('SIGTERM received, shutting down gracefully');
+    server.close(() => {
+      process.exit(0);
+    });
+    setTimeout(() => {
+      console.error('Forced shutdown after timeout');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 main().catch(error => {

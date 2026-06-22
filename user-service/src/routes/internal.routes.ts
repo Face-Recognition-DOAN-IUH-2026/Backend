@@ -4,27 +4,13 @@ import { patronService, userRepo } from '../services';
 
 const router = Router();
 
-router.use((req, res, next) => {
+router.use((req, _res, next) => {
   const key = req.headers['x-internal-api-key'];
   if (!key || key !== config.internalApiKey) {
-    res.status(403).json({ error: 'Invalid internal API key' });
+    _res.status(403).json({ error: 'Invalid internal API key' });
     return;
   }
   next();
-});
-
-const toPublic = (user: any) => ({
-  id: user.id,
-  fullName: user.fullName,
-  email: user.email,
-  role: user.role,
-  status: user.status,
-  studentCode: user.studentCode,
-  cardNumber: user.cardNumber,
-  currentStatus: user.currentStatus,
-  lastEntryAt: user.lastEntryAt,
-  lastEntryCamera: user.lastEntryCamera,
-  membershipExpiry: user.membershipExpiry,
 });
 
 router.get('/users', async (req, res) => {
@@ -32,10 +18,34 @@ router.get('/users', async (req, res) => {
   if (role) {
     const all = await userRepo.findAll(0, 1000);
     const filtered = all[0].filter((u: any) => u.role === role);
-    res.json(filtered.map(toPublic));
+    res.json(filtered.map((u: any) => ({
+      id: u.id,
+      fullName: u.fullName,
+      email: u.email,
+      role: u.role,
+      status: u.status,
+      studentCode: u.studentCode,
+      cardNumber: u.cardNumber,
+      currentStatus: u.currentStatus,
+      lastEntryAt: u.lastEntryAt,
+      lastEntryCamera: u.lastEntryCamera,
+      membershipExpiry: u.membershipExpiry,
+    })));
   } else {
     const [users] = await userRepo.findAll();
-    res.json(users.map(toPublic));
+    res.json(users.map((u: any) => ({
+      id: u.id,
+      fullName: u.fullName,
+      email: u.email,
+      role: u.role,
+      status: u.status,
+      studentCode: u.studentCode,
+      cardNumber: u.cardNumber,
+      currentStatus: u.currentStatus,
+      lastEntryAt: u.lastEntryAt,
+      lastEntryCamera: u.lastEntryCamera,
+      membershipExpiry: u.membershipExpiry,
+    })));
   }
 });
 
@@ -68,15 +78,67 @@ router.get('/users/:id', async (req, res) => {
     res.status(404).json({ error: 'User not found' });
     return;
   }
-  res.json(toPublic(user));
+  res.json({
+    id: user.id,
+    fullName: user.fullName,
+    email: user.email,
+    role: user.role,
+    status: user.status,
+    studentCode: user.studentCode,
+    cardNumber: user.cardNumber,
+    currentStatus: user.currentStatus,
+    lastEntryAt: user.lastEntryAt,
+    lastEntryCamera: user.lastEntryCamera,
+    membershipExpiry: user.membershipExpiry,
+  });
+});
+
+router.post('/users/batch', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ error: 'ids array is required' });
+      return;
+    }
+    const results: Record<string, any> = {};
+    for (const id of ids) {
+      const user = await userRepo.findById(id);
+      if (user) {
+        results[id] = {
+          id: user.id,
+          fullName: user.fullName,
+          studentCode: user.studentCode,
+          cardNumber: user.cardNumber,
+          email: user.email,
+          role: user.role,
+          status: user.status,
+          currentStatus: user.currentStatus,
+          membershipExpiry: user.membershipExpiry,
+        };
+      }
+    }
+    res.json(results);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to batch lookup users' });
+  }
 });
 
 router.get('/staff', async (req, res) => {
   const ids = typeof req.query.ids === 'string'
-    ? req.query.ids.split(',').map((id) => id.trim()).filter(Boolean)
+    ? req.query.ids.split(',').map((id: string) => id.trim()).filter(Boolean)
     : undefined;
   const staff = await userRepo.findStaff(ids);
-  res.json(staff.map(toPublic));
+  res.json(staff.map((u: any) => ({
+    id: u.id,
+    fullName: u.fullName,
+    email: u.email,
+    role: u.role,
+    status: u.status,
+    studentCode: u.studentCode,
+    cardNumber: u.cardNumber,
+    currentStatus: u.currentStatus,
+    membershipExpiry: u.membershipExpiry,
+  })));
 });
 
 router.get('/patrons/lookup', async (req, res) => {

@@ -248,6 +248,14 @@ export class BorrowRepository {
     record.returnMethod = returnMethod || null;
     record.note = note || null;
     record.updatedAt = new Date();
+
+    const now = new Date();
+    if (record.dueAt && now > new Date(record.dueAt)) {
+      const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
+      const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
+      record.fineAmount = overdueDays * config.finePerDay;
+    }
+
     const saved = await this.records.save(record);
     if (record.slipId) {
       await this.closeSlipIfComplete(record.slipId);

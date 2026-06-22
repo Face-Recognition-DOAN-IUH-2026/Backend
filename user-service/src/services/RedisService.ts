@@ -15,6 +15,14 @@ export interface UserDeletedEvent {
   signature: string;
 }
 
+export interface UserUpdatedEvent {
+  event: 'USER_UPDATED';
+  user_id: string;
+  email: string;
+  timestamp: string;
+  signature: string;
+}
+
 export class RedisService {
   private client: Redis;
 
@@ -48,6 +56,38 @@ export class RedisService {
     } catch (e) {
       console.warn('Redis publish failed, face cleanup may be delayed:', e);
     }
+  }
+
+  async publishUserUpdated(userId: string, email: string): Promise<void> {
+    try {
+      const body = {
+        event: 'USER_UPDATED' as const,
+        user_id: userId,
+        email,
+        timestamp: new Date().toISOString(),
+      };
+      const signature = signPayload(body, config.internalApiKey);
+      const message: UserUpdatedEvent = { ...body, signature };
+
+      await this.client.publish('user.events', JSON.stringify(message));
+    } catch (e) {
+      console.warn('Redis publish failed, user update notification may be delayed:', e);
+    }
+  }
+
+  async setPasswordResetCode(email: string, code: string): Promise<void> {
+    const key = `reset_code:${email.toLowerCase()}`;
+    await this.client.setex(key, 900, code);
+  }
+
+  async getPasswordResetCode(email: string): Promise<string | null> {
+    const key = `reset_code:${email.toLowerCase()}`;
+    return this.client.get(key);
+  }
+
+  async deletePasswordResetCode(email: string): Promise<void> {
+    const key = `reset_code:${email.toLowerCase()}`;
+    await this.client.del(key);
   }
 }
 

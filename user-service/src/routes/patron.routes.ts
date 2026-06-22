@@ -15,6 +15,7 @@ router.get('/:id', auth, (req, res) => patronController.getById(req, res));
 router.post('/', requireRole('admin'), (req, res) => patronController.create(req, res));
 router.put('/:id', auth, (req, res) => patronController.update(req, res));
 router.put('/:id/password', auth, (req, res) => patronController.changePassword(req, res));
+router.put('/:id/restore', requireRole('admin', 'staff'), (req, res) => patronController.restore(req, res));
 router.delete('/:id', requireRole('admin'), (req, res) => patronController.delete(req, res));
 
 export default router;

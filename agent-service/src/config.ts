@@ -17,6 +17,7 @@ interface Config {
   scheduleServiceUrl: string;
   userServiceUrl: string;
   internalApiKey: string;
+  jwtSecret: string;
 }
 
 function getRequiredEnvVar(name: string, defaultValue?: string): string {
@@ -45,6 +46,7 @@ const config: Config = {
   scheduleServiceUrl: getRequiredEnvVar('SCHEDULE_SERVICE_URL'),
   userServiceUrl: getRequiredEnvVar('USER_SERVICE_URL'),
   internalApiKey: getRequiredEnvVar('INTERNAL_API_KEY'),
+  jwtSecret: getOptionalEnvVar('JWT_SECRET', getOptionalEnvVar('JWT_ACCESS_SECRET', '')),
 };
 
 export default config;

@@ -27,6 +27,7 @@ export interface CreatePatronDto {
   permanentAddress?: string;
   membershipExpiry: string;
   issueDate?: string;
+  identityNumber?: string;
   email?: string;
   phone?: string;
 }

@@ -12,6 +12,10 @@ import { membershipExpiryCheck } from '../handlers/membershipExpiryCheck';
 import { bookAvailabilityNotify } from '../handlers/bookAvailabilityNotify';
 import { scheduleChangeNotify } from '../handlers/scheduleChangeNotify';
 import { accessAnomalyAlert } from '../handlers/accessAnomalyAlert';
+import { checkDueSoonBorrows } from '../handlers/checkDueSoonBorrows';
+import { fineNotification } from '../handlers/fineNotification';
+import { shiftReminderNotify } from '../handlers/shiftReminderNotify';
+import { stalePatronCleanup } from '../handlers/stalePatronCleanup';
 
 const taskRepo = () => AppDataSource.getRepository(AutomationTask);
 const runRepo = () => AppDataSource.getRepository(AutomationRun);
@@ -26,6 +30,10 @@ const handlers: Record<string, HandlerFn> = {
   book_availability_notify: bookAvailabilityNotify,
   schedule_change_notify: scheduleChangeNotify,
   access_anomaly_alert: accessAnomalyAlert,
+  check_due_soon_borrows: checkDueSoonBorrows,
+  fine_notification: fineNotification,
+  shift_reminder_notify: shiftReminderNotify,
+  stale_patron_cleanup: stalePatronCleanup,
 };
 
 export class CronScheduler {
