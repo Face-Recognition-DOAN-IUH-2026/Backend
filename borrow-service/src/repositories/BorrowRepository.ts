@@ -352,9 +352,9 @@ export class BorrowRepository {
 
   // === Borrow Slip ===
 
-  async createSlip(patronId: string, bookIds: string[], copyIds: (string | null)[], shelfLocations: (string | null)[], createdByUserId?: string | null, createdByEmail?: string | null) {
+  async createSlip(patronId: string, bookIds: string[], copyIds: (string | null)[], shelfLocations: (string | null)[], createdByUserId?: string | null, createdByEmail?: string | null, note?: string | null) {
     const dueAt = new Date(Date.now() + config.maxBorrowDays * 24 * 60 * 60 * 1000);
-    const slip = this.slips.create({ patronId, dueAt, status: 'active', createdByUserId: createdByUserId || null, createdByEmail: createdByEmail || null, totalItems: bookIds.length });
+    const slip = this.slips.create({ patronId, dueAt, status: 'active', createdByUserId: createdByUserId || null, createdByEmail: createdByEmail || null, totalItems: bookIds.length, note: note || null });
     await this.slips.save(slip);
 
     const records: BorrowRecord[] = [];
