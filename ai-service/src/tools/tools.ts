@@ -1,5 +1,5 @@
 import axios from 'axios';
-import config from '../config';
+import { config } from '../config';
 
 const INTERNAL_HEADERS = {
   'X-Internal-Api-Key': config.internalApiKey,
@@ -156,6 +156,13 @@ export async function updateBookQuantity(
   return safePut<any>(url, { quantity });
 }
 
+export async function lookupBook(
+  isbnOrQuery: string
+): Promise<ToolResult> {
+  const url = `${config.borrowServiceUrl}/borrow/internal/books/lookup?isbn=${encodeURIComponent(isbnOrQuery)}`;
+  return safeGet<any>(url);
+}
+
 export const tools = [
   {
     name: 'search_books',
@@ -216,6 +223,11 @@ export const tools = [
     name: 'update_book_quantity',
     description: 'Update the quantity of copies for an existing book. Creates or removes copies as needed. Inputs: bookId (required), quantity (required, must be >= 1).',
     func: updateBookQuantity,
+  },
+  {
+    name: 'lookup_book',
+    description: 'Look up a book by ISBN or title. First checks the local database, then falls back to Google Books API. Returns book details including title, author, description, cover image, categories. Use this when user wants to add a new book and you need to check if it exists or get its metadata. Input: ISBN number or book title string.',
+    func: lookupBook,
   },
 ];
 

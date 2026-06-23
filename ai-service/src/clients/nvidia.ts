@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import config from '../config';
+import { config } from '../config';
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -35,10 +35,10 @@ class NvidiaNIMClient {
   private maxRetries: number = 3;
 
   constructor() {
-    const baseUrl = config.openrouterApiKey
-      ? (config.openrouterBaseUrl || 'https://openrouter.ai/api/v1')
+    const baseUrl = config.openRouter.apiKey
+      ? (config.openRouter.baseUrl || 'https://openrouter.ai/api/v1')
       : 'https://integrate.api.nvidia.com/v1';
-    const apiKey = config.openrouterApiKey || config.nvidiaApiKey;
+    const apiKey = config.openRouter.apiKey || config.nvidiaApiKey;
 
     this.client = axios.create({
       baseURL: baseUrl,
@@ -60,7 +60,7 @@ class NvidiaNIMClient {
     const { temperature = 0.7, maxTokens = 2048 } = options;
 
     const request: ChatCompletionRequest = {
-      model: config.openrouterApiKey ? (config.nvidiaModel || 'openai/gpt-oss-20b:free') : config.nvidiaModel,
+      model: config.openRouter.apiKey ? (config.nvidiaModel || 'openai/gpt-oss-20b:free') : config.nvidiaModel,
       messages,
       temperature,
       max_tokens: maxTokens,

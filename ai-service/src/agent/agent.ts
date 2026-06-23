@@ -33,6 +33,7 @@ Nhiệm vụ chính:
 - Hỗ trợ tìm kiếm sách và thông tin tài liệu
 - Tư vấn lịch trực và báo cáo
 - Hướng dẫn sử dụng thư viện
+- Thêm sách mới vào hệ thống
 
 Nguyên tắc quan trọng:
 1. LUÔN trả lời bằng tiếng Việt, thân thiện và chuyên nghiệp
@@ -41,14 +42,44 @@ Nguyên tắc quan trọng:
 4. KHÔNG BAO GIỜ thực hiện các thao tác ghi/xóa/sửa (write/delete/update) mà không có xác nhận từ người dùng
 5. Nếu câu hỏi yêu cầu thao tác ghi (thêm, sửa, xóa dữ liệu), gọi tool tương ứng — hệ thống sẽ hỏi xác nhận tự động
 
+CÁCH GỌI TOOL (QUAN TRỌNG - PHẢI TUÂN THỦ ĐÚNG FORMAT):
+Khi cần gọi tool, bạn PHẢI trả về đúng format JSON sau:
+{"tool": "ten_tool", "arguments": {"param1": "value1", "param2": "value2"}}
+
+Ví dụ:
+- Để tìm sách: {"tool": "search_books", "arguments": {"query": "Clean Code"}}
+- Để tra cứu sách: {"tool": "lookup_book", "arguments": {"isbn_or_query": "9780132350884"}}
+- Để thêm sách: {"tool": "add_book", "arguments": {"isbn": "9780132350884", "title": "Clean Code", "author": "Robert C. Martin"}}
+
+KHÔNG BAO GIỜ trả về JSON mà không có key "tool". Nếu không gọi tool, hãy trả lời bằng tiếng Việt bình thường.
+
 Các công cụ có sẵn:
 ${buildToolsDescription()}
 
+HƯỚNG DẪN THÊM SÁCH MỚI:
+Khi người dùng muốn thêm sách mới:
+1. Hỏi ISBN hoặc tên sách
+2. Gọi lookup_book để tra cứu
+3. Hiển thị thông tin sách bằng format card đặc biệt (xem bên dưới)
+4. Hỏi xác nhận trước khi thêm
+
+FORMAT CARD SÁCH (QUAN TRỌNG - phải đúng format để frontend hiển thị đẹp):
+Khi hiển thị thông tin sách, PHẢI dùng đúng format sau:
+:::book_card
+{"title": "Tên sách", "author": "Tác giả", "isbn": "ISBN", "categories": "Thể loại", "description": "Mô tả", "cover_url": "URL ảnh", "source": "database hoặc google_books"}
+:::
+
+Ví dụ:
+:::book_card
+{"title": "Clean Code", "author": "Robert C. Martin", "isbn": "9780132350884", "categories": "Computers", "description": "This title shows the process of cleaning code...", "cover_url": "http://books.google.com/books/content?id=...", "source": "google_books"}
+:::
+
+KHÔNG BAO GIỜ hiển thị thông tin sách bằng text thuần. Luôn dùng format :::book_card ở trên.
+
 Hướng dẫn sử dụng tool:
-- Nếu cần lấy thông tin từ hệ thống, gọi tool tương ứng
-- Đọc kết quả và quyết định: trả lời trực tiếp HOẶC gọi thêm tool
+- Đọc kết quả tool và quyết định: trả lời trực tiếp HOẶC gọi thêm tool
 - Khi đã có đủ thông tin, trả lời tổng hợp cho người dùng
-- Với các thao tác ghi (return_book, renew_borrow, batch_return, add_book, update_book_quantity), hãy gọi tool — hệ thống sẽ tự động yêu cầu xác nhận trước khi thực hiện
+- Với thao tác ghi (add_book, update_book_quantity...), gọi tool — hệ thống sẽ hỏi xác nhận
 
 ${kbContext}`;
 }
@@ -100,6 +131,23 @@ function parseToolCalls(assistantMessage: string): Array<{ name: string; args: R
     toolCalls.push({ name: toolName, args });
   }
 
+  if (toolCalls.length > 0) return toolCalls;
+
+  // Format 4: Bare JSON with known tool param patterns (fallback)
+  const bareJsonMatch = assistantMessage.match(/^\s*(\{[^}]+\})\s*$/);
+  if (bareJsonMatch) {
+    try {
+      const parsed = JSON.parse(bareJsonMatch[1]);
+      if (parsed.isbn_or_title || parsed.query || parsed.isbn || parsed.title) {
+        if (parsed.isbn_or_title) {
+          toolCalls.push({ name: 'lookup_book', args: { isbn_or_query: parsed.isbn_or_title } });
+        } else if (parsed.query) {
+          toolCalls.push({ name: 'search_books', args: { query: parsed.query } });
+        }
+      }
+    } catch {}
+  }
+
   return toolCalls;
 }
 
@@ -112,6 +160,7 @@ function shouldConfirmWriteOperation(toolName: string | undefined): boolean {
     'get_overdue_borrows',
     'get_schedule_today',
     'get_library_hours',
+    'lookup_book',
   ];
   return !toolName || !readonlyTools.includes(toolName);
 }
@@ -126,6 +175,14 @@ function buildToolDescription(toolName: string, args: Record<string, any>): stri
       return `Gia hạn mượn: record_id=${args.recordId || '?'}`;
     case 'batch_return':
       return `Trả nhiều sách: ${JSON.stringify(args.barcodes || [])}`;
+    case 'add_book':
+      return `Thêm sách mới:
+- ISBN: ${args.isbn || '?'}
+- Tên sách: ${args.title || '?'}
+- Tác giả: ${args.author || '(chưa có)'}
+- Số lượng: ${args.quantity || 1}
+- Vị trí kệ: ${args.shelf_location || '(chưa xác định)'}
+- Thể loại: ${args.categories || '(chưa có)'}`;
     default:
       return `Thao tác ${toolName}: ${JSON.stringify(args)}`;
   }
@@ -134,7 +191,8 @@ function buildToolDescription(toolName: string, args: Record<string, any>): stri
 export async function processMessage(
   message: string,
   sessionId: string,
-  patronId?: string
+  patronId?: string,
+  sessionHistory?: Array<{ role: string; content: string }>
 ): Promise<{
   response: string;
   requiresConfirmation?: boolean;
@@ -154,6 +212,14 @@ export async function processMessage(
       role: 'system',
       content: `Mã số thẻ người dùng hiện tại: ${patronId}. Sử dụng thông tin này khi cần tra cứu thông tin thẻ.`,
     });
+  }
+
+  if (sessionHistory && sessionHistory.length > 0) {
+    for (const msg of sessionHistory.slice(-10)) {
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        messages.push({ role: msg.role as ChatRole, content: msg.content });
+      }
+    }
   }
 
   messages.push({ role: 'user', content: message });

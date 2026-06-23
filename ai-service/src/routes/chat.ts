@@ -31,7 +31,12 @@ router.post('/', async (req: Request, res: Response) => {
       timestamp: Date.now(),
     });
 
-    const result = await processMessage(message, session.id, patronId || session.patronId);
+    const sessionHistory = session.messages.map(m => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    const result = await processMessage(message, session.id, patronId || session.patronId, sessionHistory);
 
     sessionStore.addMessage(session.id, {
       role: 'assistant',

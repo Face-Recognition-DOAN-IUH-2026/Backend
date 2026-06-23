@@ -6,6 +6,7 @@ import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { internalAuth } from '../middlewares/internal-auth';
 import { publishEvent } from '../utils/eventPublisher';
+import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 
 const router = Router();
 router.use(internalAuth);
@@ -172,6 +173,63 @@ router.get('/books/search', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error searching books:', error);
     res.status(500).json({ detail: 'Internal server error' });
+  }
+});
+
+router.get('/books/lookup', async (req: Request, res: Response) => {
+  const { isbn, query } = req.query;
+  try {
+    const searchValue = (isbn || query || '').toString().trim();
+    if (!searchValue) {
+      res.status(400).json({ success: false, detail: 'isbn or query is required' });
+      return;
+    }
+
+    const existing = await books().findOne({ where: { isbn: searchValue } });
+    if (existing) {
+      res.json({
+        success: true,
+        source: 'database',
+        data: {
+          id: existing.id,
+          title: existing.title,
+          author: existing.author,
+          isbn: existing.isbn,
+          categories: existing.categories,
+          description: existing.description,
+          cover_url: existing.coverUrl,
+          shelf_location: existing.shelfLocation,
+          is_available: existing.isAvailable,
+        },
+      });
+      return;
+    }
+
+    const googleData = await fetchGoogleBooks(searchValue);
+    if (googleData) {
+      res.json({
+        success: true,
+        source: 'google_books',
+        data: {
+          title: googleData.title,
+          author: googleData.author,
+          isbn: googleData.isbn13 || googleData.isbn10 || searchValue,
+          categories: googleData.categories,
+          description: googleData.description,
+          cover_url: googleData.coverUrl,
+          publisher: googleData.publisher,
+          published_date: googleData.publishedDate,
+          page_count: googleData.pageCount,
+          language: googleData.language,
+        },
+      });
+      return;
+    }
+
+    res.json({ success: false, source: 'not_found', data: null });
+  } catch (error) {
+    console.error('Error looking up book:', error);
+    res.status(500).json({ success: false, detail: 'Internal server error' });
   }
 });
 

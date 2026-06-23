@@ -192,17 +192,6 @@ const accessProxy = createProxyMiddleware({
 
 app.use('/api/access', faceLimiter, accessProxy);
 
-app.use('/api/ai/agent', createProxyMiddleware({
-  target: config.services.agentService,
-  changeOrigin: true,
-  timeout: 120000,
-  proxyTimeout: 120000,
-  pathRewrite: (_path: string, req: any) => {
-    const originalPath = req.originalUrl || req.url;
-    return originalPath.replace(/^\/api\/ai\/agent/, '') || '/';
-  },
-}));
-
 app.use('/api/ai', createProxyMiddleware({
   target: config.services.aiService,
   changeOrigin: true,

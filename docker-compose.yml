@@ -239,46 +239,6 @@ services:
     networks:
       - face-network
 
-  agent-service:
-    build:
-      context: agent-service
-      dockerfile: Dockerfile
-    container_name: agent-service
-    restart: unless-stopped
-    env_file:
-      - ./.env
-    environment:
-      PORT: 3005
-      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
-      NVIDIA_MODEL: ${NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
-      NVIDIA_EMBED_MODEL: ${NVIDIA_EMBED_MODEL:-nvidia/nv-embedqa-e5-v5}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      CHROMA_DB_URL: http://chromadb:8000
-      CHROMA_COLLECTION: library-kb
-      ACCESS_SERVICE_URL: http://access-service:3003
-      BORROW_SERVICE_URL: http://borrow-service:8000
-      SCHEDULE_SERVICE_URL: http://schedule-service:3002
-      USER_SERVICE_URL: http://user-service:3001
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
-      JWT_SECRET: ${JWT_SECRET}
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '1.0'
-    depends_on:
-      chromadb:
-        condition: service_healthy
-    networks:
-      - face-network
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3005/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
   ai-service:
     build:
       context: ai-service
@@ -296,18 +256,27 @@ services:
       BORROW_SERVICE_URL: http://borrow-service:8000
       SCHEDULE_SERVICE_URL: http://schedule-service:3002
       USER_SERVICE_URL: http://user-service:3001
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
+      JWT_SECRET: ${JWT_SECRET}
       AI_MOCK_MODE: ${AI_MOCK_MODE:-true}
       AI_REFRESH_MINUTES: ${AI_REFRESH_MINUTES:-15}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-oss-20b:free}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NVIDIA_MODEL: ${NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
+      NVIDIA_EMBED_MODEL: ${NVIDIA_EMBED_MODEL:-nvidia/nv-embedqa-e5-v5}
+      CHROMA_DB_URL: http://chromadb:8000
+      CHROMA_COLLECTION: library-kb
     deploy:
       resources:
         limits:
-          memory: 512M
-          cpus: '0.5'
+          memory: 1G
+          cpus: '1.0'
     depends_on:
       postgres:
+        condition: service_healthy
+      chromadb:
         condition: service_healthy
       access-service:
         condition: service_started
@@ -322,7 +291,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 30s
 
   notification-service:
     build:
@@ -415,7 +384,6 @@ services:
       SCHEDULE_SERVICE: http://schedule-service:3002
       ACCESS_SERVICE: http://access-service:3003
       AI_SERVICE: http://ai-service:3004
-      AGENT_SERVICE: http://agent-service:3005
       NOTIFICATION_SERVICE: http://notification-service:3006
       AUTOMATION_SERVICE: http://automation-service:3007
     depends_on:
@@ -425,7 +393,6 @@ services:
       - schedule-service
       - access-service
       - ai-service
-      - agent-service
       - notification-service
       - automation-service
       - chromadb

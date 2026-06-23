@@ -1,5 +1,5 @@
 import { ChromaClient, Collection } from 'chromadb';
-import config from '../config';
+import { config } from '../config';
 import { hashEmbeddingFn } from './embedding';
 
 let chromaClient: ChromaClient | null = null;
