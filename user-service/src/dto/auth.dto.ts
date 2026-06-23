@@ -10,6 +10,7 @@ export interface RegisterDto {
   course?: string;
   permanentAddress?: string;
   membershipExpiry?: string;
+  phone?: string;
 }
 
 export interface LoginDto {

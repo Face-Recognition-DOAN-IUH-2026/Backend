@@ -60,7 +60,7 @@ class NvidiaNIMClient {
     const { temperature = 0.7, maxTokens = 2048 } = options;
 
     const request: ChatCompletionRequest = {
-      model: config.openRouter.apiKey ? (config.nvidiaModel || 'openai/gpt-oss-20b:free') : config.nvidiaModel,
+      model: config.openRouter.apiKey ? (config.openRouter.model || 'openai/gpt-4.1-mini') : config.nvidiaModel,
       messages,
       temperature,
       max_tokens: maxTokens,

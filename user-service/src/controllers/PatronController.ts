@@ -233,6 +233,53 @@ export class PatronController {
       res.status(error.statusCode || 400).json({ error: error.message });
     }
   }
+
+  async suspendCard(req: AuthRequest, res: Response) {
+    try {
+      const id = req.params.id;
+      if (!id || id === 'undefined') {
+        res.status(400).json({ error: 'Invalid patron ID' });
+        return;
+      }
+      const { reason } = req.body;
+      if (!reason) {
+        res.status(400).json({ error: 'Suspension reason is required' });
+        return;
+      }
+      const patron = await patronService.suspendCard(id, reason);
+      res.json(patron);
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async renewCard(req: AuthRequest, res: Response) {
+    try {
+      const id = req.params.id;
+      if (!id || id === 'undefined') {
+        res.status(400).json({ error: 'Invalid patron ID' });
+        return;
+      }
+      const patron = await patronService.renewCard(id);
+      res.json(patron);
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async reportLostCard(req: AuthRequest, res: Response) {
+    try {
+      const id = req.params.id;
+      if (!id || id === 'undefined') {
+        res.status(400).json({ error: 'Invalid patron ID' });
+        return;
+      }
+      const patron = await patronService.reportLostCard(id);
+      res.json(patron);
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
 }
 
 export const patronController = new PatronController();

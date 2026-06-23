@@ -28,19 +28,19 @@ export class AuthService {
     if (!dto.email || dto.email.trim() === '') {
       throw new BadRequestError('Email is required');
     }
-    if (!dto.password || dto.password.trim() === '') {
-      throw new BadRequestError('Password is required');
-    }
+    
+    const DEFAULT_PASSWORD = '11111111';
+    const useAutoPassword = !dto.password;
+    const passwordToHash = dto.password ?? DEFAULT_PASSWORD;
+    
     if (dto.password && dto.password.length < 6) {
       throw new BadRequestError('Password must be at least 6 characters');
     }
+    
     dto.email = this.normalizeEmail(dto.email);
     const existing = await this.userRepo.findByEmail(dto.email);
     if (existing) throw new ConflictError('Email already registered');
 
-    const DEFAULT_PASSWORD = '11111111';
-    const useAutoPassword = !dto.password;
-    const passwordToHash = dto.password ?? DEFAULT_PASSWORD;
     const passwordHash = await bcrypt.hash(passwordToHash, 10);
 
     const userData: Partial<User> = {
@@ -65,6 +65,7 @@ export class AuthService {
         cardNumber: dto.studentCode ? `THV-${dto.studentCode}` : null,
         membershipExpiry: dto.membershipExpiry ?? this.calculateExpiryFromCourse(dto.course),
         issueDate: new Date().toISOString().split('T')[0],
+        phone: dto.phone ?? null,
       });
     }
 

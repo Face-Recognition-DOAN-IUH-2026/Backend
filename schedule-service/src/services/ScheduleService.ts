@@ -243,9 +243,11 @@ export class ScheduleService {
     await this.log('assignment.created', 'staff_schedule', schedule.id, actorId, body);
 
     // Publish schedule.changed event for automation-service
+    const shift = await this.shifts.findOneBy({ id: body.shiftId! });
     publishEvent('schedule.changed', {
       staffId: body.staffId,
       shiftId: body.shiftId,
+      shiftName: shift?.name || null,
       workDate: body.workDate,
       changeType: 'assigned',
     });
@@ -267,9 +269,11 @@ export class ScheduleService {
     await this.log('assignment.updated', 'staff_schedule', id, actorId, body);
 
     // Publish schedule.changed event for automation-service
+    const updatedShift = await this.shifts.findOneBy({ id: next.shiftId! });
     publishEvent('schedule.changed', {
       staffId: next.staffId,
       shiftId: next.shiftId,
+      shiftName: updatedShift?.name || null,
       workDate: next.workDate,
       changeType: 'updated',
     });
@@ -291,9 +295,11 @@ export class ScheduleService {
     await this.log('assignment.cancelled', 'staff_schedule', id, actorId, null);
 
     // Publish schedule.changed event for automation-service
+    const cancelledShift = await this.shifts.findOneBy({ id: schedule.shiftId! });
     publishEvent('schedule.changed', {
       staffId: schedule.staffId,
       shiftId: schedule.shiftId,
+      shiftName: cancelledShift?.name || null,
       workDate: schedule.workDate,
       changeType: 'cancelled',
     });

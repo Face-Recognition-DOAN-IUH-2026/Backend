@@ -80,4 +80,7 @@ export class User {
 
   @Column({ type: 'text', nullable: true, name: 'avatar_url' })
   avatarUrl: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'suspended_reason' })
+  suspendedReason: string | null;
 }

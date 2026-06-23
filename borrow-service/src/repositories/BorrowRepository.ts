@@ -5,6 +5,7 @@ import { BookCopy } from '../entities/BookCopy';
 import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowSlip } from '../entities/BorrowSlip';
 import { config } from '../config';
+import { calculateOverdueFine } from '../utils/fineCalculator';
 
 export class BorrowRepository {
   books = AppDataSource.getRepository(Book);
@@ -253,7 +254,7 @@ export class BorrowRepository {
     if (record.dueAt && now > new Date(record.dueAt)) {
       const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
       const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
-      record.fineAmount = overdueDays * config.finePerDay;
+      record.fineAmount = calculateOverdueFine(overdueDays);
     }
 
     const saved = await this.records.save(record);

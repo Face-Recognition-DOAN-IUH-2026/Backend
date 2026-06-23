@@ -9,7 +9,7 @@ export async function scheduleChangeNotify(
     return { notified: 0, message: 'Not a schedule.changed event' };
   }
 
-  const { staffId, oldShift, newShift, workDate, changeType } = event.payload;
+  const { staffId, oldShift, newShift, shiftName, workDate, changeType } = event.payload;
 
   if (!staffId) {
     return { notified: 0, message: 'No staffId in event payload' };
@@ -21,16 +21,18 @@ export async function scheduleChangeNotify(
     if (user?.fullName) staffName = user.fullName;
   } catch {}
 
+  const shiftDisplayName = shiftName || newShift || 'Chưa xác định';
+
   let message = '';
   switch (changeType) {
     case 'swap':
-      message = `Lịch trực ngày ${workDate} đã được đổi. Ca mới: ${newShift || 'Chưa xác định'}.`;
+      message = `Lịch trực ngày ${workDate} đã được đổi. Ca mới: ${shiftDisplayName}.`;
       break;
     case 'assigned':
-      message = `Bạn đã được phân ca trực ngày ${workDate}: ${newShift || 'Chưa xác định'}.`;
+      message = `Bạn đã được phân ca trực ngày ${workDate}: ${shiftDisplayName}.`;
       break;
     case 'cancelled':
-      message = `Ca trực ngày ${workDate} (${oldShift}) đã bị hủy.`;
+      message = `Ca trực ngày ${workDate} (${shiftDisplayName}) đã bị hủy.`;
       break;
     default:
       message = `Lịch trực ngày ${workDate} đã thay đổi.`;

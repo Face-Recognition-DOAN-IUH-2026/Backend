@@ -163,6 +163,17 @@ export async function lookupBook(
   return safeGet<any>(url);
 }
 
+export async function createBorrowSlip(
+  patronId: string,
+  bookCopies: Array<{ bookCopyId: string; dueDate: string }>
+): Promise<ToolResult> {
+  const url = `${config.borrowServiceUrl}/borrow/internal/create`;
+  return safePost<any>(url, {
+    patronId,
+    bookCopies,
+  });
+}
+
 export const tools = [
   {
     name: 'search_books',
@@ -228,6 +239,11 @@ export const tools = [
     name: 'lookup_book',
     description: 'Look up a book by ISBN or title. First checks the local database, then falls back to Google Books API. Returns book details including title, author, description, cover image, categories. Use this when user wants to add a new book and you need to check if it exists or get its metadata. Input: ISBN number or book title string.',
     func: lookupBook,
+  },
+  {
+    name: 'create_borrow_slip',
+    description: 'Create a new borrow slip for a patron to borrow books. Use this when a patron wants to borrow books. Inputs: patronId (required, the patron student code), bookCopies (required, array of objects with bookCopyId and dueDate).',
+    func: createBorrowSlip,
   },
 ];
 

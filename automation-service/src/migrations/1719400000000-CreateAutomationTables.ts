@@ -42,7 +42,7 @@ export class CreateAutomationTables1719400000000 implements MigrationInterface {
     // Seed default tasks
     await queryRunner.query(`
       INSERT INTO automation_tasks (name, description, type, cron_expression, handler, config) VALUES
-        ('check_overdue_borrows', 'Check for overdue books and notify patrons', 'scheduled', '0 * * * *', 'check_overdue_borrows', '{"notify_patrons": true}'),
+        ('check_overdue_borrows', 'Check for overdue books and notify patrons', 'scheduled', '0 9 * * *', 'check_overdue_borrows', '{"notify_patrons": true}'),
         ('daily_stats_report', 'Generate daily library statistics report', 'scheduled', '0 17 * * *', 'daily_stats_report', '{"notify_roles": ["admin", "staff"]}'),
         ('check_staff_absence', 'Check for absent staff and alert admin', 'scheduled', '30 * * * *', 'check_staff_absence', '{"notify_roles": ["admin"]}'),
         ('membership_expiry_check', 'Check for expiring memberships', 'scheduled', '0 9 * * *', 'membership_expiry_check', '{"days_before": 7}'),

@@ -31,6 +31,6 @@ export const config = {
   maxBorrowBooks: parseInt(process.env.MAX_BORROW_BOOKS || '3', 10),
   maxBorrowBooksPerSlip: parseInt(process.env.MAX_BORROW_BOOKS_PER_SLIP || '5', 10),
   finePerDay: parseFloat(process.env.FINE_PER_DAY || '5000'),
-  maxRenewals: parseInt(process.env.MAX_RENEWALS || '3', 10),
-  reservationExpiryDays: parseInt(process.env.RESERVATION_EXPIRY_DAYS || '7', 10),
+  maxRenewals: parseInt(process.env.MAX_RENEWALS || '1', 10),
+  reservationExpiryHours: parseInt(process.env.RESERVATION_EXPIRY_HOURS || '24', 10),
 };

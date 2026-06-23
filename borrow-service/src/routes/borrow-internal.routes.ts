@@ -7,6 +7,7 @@ import { BorrowRepository } from '../repositories/BorrowRepository';
 import { internalAuth } from '../middlewares/internal-auth';
 import { publishEvent } from '../utils/eventPublisher';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
+import { calculateOverdueFine } from '../utils/fineCalculator';
 
 const router = Router();
 router.use(internalAuth);
@@ -392,6 +393,14 @@ router.post('/batch-return', async (req: Request, res: Response) => {
 
       record.returnAt = new Date();
       record.status = 'returned';
+
+      const now = new Date();
+      if (record.dueAt && now > new Date(record.dueAt)) {
+        const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
+        const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
+        record.fineAmount = calculateOverdueFine(overdueDays);
+      }
+
       await records().save(record);
 
       if (record.copy) {

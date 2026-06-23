@@ -1147,7 +1147,7 @@ router.post('/reserve', auth, async (req: AuthRequest, res, next) => {
     if (existing) throw new HttpError(409, 'Ban da dat sach nay roi');
 
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + config.reservationExpiryDays);
+    expiresAt.setHours(expiresAt.getHours() + config.reservationExpiryHours);
 
     const reservation = reservationRepo.create({
       patronId: userId,
@@ -1160,7 +1160,7 @@ router.post('/reserve', auth, async (req: AuthRequest, res, next) => {
     const queuePosition = await reservationRepo.count({ where: { bookId: book.id, status: 'pending' as any } });
     res.json({
       status: 'success',
-      message: `Dat sach thanh cong. Hang doi: #${queuePosition}. Sach se duoc giu ${config.reservationExpiryDays} ngay.`,
+      message: `Dat sach thanh cong. Hang doi: #${queuePosition}. Sach se duoc giu ${config.reservationExpiryHours} gio.`,
       reservation,
     });
   } catch (error) {
