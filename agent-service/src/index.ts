@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import express, { Application } from 'express';
+import express from 'express';
 import cors from 'cors';
 import config from './config';
 import { getCollection } from './clients/chromadb';
@@ -32,7 +32,7 @@ async function main(): Promise<void> {
     console.log('Continuing without document indexing...');
   }
 
-  const app: Application = express();
+  const app = express();
 
   app.use(cors());
   app.use(express.json());

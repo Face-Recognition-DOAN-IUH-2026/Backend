@@ -32,4 +32,7 @@ export class BorrowSlip {
 
   @Column({ name: 'updated_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   updatedAt!: Date;
+
+  @Column({ type: 'text', nullable: true })
+  note!: string | null;
 }

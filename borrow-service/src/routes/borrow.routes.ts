@@ -303,6 +303,7 @@ router.post('/staff/slip/confirm', requireRole(['admin', 'staff', 'patron'], 'Ch
         book_id: z.string().uuid(),
         copy_id: z.string().uuid(),
       })).min(1),
+      note: z.string().nullable().optional(),
     }).parse(req.body);
 
     const repo = new BorrowRepository();
@@ -498,6 +499,7 @@ router.post('/staff/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri 
         barcode: z.string().min(1),
         isbn: z.string().optional(),
       })).min(1),
+      note: z.string().nullable().optional(),
     }).parse(req.body);
 
     const repo = new BorrowRepository();
@@ -562,7 +564,7 @@ router.post('/staff/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri 
       }
     }
 
-    const { slip, records } = await repo.createSlip(body.patron_id, bookIds, copyIds, shelfLocations, req.user?.id, req.user?.email);
+    const { slip, records } = await repo.createSlip(body.patron_id, bookIds, copyIds, shelfLocations, req.user?.id, req.user?.email, body.note);
 
     for (let i = 0; i < records.length; i += 1) {
       records[i].book = (await repo.getBookById(bookIds[i]))!;

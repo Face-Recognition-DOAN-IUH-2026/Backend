@@ -4,7 +4,6 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
-
 const app = express();
 const corsOrigin = config.corsOrigins.includes('*') ? true : config.corsOrigins;
 
@@ -248,31 +247,6 @@ app.use('/api/users', createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,
-}));
-
-// Swagger docs
-app.use('/docs', createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
-  changeOrigin: true,
-  pathRewrite: preserveOriginalPath,
-}));
-
-app.use('/docs/*', createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
-  changeOrigin: true,
-  pathRewrite: preserveOriginalPath,
-}));
-
-app.use('/openapi.json', createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
-  changeOrigin: true,
-  pathRewrite: preserveOriginalPath,
-}));
-
-app.use('/redoc', createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
-  changeOrigin: true,
-  pathRewrite: preserveOriginalPath,
 }));
 
 // ============================================================================
