@@ -75,7 +75,7 @@ const errorReportLimiter = rateLimit({
   message: { error: 'Too many error reports', detail: 'Quá nhiều báo lỗi, vui lòng thử lại sau' },
 });
 
-function sanitizeInput(input: string): string {
+export function sanitizeInput(input: string): string {
   return input
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -83,7 +83,7 @@ function sanitizeInput(input: string): string {
     .replace(/'/g, '&#x27;');
 }
 
-function verifyToken(req: express.Request, res: express.Response, next: express.NextFunction) {
+export function verifyToken(req: express.Request, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     res.status(401).json({ error: 'No token provided' });
@@ -486,38 +486,42 @@ app.use(errorHandler);
 const PORT = config.port;
 setupProcessErrorHandlers();
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 API Gateway running on port ${PORT}`);
-  if (config.nodeEnv !== 'production') {
-    console.log('Routing: auth=user-service, borrow=borrow-service, access=access-service, face/camera=face-recognition-service');
-  }
-});
-
-server.on('upgrade', (req, socket, head) => {
-  if (req.url?.startsWith('/api/access/ws')) {
-    accessProxy.upgrade(req, socket as any, head);
-    return;
-  }
-  if (req.url?.startsWith('/notifications/ws')) {
-    notificationProxy.upgrade(req, socket as any, head);
-    return;
-  }
-  socket.destroy();
-});
-
-server.keepAliveTimeout = 120000; // 120s keep-alive (up from 60s to accommodate SSE keepalive)
-
-const shutdown = async () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  server.close(() => {
-    console.log('HTTP server closed');
-    process.exit(0);
+if (config.nodeEnv !== 'test') {
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 API Gateway running on port ${PORT}`);
+    if (config.nodeEnv !== 'production') {
+      console.log('Routing: auth=user-service, borrow=borrow-service, access=access-service, face/camera=face-recognition-service');
+    }
   });
-  setTimeout(() => {
-    console.error('Forced shutdown after timeout');
-    process.exit(1);
-  }, 10000);
-};
 
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+  server.on('upgrade', (req, socket, head) => {
+    if (req.url?.startsWith('/api/access/ws')) {
+      accessProxy.upgrade(req, socket as any, head);
+      return;
+    }
+    if (req.url?.startsWith('/notifications/ws')) {
+      notificationProxy.upgrade(req, socket as any, head);
+      return;
+    }
+    socket.destroy();
+  });
+
+  server.keepAliveTimeout = 120000; // 120s keep-alive (up from 60s to accommodate SSE keepalive)
+
+  const shutdown = async () => {
+    console.log('SIGTERM received, shutting down gracefully');
+    server.close(() => {
+      console.log('HTTP server closed');
+      process.exit(0);
+    });
+    setTimeout(() => {
+      console.error('Forced shutdown after timeout');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+}
+
+export { app };
