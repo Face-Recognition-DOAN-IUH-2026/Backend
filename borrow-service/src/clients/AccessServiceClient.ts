@@ -194,7 +194,10 @@ export async function isPatronInside(patronId: string): Promise<boolean> {
       if (status.isExpired) return false;
 
       if (status.source === 'user-service') {
-        await setAccessStatus(patronId, 'inside').catch(() => {});
+        await setAccessStatus(patronId, 'inside').catch(err => {
+          console.error('[AccessServiceClient] Failed to set access status:', err);
+          throw new Error(`Failed to update access status for patron ${patronId}`);
+        });
       }
       return true;
     }
@@ -205,7 +208,10 @@ export async function isPatronInside(patronId: string): Promise<boolean> {
 
     const userStatus = await getUserStatus(patronId);
     if (userStatus === 'inside') {
-      await setAccessStatus(patronId, 'inside').catch(() => {});
+      await setAccessStatus(patronId, 'inside').catch(err => {
+        console.error('[AccessServiceClient] Failed to set access status:', err);
+        throw new Error(`Failed to update access status for patron ${patronId}`);
+      });
       return true;
     }
     return false;

@@ -13,7 +13,10 @@ function parsePostgresUrl(url: string) {
   };
 }
 
-const postgresUrl = process.env.POSTGRES_URL || 'postgresql://postgres:postgres@localhost:5432/borrowdb';
+const postgresUrl = process.env.POSTGRES_URL;
+if (!postgresUrl) {
+  throw new Error('[Config] POSTGRES_URL must be set');
+}
 
 export const config = {
   serviceName: process.env.SERVICE_NAME || 'borrow-service',
@@ -22,6 +25,7 @@ export const config = {
   postgres: parsePostgresUrl(postgresUrl),
   userServiceUrl: process.env.USER_SERVICE_URL || 'http://user-service:3001',
   accessServiceUrl: process.env.ACCESS_SERVICE_URL || 'http://access-service:3003',
+  notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:3006',
   internalApiKey: process.env.INTERNAL_API_KEY || '',
   jwtSecret: process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET || '',
   jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
@@ -31,6 +35,6 @@ export const config = {
   maxBorrowBooks: parseInt(process.env.MAX_BORROW_BOOKS || '3', 10),
   maxBorrowBooksPerSlip: parseInt(process.env.MAX_BORROW_BOOKS_PER_SLIP || '5', 10),
   finePerDay: parseFloat(process.env.FINE_PER_DAY || '5000'),
-  maxRenewals: parseInt(process.env.MAX_RENEWALS || '3', 10),
-  reservationExpiryDays: parseInt(process.env.RESERVATION_EXPIRY_DAYS || '7', 10),
+  maxRenewals: parseInt(process.env.MAX_RENEWALS || '1', 10),
+  reservationExpiryHours: parseInt(process.env.RESERVATION_EXPIRY_HOURS || '24', 10),
 };

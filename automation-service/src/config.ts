@@ -13,8 +13,8 @@ export const config = {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432', 10),
     database: process.env.DB_NAME || 'automationdb',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
   },
   services: {
     notificationService: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:3006',
@@ -23,5 +23,5 @@ export const config = {
     accessService: process.env.ACCESS_SERVICE_URL || 'http://access-service:3003',
     userService: process.env.USER_SERVICE_URL || 'http://user-service:3001',
   },
-  corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['*'],
+  corsOrigins: process.env.CORS_ORIGINS?.split(',') || [],
 };

@@ -83,6 +83,16 @@ export const setupProxy = (app: any) => {
     },
   }));
 
+  // AI Service proxy (with /api prefix for web frontend)
+  app.use('/api/ai', createProxyMiddleware({
+    target: config.services.aiService,
+    changeOrigin: true,
+    pathRewrite: (path: string, req: any) => {
+      const originalPath = req.originalUrl || req.url;
+      return originalPath.replace(/^\/api\/ai/, '/ai');
+    },
+  }));
+
   // Face API proxy
   app.use('/api', createProxyMiddleware({
     target: config.services.faceRecognitionApi,

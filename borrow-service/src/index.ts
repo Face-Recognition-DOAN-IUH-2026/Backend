@@ -6,7 +6,7 @@ import { AppDataSource } from './data-source';
 import borrowRoutes from './routes/borrow.routes';
 import borrowInternalRoutes from './routes/borrow-internal.routes';
 import libraryRoutes from './routes/library.routes';
-import { errorHandler } from './middlewares/errorHandler';
+import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
@@ -34,6 +34,7 @@ app.use(errorHandler);
 async function start() {
   try {
     await AppDataSource.initialize();
+    setupProcessErrorHandlers();
     const server = app.listen(config.port, '0.0.0.0', () => {
       console.log(`Borrow service running on port ${config.port}`);
     });

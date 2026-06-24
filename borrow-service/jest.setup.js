@@ -68,6 +68,9 @@ jest.mock('./src/config', () => ({
     maxBorrowDays: 14,
     maxBorrowBooks: 3,
     maxBorrowBooksPerSlip: 5,
+    finePerDay: 5000,
+    maxRenewals: 1,
+    reservationExpiryHours: 24,
   },
 }));
 

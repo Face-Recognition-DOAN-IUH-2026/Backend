@@ -2,15 +2,16 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-COPY tsconfig.json ./
+COPY notification-service/package*.json ./
+COPY notification-service/tsconfig.json ./
 RUN npm install
 
-COPY src ./src
+COPY notification-service/src ./src
+COPY shared ./shared
 
 RUN npm run build
 RUN npm prune --omit=dev
 
 EXPOSE 3006
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/src/index.js"]

@@ -41,7 +41,7 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -60,7 +60,7 @@ services:
       COMMON_STORAGETYPE: local
       COMMON_GRACETIMELENGTH: 120000
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9091/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -92,7 +92,7 @@ services:
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -128,8 +128,8 @@ services:
 
   user-service:
     build:
-      context: user-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: user-service/Dockerfile
     container_name: user-service
     restart: unless-stopped
     env_file:
@@ -153,8 +153,8 @@ services:
 
   schedule-service:
     build:
-      context: schedule-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: schedule-service/Dockerfile
     container_name: schedule-service
     restart: unless-stopped
     env_file:
@@ -182,7 +182,7 @@ services:
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -190,8 +190,8 @@ services:
 
   access-service:
     build:
-      context: access-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: access-service/Dockerfile
     container_name: access-service
     restart: unless-stopped
     env_file:
@@ -218,7 +218,7 @@ services:
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -232,57 +232,17 @@ services:
     environment:
       IS_PERSISTENT: "true"
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8000'"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - face-network
 
-  agent-service:
-    build:
-      context: agent-service
-      dockerfile: Dockerfile
-    container_name: agent-service
-    restart: unless-stopped
-    env_file:
-      - ./.env
-    environment:
-      PORT: 3005
-      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
-      NVIDIA_MODEL: ${NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
-      NVIDIA_EMBED_MODEL: ${NVIDIA_EMBED_MODEL:-nvidia/nv-embedqa-e5-v5}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      CHROMA_DB_URL: http://chromadb:8000
-      CHROMA_COLLECTION: library-kb
-      ACCESS_SERVICE_URL: http://access-service:3003
-      BORROW_SERVICE_URL: http://borrow-service:8000
-      SCHEDULE_SERVICE_URL: http://schedule-service:3002
-      USER_SERVICE_URL: http://user-service:3001
-      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
-      JWT_SECRET: ${JWT_SECRET}
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '1.0'
-    depends_on:
-      chromadb:
-        condition: service_healthy
-    networks:
-      - face-network
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3005/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
   ai-service:
     build:
-      context: ai-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ai-service/Dockerfile
     container_name: ai-service
     restart: unless-stopped
     env_file:
@@ -296,18 +256,27 @@ services:
       BORROW_SERVICE_URL: http://borrow-service:8000
       SCHEDULE_SERVICE_URL: http://schedule-service:3002
       USER_SERVICE_URL: http://user-service:3001
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
+      JWT_SECRET: ${JWT_SECRET}
       AI_MOCK_MODE: ${AI_MOCK_MODE:-true}
       AI_REFRESH_MINUTES: ${AI_REFRESH_MINUTES:-15}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-oss-20b:free}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NVIDIA_MODEL: ${NVIDIA_MODEL:-meta/llama-3.1-70b-instruct}
+      NVIDIA_EMBED_MODEL: ${NVIDIA_EMBED_MODEL:-nvidia/nv-embedqa-e5-v5}
+      CHROMA_DB_URL: http://chromadb:8000
+      CHROMA_COLLECTION: library-kb
     deploy:
       resources:
         limits:
-          memory: 512M
-          cpus: '0.5'
+          memory: 1G
+          cpus: '1.0'
     depends_on:
       postgres:
+        condition: service_healthy
+      chromadb:
         condition: service_healthy
       access-service:
         condition: service_started
@@ -318,16 +287,16 @@ services:
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3004/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3004/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 30s
 
   notification-service:
     build:
-      context: notification-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: notification-service/Dockerfile
     container_name: notification-service
     restart: unless-stopped
     env_file:
@@ -336,7 +305,7 @@ services:
       PORT: 3006
       DB_HOST: postgres
       DB_NAME: notificationdb
-      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in Backend/.env}
       JWT_ISSUER: ${JWT_ISSUER:-face-recognition}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-face-recognition-users}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
@@ -353,7 +322,7 @@ services:
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3006/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3006/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -361,8 +330,8 @@ services:
 
   automation-service:
     build:
-      context: automation-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: automation-service/Dockerfile
     container_name: automation-service
     restart: unless-stopped
     env_file:
@@ -371,7 +340,7 @@ services:
       PORT: 3007
       DB_HOST: postgres
       DB_NAME: automationdb
-      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in Backend/.env}
       JWT_ISSUER: ${JWT_ISSUER:-face-recognition}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-face-recognition-users}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
@@ -395,7 +364,7 @@ services:
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3007/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3007/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -403,8 +372,8 @@ services:
 
   gateway:
     build:
-      context: api-gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api-gateway/Dockerfile
     container_name: api-gateway
     ports:
       - "80:80"
@@ -415,7 +384,6 @@ services:
       SCHEDULE_SERVICE: http://schedule-service:3002
       ACCESS_SERVICE: http://access-service:3003
       AI_SERVICE: http://ai-service:3004
-      AGENT_SERVICE: http://agent-service:3005
       NOTIFICATION_SERVICE: http://notification-service:3006
       AUTOMATION_SERVICE: http://automation-service:3007
     depends_on:
@@ -425,7 +393,6 @@ services:
       - schedule-service
       - access-service
       - ai-service
-      - agent-service
       - notification-service
       - automation-service
       - chromadb
@@ -435,8 +402,8 @@ services:
 
   borrow-service:
     build:
-      context: borrow-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: borrow-service/Dockerfile
     container_name: borrow-service
     restart: unless-stopped
     env_file:

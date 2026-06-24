@@ -2,12 +2,13 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-COPY tsconfig.json ./
+COPY ai-service/package*.json ./
+COPY ai-service/tsconfig.json ./
 RUN npm install
 
-COPY src ./src
-COPY migrations ./migrations
+COPY ai-service/src ./src
+COPY ai-service/migrations ./migrations
+COPY shared ./shared
 
 RUN npm run build
 

@@ -40,7 +40,7 @@ router.get('/insights/:id/explain', asyncHandler(async (req, res) => {
   res.json(await aiService.explainInsight(id));
 }));
 
-router.post('/chat', asyncHandler(async (req, res) => {
+router.post('/command-center/chat', asyncHandler(async (req, res) => {
   res.json(await aiService.chat(req.user!.token, req.body));
 }));
 
