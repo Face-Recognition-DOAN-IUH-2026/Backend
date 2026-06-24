@@ -100,9 +100,21 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error('Chat error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Unknown error',
+
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const isRateLimit = errorMessage.includes('429') || errorMessage.includes('rate limit');
+    const isBothFailed = errorMessage.includes('Both LLM providers failed');
+
+    const userMessage = isRateLimit
+      ? 'Hệ thống đang bận, vui lòng thử lại sau vài giây.'
+      : isBothFailed
+        ? 'Dịch vụ AI tạm thời không khả dụng, vui lòng thử lại sau.'
+        : 'Đã xảy ra lỗi, vui lòng thử lại.';
+
+    res.status(isRateLimit ? 429 : 500).json({
+      error: isRateLimit ? 'Rate limit exceeded' : 'Internal server error',
+      message: userMessage,
+      details: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
     });
   }
 });
