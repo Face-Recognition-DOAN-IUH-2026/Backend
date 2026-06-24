@@ -7,7 +7,7 @@ import { config } from './config';
 import { AppDataSource } from './data-source';
 import accessRoutes from './routes/access.routes';
 import internalRoutes from './routes/internal.routes';
-import { errorHandler } from './middlewares/errorHandler';
+import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 import { decodeToken } from './middlewares/auth';
 import { realtimeHub } from './realtime/RealtimeHub';
 import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
@@ -53,6 +53,7 @@ async function start() {
       }
     });
 
+    setupProcessErrorHandlers();
     server.listen(config.port, () => {
       console.log(`Access service running on port ${config.port}`);
     });

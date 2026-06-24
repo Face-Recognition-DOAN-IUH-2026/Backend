@@ -204,7 +204,9 @@ export class AccessService {
     }
 
     if (staleIds.length > 0) {
-      stateRepo().update(staleIds, { currentStatus: 'outside' }).catch(() => {});
+      stateRepo().update(staleIds, { currentStatus: 'outside' }).catch(err => {
+        console.error('[AccessService] Stale patron cleanup failed:', err);
+      });
     }
 
     return results;

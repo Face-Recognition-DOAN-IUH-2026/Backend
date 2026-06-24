@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
+import crypto from 'crypto';
 import { User, UserRole } from '../entities/User.entity';
 import { UserRepository } from '../repositories/UserRepository';
 import { RedisService } from './RedisService';
@@ -135,7 +136,7 @@ export class AuthService {
       throw new ForbiddenError('Tai khoan da bi khoa');
     }
 
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const code = crypto.randomInt(100000, 999999).toString();
 
     await this.redis.setPasswordResetCode(normalizedEmail, code);
     console.log(`[ForgotPassword] Code stored in Redis, calling notification-service at: ${config.notificationServiceUrl}`);
@@ -194,7 +195,7 @@ export class AuthService {
   }
 
   verifyToken(token: string, expectedType?: 'access' | 'refresh'): TokenPayload {
-    let secret = expectedType === 'refresh' ? config.jwtRefreshSecret : config.jwtSecret;
+    const secret = expectedType === 'refresh' ? config.jwtRefreshSecret : config.jwtSecret;
     try {
       const decoded: any = jwt.verify(token, secret);
       if (expectedType && decoded.typ !== expectedType) {
@@ -208,20 +209,7 @@ export class AuthService {
       };
     } catch (err: any) {
       if (err.message?.includes('Invalid token type')) throw err;
-      try {
-        const decoded: any = jwt.verify(token, config.jwtRefreshSecret);
-        if (expectedType && decoded.typ !== expectedType) {
-          throw new Error(`Invalid token type: expected ${expectedType}`);
-        }
-        return {
-          userId: decoded.sub,
-          email: decoded.email || '',
-          role: decoded.roles?.[0] || 'user',
-          fullName: decoded.full_name || null,
-        };
-      } catch {
-        throw new UnauthorizedError('Invalid or expired token');
-      }
+      throw new UnauthorizedError('Invalid or expired token');
     }
   }
 

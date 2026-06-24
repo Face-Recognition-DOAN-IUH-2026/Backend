@@ -21,10 +21,47 @@ function buildToolsDescription(): string {
     .join('\n');
 }
 
-function buildSystemPrompt(contextDocuments: RetrievedDocument[]): string {
+export interface UserContext {
+  userId: string;
+  email: string;
+  role: string;
+  fullName?: string;
+}
+
+function buildSystemPrompt(contextDocuments: RetrievedDocument[], userContext?: UserContext): string {
   const kbContext = contextDocuments.length > 0
     ? `\n\nKnowledge Base Context:\n${contextDocuments.map(d => `[${d.docTitle}] ${d.content}`).join('\n\n')}`
     : '';
+
+  let userContextPrompt = '';
+  if (userContext) {
+    if (userContext.role === 'patron') {
+      userContextPrompt = `
+NGƯỜI DÙNG HIỆN TẠI:
+- Vai trò: Độc giả (patron)
+- Mã thẻ: ${userContext.userId}
+- Họ tên: ${userContext.fullName || 'Chưa cập nhật'}
+- Email: ${userContext.email}
+
+QUY TẮC CHO PATRON:
+- LUÔN sử dụng mã thẻ trên khi gọi tool (get_patron_info, get_patron_borrows, etc.)
+- CHỈ hiển thị dữ liệu CỦA CHÍNH NGƯỜI DÙNG NÀY
+- KHÔNG BAO GIỜ hiển thị dữ liệu của người khác
+- Khi người dùng hỏi "lịch sử mượn" hoặc "thẻ của tôi", tự động dùng mã thẻ trên`;
+    } else {
+      userContextPrompt = `
+NGƯỜI DÙNG HIỆN TẠI:
+- Vai trò: Nhân viên (${userContext.role})
+- Mã nhân viên: ${userContext.userId}
+- Họ tên: ${userContext.fullName || 'Chưa cập nhật'}
+- Email: ${userContext.email}
+
+QUY TẮC CHO NHÂN VIÊN:
+- Có thể tra cứu thông tin bất kỳ thẻ độc giả nào (yêu cầu mã thẻ hoặc mã số sinh viên)
+- Có thể sử dụng tất cả các tool kể cả write operations
+- Khi tra cứu thẻ, hỏi mã thẻ hoặc MSSV nếu người dùng chưa cung cấp`;
+    }
+  }
 
   return `Bạn là trợ lý thư viện của IUH (Viện Đào tạo Quốc tế - Đại học Công nghệ TP.HCM), tên "TVTL" (Trợ lý Vi tính Thư viện).
 
@@ -80,7 +117,7 @@ Hướng dẫn sử dụng tool:
 - Đọc kết quả tool và quyết định: trả lời trực tiếp HOẶC gọi thêm tool
 - Khi đã có đủ thông tin, trả lời tổng hợp cho người dùng
 - Với thao tác ghi (add_book, update_book_quantity...), gọi tool — hệ thống sẽ hỏi xác nhận
-
+${userContextPrompt}
 ${kbContext}`;
 }
 
@@ -192,7 +229,8 @@ export async function processMessage(
   message: string,
   sessionId: string,
   patronId?: string,
-  sessionHistory?: Array<{ role: string; content: string }>
+  sessionHistory?: Array<{ role: string; content: string }>,
+  userContext?: UserContext,
 ): Promise<{
   response: string;
   requiresConfirmation?: boolean;
@@ -201,18 +239,11 @@ export async function processMessage(
   sessionId: string;
 }> {
   const contextDocs = await retrieve(message, 5);
-  const systemPrompt = buildSystemPrompt(contextDocs);
+  const systemPrompt = buildSystemPrompt(contextDocs, userContext);
 
   const messages: Array<{ role: ChatRole; content: string }> = [
     { role: 'system', content: systemPrompt },
   ];
-
-  if (patronId) {
-    messages.push({
-      role: 'system',
-      content: `Mã số thẻ người dùng hiện tại: ${patronId}. Sử dụng thông tin này khi cần tra cứu thông tin thẻ.`,
-    });
-  }
 
   if (sessionHistory && sessionHistory.length > 0) {
     for (const msg of sessionHistory.slice(-10)) {

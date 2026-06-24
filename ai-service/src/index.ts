@@ -6,7 +6,7 @@ import { AppDataSource } from './data-source';
 import aiRoutes from './routes/ai.routes';
 import chatRouter from './routes/chat';
 import confirmRouter from './routes/confirm';
-import { errorHandler } from './middlewares/errorHandler';
+import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 import { auth } from './middlewares/auth';
 import { getCollection } from './clients/chromadb';
 import { indexDocuments } from './rag/indexer';
@@ -50,12 +50,13 @@ app.get('/ai/health', async (_req, res) => {
   });
 });
 
-// AI Command Center routes (admin/staff only) - /ai/command-center/*, /ai/insights/*, /ai/recommendations/*
-app.use('/ai', auth, aiRoutes);
-
 // Agent chat routes (authenticated users) - /ai/chat, /ai/confirm, /ai/chat/sessions/*
+// Must be BEFORE /ai to avoid requireRole middleware in aiRoutes blocking patron access
 app.use('/ai/chat', auth, chatRouter);
 app.use('/ai/confirm', auth, confirmRouter);
+
+// AI Command Center routes (admin/staff only) - /ai/command-center/*, /ai/insights/*, /ai/recommendations/*
+app.use('/ai', auth, aiRoutes);
 
 // Session retrieval - /ai/sessions/:sessionId
 app.get('/ai/sessions/:sessionId', auth, (req, res) => {
@@ -105,6 +106,7 @@ async function start() {
       console.log('Continuing without document indexing...');
     }
 
+    setupProcessErrorHandlers();
     const server = app.listen(config.port, '0.0.0.0', () => {
       console.log(`AI service running on port ${config.port}`);
       console.log(`  Command Center: /ai/command-center/*`);

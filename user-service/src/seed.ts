@@ -9,8 +9,14 @@ async function seed() {
     console.log('[seed] Database connected');
 
     const adminEmail = (process.env.DEFAULT_ADMIN_EMAIL || 'admin@example.com').trim().toLowerCase();
-    const adminPassword = String(process.env.DEFAULT_ADMIN_PASSWORD || 'password123');
+    const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD;
     const adminFullName = process.env.DEFAULT_ADMIN_FULL_NAME || 'System Administrator';
+
+    if (!adminPassword) {
+      console.warn('[seed] DEFAULT_ADMIN_PASSWORD not set, skipping admin seed');
+      await AppDataSource.destroy();
+      process.exit(0);
+    }
 
     const repo = AppDataSource.getRepository(User);
     const existing = await repo.findOne({ where: { email: adminEmail } });

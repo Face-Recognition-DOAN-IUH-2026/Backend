@@ -41,7 +41,7 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -60,7 +60,7 @@ services:
       COMMON_STORAGETYPE: local
       COMMON_GRACETIMELENGTH: 120000
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9091/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -92,7 +92,7 @@ services:
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8000/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -128,8 +128,8 @@ services:
 
   user-service:
     build:
-      context: user-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: user-service/Dockerfile
     container_name: user-service
     restart: unless-stopped
     env_file:
@@ -153,8 +153,8 @@ services:
 
   schedule-service:
     build:
-      context: schedule-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: schedule-service/Dockerfile
     container_name: schedule-service
     restart: unless-stopped
     env_file:
@@ -182,7 +182,7 @@ services:
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -190,8 +190,8 @@ services:
 
   access-service:
     build:
-      context: access-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: access-service/Dockerfile
     container_name: access-service
     restart: unless-stopped
     env_file:
@@ -218,7 +218,7 @@ services:
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -232,7 +232,7 @@ services:
     environment:
       IS_PERSISTENT: "true"
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8000'"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -241,8 +241,8 @@ services:
 
   ai-service:
     build:
-      context: ai-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ai-service/Dockerfile
     container_name: ai-service
     restart: unless-stopped
     env_file:
@@ -287,7 +287,7 @@ services:
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3004/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3004/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -295,8 +295,8 @@ services:
 
   notification-service:
     build:
-      context: notification-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: notification-service/Dockerfile
     container_name: notification-service
     restart: unless-stopped
     env_file:
@@ -305,7 +305,7 @@ services:
       PORT: 3006
       DB_HOST: postgres
       DB_NAME: notificationdb
-      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in Backend/.env}
       JWT_ISSUER: ${JWT_ISSUER:-face-recognition}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-face-recognition-users}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
@@ -322,7 +322,7 @@ services:
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3006/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3006/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -330,8 +330,8 @@ services:
 
   automation-service:
     build:
-      context: automation-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: automation-service/Dockerfile
     container_name: automation-service
     restart: unless-stopped
     env_file:
@@ -340,7 +340,7 @@ services:
       PORT: 3007
       DB_HOST: postgres
       DB_NAME: automationdb
-      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in Backend/.env}
       JWT_ISSUER: ${JWT_ISSUER:-face-recognition}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-face-recognition-users}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
@@ -364,7 +364,7 @@ services:
     networks:
       - face-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3007/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3007/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -372,8 +372,8 @@ services:
 
   gateway:
     build:
-      context: api-gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api-gateway/Dockerfile
     container_name: api-gateway
     ports:
       - "80:80"
@@ -402,8 +402,8 @@ services:
 
   borrow-service:
     build:
-      context: borrow-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: borrow-service/Dockerfile
     container_name: borrow-service
     restart: unless-stopped
     env_file:

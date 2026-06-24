@@ -2,12 +2,13 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-COPY tsconfig.json ./
+COPY user-service/package*.json ./
+COPY user-service/tsconfig.json ./
 RUN npm install
 
-COPY src ./src
-COPY migrations ./migrations
+COPY user-service/src ./src
+COPY user-service/migrations ./migrations
+COPY shared ./shared
 
 RUN npm run build
 

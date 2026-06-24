@@ -13,6 +13,7 @@ import {
 import { ConflictError, NotFoundError, BadRequestError } from '../errors';
 import { checkActiveBorrows } from '../clients/BorrowServiceClient';
 import { faceServiceClient } from '../clients/FaceServiceClient';
+import { accessServiceClient } from '../clients/AccessServiceClient';
 
 export class PatronService {
   constructor(
@@ -217,7 +218,20 @@ export class PatronService {
   }> {
     const totalPatrons = await this.patronRepo.countActivePatrons();
     const activePatrons = await this.patronRepo.countActiveInside();
-    return { totalPatrons, activePatrons, todayEntries: 0, todayExits: 0 };
+    
+    let todayEntries = 0;
+    let todayExits = 0;
+    
+    try {
+      const dailyStats = await accessServiceClient.getDailyStats();
+      todayEntries = dailyStats.today_entries || 0;
+      todayExits = dailyStats.today_exits || 0;
+    } catch (err: any) {
+      console.error('[PatronService] Failed to fetch access stats:', err.message);
+      // Fallback to 0, don't crash
+    }
+    
+    return { totalPatrons, activePatrons, todayEntries, todayExits };
   }
 
   async getActivePatrons(): Promise<PatronPublicDto[]> {

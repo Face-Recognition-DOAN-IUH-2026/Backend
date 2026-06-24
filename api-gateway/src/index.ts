@@ -1,11 +1,24 @@
 import express from 'express';
 import http from 'http';
 import cors from 'cors';
+import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
+import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
+import {
+  createJiraBug,
+  getJiraIssue,
+  searchJiraIssues,
+  getIssueTransitions,
+  transitionIssue,
+  addComment,
+} from '../shared/jira-client';
 const app = express();
-const corsOrigin = config.corsOrigins.includes('*') ? true : config.corsOrigins;
+const corsOrigin = config.corsOrigins.length > 0 ? config.corsOrigins : false;
+
+// Security headers
+app.use(helmet());
 
 app.use(cors({
   origin: corsOrigin,
@@ -262,6 +275,10 @@ app.get('/', (req, res) => {
   });
 });
 
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', service: 'api-gateway', timestamp: new Date().toISOString() });
+});
+
 // Frontend - proxy all other requests to Next.js dev server
 app.all('/*', (req, res) => {
   const targetUrl = new URL(req.originalUrl, config.frontendUrl);
@@ -295,7 +312,133 @@ app.all('/*', (req, res) => {
   req.pipe(proxyReq, { end: true });
 });
 
+// ---- POST /errors/report — frontend/mobile error reporting endpoint ----
+app.post('/errors/report', express.json({ limit: '100kb' }), async (req, res) => {
+  try {
+    const { title, description, priority, labels, service, endpoint, method, stacktrace, requestBody } = req.body;
+    if (!title) {
+      res.status(400).json({ error: 'title is required' });
+      return;
+    }
+    const issueUrl = await createJiraBug({
+      title,
+      description: description || title,
+      priority: priority || 'Medium',
+      labels: [...(labels || []), 'client-report'],
+      service: service || 'frontend',
+      endpoint,
+      method,
+      stacktrace,
+      requestBody,
+      userId: (req as any).user?.userId || (req as any).user?.sub,
+      timestamp: new Date().toISOString(),
+    });
+    if (issueUrl) {
+      res.json({ success: true, issueUrl });
+    } else {
+      res.json({ success: false, message: 'Jira disabled or rate limited' });
+    }
+  } catch (err: any) {
+    console.error('[API-Gateway] Error report failed:', err.message);
+    res.status(500).json({ error: 'Failed to report error' });
+  }
+});
+
+// ---- JIRA READ ROUTES ----
+
+// GET /api/jira/issue/:key - Get issue details
+app.get('/api/jira/issue/:key', async (req, res) => {
+  try {
+    const issue = await getJiraIssue(req.params.key);
+    if (issue) {
+      res.json(issue);
+    } else {
+      res.status(404).json({ error: 'Issue not found or Jira disabled' });
+    }
+  } catch (err: any) {
+    console.error('[API-Gateway] Jira issue fetch failed:', err.message);
+    res.status(500).json({ error: 'Failed to fetch Jira issue' });
+  }
+});
+
+// GET /api/jira/search - Search issues with JQL
+app.get('/api/jira/search', async (req, res) => {
+  try {
+    const { jql, maxResults } = req.query;
+    if (!jql) {
+      res.status(400).json({ error: 'jql query parameter is required' });
+      return;
+    }
+    const issues = await searchJiraIssues(jql as string, parseInt(maxResults as string) || 50);
+    res.json({ issues, total: issues.length });
+  } catch (err: any) {
+    console.error('[API-Gateway] Jira search failed:', err.message);
+    res.status(500).json({ error: 'Failed to search Jira issues' });
+  }
+});
+
+// GET /api/jira/issue/:key/transitions - Get available transitions
+app.get('/api/jira/issue/:key/transitions', async (req, res) => {
+  try {
+    const transitions = await getIssueTransitions(req.params.key);
+    res.json({ transitions });
+  } catch (err: any) {
+    console.error('[API-Gateway] Jira transitions fetch failed:', err.message);
+    res.status(500).json({ error: 'Failed to fetch transitions' });
+  }
+});
+
+// POST /api/jira/issue/:key/transition - Transition issue status
+app.post('/api/jira/issue/:key/transition', express.json(), async (req, res) => {
+  try {
+    const { transitionId } = req.body;
+    if (!transitionId) {
+      res.status(400).json({ error: 'transitionId is required' });
+      return;
+    }
+    const success = await transitionIssue(req.params.key, transitionId);
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.status(500).json({ error: 'Failed to transition issue' });
+    }
+  } catch (err: any) {
+    console.error('[API-Gateway] Jira transition failed:', err.message);
+    res.status(500).json({ error: 'Failed to transition issue' });
+  }
+});
+
+// POST /api/jira/issue/:key/comment - Add comment to issue
+app.post('/api/jira/issue/:key/comment', express.json(), async (req, res) => {
+  try {
+    const { body } = req.body;
+    if (!body) {
+      res.status(400).json({ error: 'body is required' });
+      return;
+    }
+    const success = await addComment(req.params.key, body);
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.status(500).json({ error: 'Failed to add comment' });
+    }
+  } catch (err: any) {
+    console.error('[API-Gateway] Jira comment failed:', err.message);
+    res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+// ---- 404 handler ----
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not Found' });
+});
+
+// ---- Error handler ----
+app.use(errorHandler);
+
 const PORT = config.port;
+setupProcessErrorHandlers();
+
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 API Gateway running on port ${PORT}`);
   if (config.nodeEnv !== 'production') {

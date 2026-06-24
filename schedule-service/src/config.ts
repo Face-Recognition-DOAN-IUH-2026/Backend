@@ -14,9 +14,9 @@ export const config = {
     port: parseInt(process.env.DB_PORT || '5432', 10),
     database: process.env.DB_NAME || 'face_recognition',
     schema: process.env.DB_SCHEMA || 'schedule',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
   },
-  corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['*'],
+  corsOrigins: process.env.CORS_ORIGINS?.split(',') || [],
   redisUrl: process.env.REDIS_URL || 'redis://redis:6379/0',
 };

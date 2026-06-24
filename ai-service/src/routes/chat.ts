@@ -1,12 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { sessionStore } from '../sessions';
 import { processMessage } from '../agent/agent';
+import { AuthRequest } from '../middlewares/auth';
 
 const router = Router();
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req: AuthRequest, res: Response) => {
   try {
-    const { message, sessionId, patronId } = req.body as {
+    const { message, sessionId, patronId: clientPatronId } = req.body as {
       message: string;
       sessionId?: string;
       patronId?: string;
@@ -17,12 +18,29 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+
+    const isStaff = user.role === 'admin' || user.role === 'staff';
+
+    // Security: patron can only query own data, staff can query any patron
+    let effectivePatronId: string;
+    if (isStaff) {
+      effectivePatronId = clientPatronId || user.userId;
+    } else {
+      // Patron: ignore client patronId, always use JWT identity
+      effectivePatronId = user.userId;
+    }
+
     let session = sessionId ? sessionStore.get(sessionId) : undefined;
 
     if (!session) {
-      session = sessionStore.create(patronId);
-    } else if (patronId) {
-      sessionStore.update(session.id, { patronId });
+      session = sessionStore.create(effectivePatronId);
+    } else if (effectivePatronId) {
+      sessionStore.update(session.id, { patronId: effectivePatronId });
     }
 
     sessionStore.addMessage(session.id, {
@@ -36,7 +54,20 @@ router.post('/', async (req: Request, res: Response) => {
       content: m.content,
     }));
 
-    const result = await processMessage(message, session.id, patronId || session.patronId, sessionHistory);
+    const userContext = {
+      userId: user.userId,
+      email: user.email,
+      role: user.role,
+      fullName: user.fullName || undefined,
+    };
+
+    const result = await processMessage(
+      message,
+      session.id,
+      effectivePatronId,
+      sessionHistory,
+      userContext,
+    );
 
     sessionStore.addMessage(session.id, {
       role: 'assistant',
@@ -65,6 +96,7 @@ router.post('/', async (req: Request, res: Response) => {
       } : undefined,
       toolResults: result.toolResults,
       sessionId: session.id,
+      userRole: user.role,
     });
   } catch (error) {
     console.error('Chat error:', error);

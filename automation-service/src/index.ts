@@ -5,7 +5,7 @@ import { config } from './config';
 import { AppDataSource } from './data-source';
 import automationRoutes from './routes/automation.routes';
 import internalRoutes from './routes/internal.routes';
-import { errorHandler } from './middlewares/errorHandler';
+import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 import { cronScheduler } from './scheduler/CronScheduler';
 import { eventBus } from './events/EventBus';
 
@@ -33,6 +33,7 @@ async function start() {
     // Start cron scheduler
     await cronScheduler.start();
 
+    setupProcessErrorHandlers();
     app.listen(config.port, () => {
       console.log(`Automation service running on port ${config.port}`);
     });
