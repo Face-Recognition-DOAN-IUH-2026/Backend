@@ -55,8 +55,15 @@ const authLimiter = rateLimit({
   message: { error: 'Too many login attempts', detail: 'Quá nhiều lần đăng nhập, vui lòng thử lại sau 15 phút' },
 });
 
-// Face endpoints are intentionally not rate-limited in local development.
-const faceLimiter = (_req: express.Request, _res: express.Response, next: express.NextFunction) => next();
+// Face rate limiter — stricter than global, always active in production
+const faceLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30,                    // 30 attempts per window
+  skip: (req) => config.nodeEnv !== 'production',
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many face recognition attempts', detail: 'Quá nhiều lần nhận diện, vui lòng thử lại sau' },
+});
 
 app.use(globalLimiter);
 
