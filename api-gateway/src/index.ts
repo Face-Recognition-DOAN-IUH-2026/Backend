@@ -3,6 +3,7 @@ import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import jwt from 'jsonwebtoken';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
@@ -64,6 +65,45 @@ const faceLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many face recognition attempts', detail: 'Quá nhiều lần nhận diện, vui lòng thử lại sau' },
 });
+
+// Error report rate limiter — prevent spam
+const errorReportLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,                    // 10 reports per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many error reports', detail: 'Quá nhiều báo lỗi, vui lòng thử lại sau' },
+});
+
+function sanitizeInput(input: string): string {
+  return input
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+function verifyToken(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'No token provided' });
+    return;
+  }
+
+  try {
+    const token = authHeader.split(' ')[1];
+    const secret = process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET;
+    if (!secret) {
+      res.status(500).json({ error: 'JWT secret not configured' });
+      return;
+    }
+    const payload = jwt.verify(token, secret) as any;
+    (req as any).user = payload;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
 
 app.use(globalLimiter);
 
@@ -320,7 +360,7 @@ app.all('/*', (req, res) => {
 });
 
 // ---- POST /errors/report — frontend/mobile error reporting endpoint ----
-app.post('/errors/report', express.json({ limit: '100kb' }), async (req, res) => {
+app.post('/errors/report', errorReportLimiter, verifyToken, express.json({ limit: '100kb' }), async (req, res) => {
   try {
     const { title, description, priority, labels, service, endpoint, method, stacktrace, requestBody } = req.body;
     if (!title) {
@@ -328,8 +368,8 @@ app.post('/errors/report', express.json({ limit: '100kb' }), async (req, res) =>
       return;
     }
     const issueUrl = await createJiraBug({
-      title,
-      description: description || title,
+      title: sanitizeInput(title),
+      description: sanitizeInput(description || title),
       priority: priority || 'Medium',
       labels: [...(labels || []), 'client-report'],
       service: service || 'frontend',
