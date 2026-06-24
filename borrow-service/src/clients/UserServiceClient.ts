@@ -46,7 +46,7 @@ async function request(path: string, init?: RequestInit) {
 export async function lookupPatronByStudentCode(studentCode: string): Promise<PatronSummary> {
   const normalized = studentCode.trim();
   if (!normalized) throw new HttpError(400, 'student_code is required');
-  const res = await request(`/patrons/lookup?student_code=${encodeURIComponent(normalized)}`);
+  const res = await request(`/internal/patrons/lookup?student_code=${encodeURIComponent(normalized)}`);
   if (res.status !== 200) throw new HttpError(404, 'Khong tim thay doc gia');
   const data = await res.json() as any;
   if (!data.exists || !data.patron) throw new HttpError(404, 'Khong tim thay doc gia voi MSSV nay');
@@ -54,7 +54,7 @@ export async function lookupPatronByStudentCode(studentCode: string): Promise<Pa
 }
 
 export async function lookupPatronById(id: string): Promise<PatronSummary | null> {
-  const res = await request(`/users/${encodeURIComponent(id)}`);
+  const res = await request(`/internal/users/${encodeURIComponent(id)}`);
   if (res.status === 404) return null;
   if (res.status !== 200) throw new HttpError(503, 'Cannot lookup patron right now');
   return res.json() as Promise<PatronSummary>;
