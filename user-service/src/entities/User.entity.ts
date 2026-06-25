@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 
 export enum UserRole {
@@ -13,6 +14,8 @@ export enum UserRole {
   PATRON = 'patron',
 }
 
+@Index(['role', 'status'])
+@Index(['role', 'currentStatus', 'status'])
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
