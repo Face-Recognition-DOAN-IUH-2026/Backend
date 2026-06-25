@@ -5,6 +5,8 @@ import { config } from './config';
 import { AppDataSource } from './data-source';
 import scheduleRoutes from './routes/schedule.routes';
 import scheduleInternalRoutes from './routes/schedule-internal.routes';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
 
@@ -16,6 +18,10 @@ app.use(express.json());
 app.use('/schedules', scheduleInternalRoutes);
 app.use('/schedules', scheduleRoutes);
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'schedule-service' }));
+
+if (config.nodeEnv !== 'production') {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 app.use(errorHandler);
 

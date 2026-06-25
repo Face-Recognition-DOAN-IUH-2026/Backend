@@ -165,14 +165,28 @@ export class BorrowRepository {
   }
 
   async createCopiesBatchWithSkip(bookId: string, barcodes: string[], shelfLocation?: string | null) {
-    const inserted: BookCopy[] = [];
-    for (const barcode of barcodes) {
-      const existing = await this.getCopyByBarcode(barcode);
-      if (!existing) {
-        inserted.push(await this.createCopy(bookId, barcode, shelfLocation));
-      }
-    }
-    return inserted;
+    const normalized = barcodes.map(b => this.normalizeCode(b));
+
+    // Batch check which barcodes already exist
+    const existingCopies = await this.copies.find({
+      where: { barcode: In(normalized) }
+    });
+    const existingBarcodes = new Set(existingCopies.map(c => c.barcode));
+
+    // Filter out existing barcodes
+    const newBarcodes = normalized.filter(b => !existingBarcodes.has(b));
+    if (newBarcodes.length === 0) return [];
+
+    // Batch insert new copies
+    const newCopies = this.copies.create(
+      newBarcodes.map(barcode => ({
+        bookId,
+        barcode,
+        isAvailable: true,
+        shelfLocation: shelfLocation || null,
+      }))
+    );
+    return this.copies.save(newCopies);
   }
 
   async setCopyAvailable(copy: BookCopy, isAvailable: boolean) {
@@ -393,5 +407,35 @@ export class BorrowRepository {
 
   getSlipsByPatron(patronId: string) {
     return this.slips.find({ where: { patronId }, order: { createdAt: 'DESC' } });
+  }
+
+  async getCopiesByBarcodes(barcodes: string[]): Promise<Map<string, BookCopy & { book: Book }>> {
+    const copies = await this.copies.find({
+      where: { barcode: In(barcodes) },
+      relations: { book: true },
+    });
+    return new Map(copies.map(c => [c.barcode, c]));
+  }
+
+  async getCopyCountsByBookIds(bookIds: string[]): Promise<Map<string, { total: number; available: number }>> {
+    const result = new Map<string, { total: number; available: number }>();
+
+    const counts = await this.copies
+      .createQueryBuilder('copy')
+      .select('copy.book_id', 'bookId')
+      .addSelect('COUNT(*)', 'total')
+      .addSelect('SUM(CASE WHEN copy.is_available = true THEN 1 ELSE 0 END)', 'available')
+      .where('copy.book_id IN (:...bookIds)', { bookIds })
+      .groupBy('copy.book_id')
+      .getRawMany();
+
+    for (const count of counts) {
+      result.set(count.bookId, {
+        total: parseInt(count.total),
+        available: parseInt(count.available),
+      });
+    }
+
+    return result;
   }
 }

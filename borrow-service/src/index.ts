@@ -1,7 +1,9 @@
 import 'reflect-metadata';
 import express from 'express';
 import cors from 'cors';
+import swaggerUi from 'swagger-ui-express';
 import { config } from './config';
+import { swaggerSpec } from './config/swagger';
 import { AppDataSource } from './data-source';
 import borrowRoutes from './routes/borrow.routes';
 import borrowInternalRoutes from './routes/borrow-internal.routes';
@@ -28,6 +30,10 @@ app.get('/ready', async (_req, res) => {
     res.status(503).json({ status: 'degraded', service: config.serviceName, db_ok: false });
   }
 });
+
+if (config.nodeEnv !== 'production') {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 app.use(errorHandler);
 

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import ExcelJS from 'exceljs';
 import { z } from 'zod';
+import { In } from 'typeorm';
 import { AppDataSource } from '../data-source';
 import { auth, AuthRequest, requireRole } from '../middlewares/auth';
 import { HttpError } from '../middlewares/errorHandler';
@@ -325,12 +326,24 @@ router.post('/staff/slip/confirm', requireRole(['admin', 'staff', 'patron'], 'Ch
     const copyIds: (string | null)[] = [];
     const shelfLocations: (string | null)[] = [];
 
+    // Batch load all copies and books at once instead of per item
+    const copyIdsToLoad = body.items.map(item => item.copy_id);
+    const bookIdsToLoad = body.items.map(item => item.book_id);
+
+    const [allCopies, allBooks] = await Promise.all([
+      repo.copies.find({ where: { id: In(copyIdsToLoad) } }),
+      repo.books.find({ where: { id: In(bookIdsToLoad) } }),
+    ]);
+
+    const copiesMap = new Map(allCopies.map(c => [c.id, c]));
+    const booksMap = new Map(allBooks.map(b => [b.id, b]));
+
     for (const item of body.items) {
-      const copy = await repo.getCopyById(item.copy_id);
+      const copy = copiesMap.get(item.copy_id);
       if (!copy) throw new HttpError(400, `Ban sao ${item.copy_id} khong ton tai`);
       if (copy.bookId !== item.book_id) throw new HttpError(400, 'Du lieu khong hop le: copy_id khong khop voi book_id');
 
-      const book = await repo.getBookById(item.book_id);
+      const book = booksMap.get(item.book_id);
       if (!book) throw new HttpError(400, `Sach ${item.book_id} khong ton tai`);
 
       if (!copy.isAvailable) throw new HttpError(409, `Ban sao ${item.barcode} dang duoc muon`);
@@ -351,18 +364,33 @@ router.post('/staff/slip/confirm', requireRole(['admin', 'staff', 'patron'], 'Ch
     if (activeCount + bookIds.length > config.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
     if (bookIds.length > config.maxBorrowBooksPerSlip) throw new HttpError(409, `Moi phieu muon toi da ${config.maxBorrowBooksPerSlip} cuon`);
 
-    for (const copyId of copyIds) {
-      if (copyId) {
-        const copy = await repo.getCopyById(copyId);
-        if (copy) await repo.setCopyAvailable(copy, false);
-      }
+    // Batch update copy availability
+    const copiesToUpdate = copyIds.filter(id => id).map(id => copiesMap.get(id!)).filter(Boolean) as BookCopy[];
+    for (const copy of copiesToUpdate) {
+      copy.isAvailable = false;
+      copy.updatedAt = new Date();
+    }
+    if (copiesToUpdate.length > 0) {
+      await repo.copies.save(copiesToUpdate);
     }
 
     const { slip, records } = await repo.createSlip(body.patron_id, bookIds, copyIds, shelfLocations, req.user?.id, req.user?.email);
 
-    for (let i = 0; i < records.length; i += 1) {
-      records[i].book = (await repo.getBookById(bookIds[i]))!;
-      records[i].copy = copyIds[i] ? await repo.getCopyById(copyIds[i]!) : null;
+    // Batch load books and copies for records
+    const recordBookIds = records.map(r => r.bookId);
+    const recordCopyIds = records.filter(r => r.copyId).map(r => r.copyId!);
+
+    const [recordBooks, recordCopies] = await Promise.all([
+      repo.books.find({ where: { id: In(recordBookIds) } }),
+      recordCopyIds.length > 0 ? repo.copies.find({ where: { id: In(recordCopyIds) } }) : [],
+    ]);
+
+    const recordBooksMap = new Map(recordBooks.map(b => [b.id, b]));
+    const recordCopiesMap = new Map(recordCopies.map(c => [c.id, c]));
+
+    for (const record of records) {
+      record.book = recordBooksMap.get(record.bookId)!;
+      record.copy = record.copyId ? recordCopiesMap.get(record.copyId) || null : null;
     }
 
     for (const record of records) {
@@ -826,8 +854,14 @@ router.get('/books/export', async (_req, res, next) => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Books');
     ws.addRow(['ISBN', 'Title', 'Author', 'Total Copies', 'Available Copies', 'Shelf Location', 'Created At']);
+
+    // Batch load all copy counts at once
+    const bookIds = items.map(b => b.id);
+    const copyCounts = await repo.getCopyCountsByBookIds(bookIds);
+
     for (const book of items) {
-      ws.addRow([book.isbn, book.title, book.author || '', await repo.countCopies(book.id), await repo.countCopies(book.id, true), book.shelfLocation || '', book.createdAt?.toISOString?.() || '']);
+      const counts = copyCounts.get(book.id) || { total: 0, available: 0 };
+      ws.addRow([book.isbn, book.title, book.author || '', counts.total, counts.available, book.shelfLocation || '', book.createdAt?.toISOString?.() || '']);
     }
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=books_export.xlsx');

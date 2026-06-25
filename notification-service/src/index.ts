@@ -7,6 +7,8 @@ import { config } from './config';
 import { AppDataSource } from './data-source';
 import notificationRoutes from './routes/notification.routes';
 import internalRoutes from './routes/internal.routes';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 import { decodeToken } from './middlewares/auth';
 import { notificationHub } from './realtime/NotificationHub';
@@ -20,6 +22,10 @@ app.use(express.json({ limit: '1mb' }));
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'notification-service' }));
 app.use('/notifications', notificationRoutes);
 app.use('/internal', internalRoutes);
+
+if (config.nodeEnv !== 'production') {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 app.use(errorHandler);
 

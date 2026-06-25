@@ -6,6 +6,8 @@ import { AppDataSource } from './data-source';
 import aiRoutes from './routes/ai.routes';
 import chatRouter from './routes/chat';
 import confirmRouter from './routes/confirm';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 import { auth } from './middlewares/auth';
 import { getCollection } from './clients/chromadb';
@@ -76,6 +78,10 @@ app.get('/ai/sessions/:sessionId', auth, (req, res) => {
 // Backward compat: /chat, /confirm
 app.use('/chat', auth, chatRouter);
 app.use('/confirm', auth, confirmRouter);
+
+if (config.nodeEnv !== 'production') {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 app.use(errorHandler);
 
