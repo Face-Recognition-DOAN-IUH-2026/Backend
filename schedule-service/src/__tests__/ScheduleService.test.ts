@@ -265,8 +265,12 @@ describe('ScheduleService', () => {
       // Override shiftRepo to return two different shifts
       shiftRepo.findOneBy
         .mockResolvedValueOnce({ id: 'sh1', isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' }) // ensureScheduleTargets
-        .mockResolvedValueOnce({ id: 'sh1', isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' }) // requireShift in overlap check
-        .mockResolvedValueOnce({ id: 'sh2', isActive: true, startTime: '10:00', endTime: '14:00', name: 'Mid' }); // existing shift lookup
+        .mockResolvedValueOnce({ id: 'sh1', isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' }); // requireShift in overlap check
+
+      // Batch query now uses find() instead of findOneBy() for existing shifts
+      shiftRepo.find.mockResolvedValue([
+        { id: 'sh2', isActive: true, startTime: '10:00', endTime: '14:00', name: 'Mid' },
+      ]);
 
       service = new ScheduleService();
 

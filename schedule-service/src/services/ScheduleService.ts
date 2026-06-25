@@ -821,9 +821,18 @@ async autoSchedule(actorId: string, from: string, to: string) {
 
     const existingAssignments = await this.schedules.find({ where });
 
+    // Batch load all shifts at once instead of per iteration
+    const shiftIds = [...new Set(existingAssignments.map(a => a.shiftId))];
+    if (shiftIds.length === 0) return;
+
+    const existingShifts = await this.shifts.find({
+      where: { id: In(shiftIds), isActive: true }
+    });
+    const shiftMap = new Map(existingShifts.map(s => [s.id, s]));
+
     for (const assignment of existingAssignments) {
       if (assignment.shiftId === shiftId) continue;
-      const existingShift = await this.shifts.findOneBy({ id: assignment.shiftId, isActive: true });
+      const existingShift = shiftMap.get(assignment.shiftId);
       if (!existingShift) continue;
       const existStart = existingShift.startTime.slice(0, 5);
       const existEnd = existingShift.endTime.slice(0, 5);
