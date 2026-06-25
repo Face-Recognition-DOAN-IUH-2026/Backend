@@ -362,6 +362,47 @@ app.all('/*', (req, res) => {
 });
 
 // ---- POST /errors/report — frontend/mobile error reporting endpoint ----
+/**
+ * @swagger
+ * /errors/report:
+ *   post:
+ *     summary: Report frontend/mobile errors
+ *     tags: [Error Reporting]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - title
+ *               - service
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               priority:
+ *                 type: string
+ *                 enum: [Highest, High, Medium, Low]
+ *               service:
+ *                 type: string
+ *               endpoint:
+ *                 type: string
+ *               method:
+ *                 type: string
+ *               stacktrace:
+ *                 type: string
+ *               requestBody:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Error reported and Jira bug created
+ *       400:
+ *         description: Missing required fields
+ */
 app.post('/errors/report', errorReportLimiter, verifyToken, express.json({ limit: '100kb' }), async (req, res) => {
   try {
     const { title, description, priority, labels, service, endpoint, method, stacktrace, requestBody } = req.body;
@@ -396,6 +437,27 @@ app.post('/errors/report', errorReportLimiter, verifyToken, express.json({ limit
 // ---- JIRA READ ROUTES ----
 
 // GET /api/jira/issue/:key - Get issue details
+/**
+ * @swagger
+ * /api/jira/issue/{key}:
+ *   get:
+ *     summary: Get Jira issue details
+ *     tags: [Jira]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: key
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: LIB-235
+ *     responses:
+ *       200:
+ *         description: Issue details
+ *       404:
+ *         description: Issue not found
+ */
 app.get('/api/jira/issue/:key', async (req, res) => {
   try {
     const issue = await getJiraIssue(req.params.key);
@@ -411,6 +473,32 @@ app.get('/api/jira/issue/:key', async (req, res) => {
 });
 
 // GET /api/jira/search - Search issues with JQL
+/**
+ * @swagger
+ * /api/jira/search:
+ *   get:
+ *     summary: Search Jira issues with JQL
+ *     tags: [Jira]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: jql
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: "project = LIB AND status = Done"
+ *       - in: query
+ *         name: maxResults
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *     responses:
+ *       200:
+ *         description: Search results
+ *       400:
+ *         description: Missing jql parameter
+ */
 app.get('/api/jira/search', async (req, res) => {
   try {
     const { jql, maxResults } = req.query;
@@ -427,6 +515,24 @@ app.get('/api/jira/search', async (req, res) => {
 });
 
 // GET /api/jira/issue/:key/transitions - Get available transitions
+/**
+ * @swagger
+ * /api/jira/issue/{key}/transitions:
+ *   get:
+ *     summary: Get available transitions for a Jira issue
+ *     tags: [Jira]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: key
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of available transitions
+ */
 app.get('/api/jira/issue/:key/transitions', async (req, res) => {
   try {
     const transitions = await getIssueTransitions(req.params.key);
@@ -438,6 +544,37 @@ app.get('/api/jira/issue/:key/transitions', async (req, res) => {
 });
 
 // POST /api/jira/issue/:key/transition - Transition issue status
+/**
+ * @swagger
+ * /api/jira/issue/{key}/transition:
+ *   post:
+ *     summary: Transition a Jira issue to a new status
+ *     tags: [Jira]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: key
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - transitionId
+ *             properties:
+ *               transitionId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Transition successful
+ *       400:
+ *         description: Missing transitionId
+ */
 app.post('/api/jira/issue/:key/transition', express.json(), async (req, res) => {
   try {
     const { transitionId } = req.body;
@@ -458,6 +595,37 @@ app.post('/api/jira/issue/:key/transition', express.json(), async (req, res) => 
 });
 
 // POST /api/jira/issue/:key/comment - Add comment to issue
+/**
+ * @swagger
+ * /api/jira/issue/{key}/comment:
+ *   post:
+ *     summary: Add a comment to a Jira issue
+ *     tags: [Jira]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: key
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - body
+ *             properties:
+ *               body:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Comment added
+ *       400:
+ *         description: Missing body
+ */
 app.post('/api/jira/issue/:key/comment', express.json(), async (req, res) => {
   try {
     const { body } = req.body;
