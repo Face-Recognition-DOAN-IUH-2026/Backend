@@ -4,6 +4,8 @@ import cors from 'cors';
 import { config } from './config';
 import { AppDataSource } from './data-source';
 import { authRoutes, userRoutes, patronRoutes, internalRoutes } from './routes';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 
 
@@ -20,6 +22,10 @@ app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
 app.use('/patrons', patronRoutes);
 app.use('/internal', internalRoutes);
+
+if (config.nodeEnv !== 'production') {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 app.use(errorHandler);
 

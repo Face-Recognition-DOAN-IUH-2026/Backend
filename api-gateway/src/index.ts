@@ -6,6 +6,8 @@ import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 import {
   createJiraBug,
@@ -474,6 +476,11 @@ app.post('/api/jira/issue/:key/comment', express.json(), async (req, res) => {
     res.status(500).json({ error: 'Failed to add comment' });
   }
 });
+
+// ---- Swagger docs (dev only) ----
+if (config.nodeEnv !== 'production') {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 // ---- 404 handler ----
 app.use((req, res) => {
