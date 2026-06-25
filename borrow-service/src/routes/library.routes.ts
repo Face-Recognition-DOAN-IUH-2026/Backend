@@ -43,6 +43,16 @@ function createShelf(books: BookItem[], index: number, position: [number, number
   };
 }
 
+/**
+ * @swagger
+ * /library/shelves:
+ *   get:
+ *     summary: Get 3D library shelf layout
+ *     tags: [Library]
+ *     responses:
+ *       200:
+ *         description: Shelf layout for 3D viewer
+ */
 router.get('/shelves', async (_req, res, next) => {
   try {
     const copyRepo = AppDataSource.getRepository(BookCopy);
