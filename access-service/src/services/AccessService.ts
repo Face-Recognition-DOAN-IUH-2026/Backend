@@ -236,13 +236,22 @@ export class AccessService {
   async getStats() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const [activeCount, todayLogs, totalLogs] = await Promise.all([
+
+    const [activeCount, entryExitCounts] = await Promise.all([
       stateRepo().count({ where: { currentStatus: 'inside' } }),
-      logRepo().find({ where: { accessTime: MoreThanOrEqual(today), cameraId: In([...ACTIVE_CAMERA_IDS]) } }),
-      logRepo().count({ where: { cameraId: In([...ACTIVE_CAMERA_IDS]) } }),
+      logRepo()
+        .createQueryBuilder('log')
+        .select('log.access_type', 'accessType')
+        .addSelect('COUNT(*)', 'count')
+        .where('log.access_time >= :today', { today })
+        .andWhere('log.camera_id IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
+        .groupBy('log.access_type')
+        .getRawMany(),
     ]);
-    const todayEntries = todayLogs.filter((log) => log.accessType === 'entry').length;
-    const todayExits = todayLogs.filter((log) => log.accessType === 'exit').length;
+
+    const todayEntries = Number(entryExitCounts.find(c => c.accessType === 'entry')?.count || 0);
+    const todayExits = Number(entryExitCounts.find(c => c.accessType === 'exit')?.count || 0);
+
     return {
       active_inside: activeCount,
       activeInside: activeCount,
@@ -250,10 +259,8 @@ export class AccessService {
       todayEntries,
       today_exits: todayExits,
       todayExits,
-      today_total: todayLogs.length,
-      todayTotal: todayLogs.length,
-      total_logs: totalLogs,
-      totalLogs,
+      today_total: todayEntries + todayExits,
+      todayTotal: todayEntries + todayExits,
     };
   }
 
