@@ -1,7 +1,11 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Book } from './Book';
 import { BookCopy } from './BookCopy';
 
+@Index(['patronId', 'status'])
+@Index(['bookId', 'status'])
+@Index(['borrowAt'])
+@Index(['slipId'])
 @Entity({ name: 'borrow_records' })
 export class BorrowRecord {
   @PrimaryGeneratedColumn('uuid')
