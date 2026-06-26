@@ -8,7 +8,7 @@ router.use(auth);
 
 /**
  * @swagger
- * /notifications/:
+ * /notifications:
  *   get:
  *     summary: List notifications
  *     tags: [Notifications]

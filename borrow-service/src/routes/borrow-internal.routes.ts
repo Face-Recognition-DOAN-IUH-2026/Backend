@@ -15,6 +15,16 @@ router.use(internalAuth);
 const books = () => AppDataSource.getRepository(Book);
 const records = () => AppDataSource.getRepository(BorrowRecord);
 
+/**
+ * @swagger
+ * /borrow-internal/overdue:
+ *   get:
+ *     summary: List overdue borrows
+ *     tags: [Borrow Internal]
+ *     responses:
+ *       200:
+ *         description: List of overdue borrows
+ */
 router.get('/overdue', async (_req: Request, res: Response) => {
   try {
     const overdue = await records().createQueryBuilder('record')
@@ -49,6 +59,22 @@ router.get('/overdue', async (_req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow-internal/due-soon:
+ *   get:
+ *     summary: List borrows due soon
+ *     tags: [Borrow Internal]
+ *     parameters:
+ *       - in: query
+ *         name: days_before
+ *         schema:
+ *           type: integer
+ *           default: 3
+ *     responses:
+ *       200:
+ *         description: List of due-soon borrows
+ */
 router.get('/due-soon', async (req: Request, res: Response) => {
   try {
     const daysBefore = parseInt(req.query.days_before as string) || 3;
@@ -86,6 +112,22 @@ router.get('/due-soon', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow-internal/patron/{patronId}:
+ *   get:
+ *     summary: Get active borrows by patron ID
+ *     tags: [Borrow Internal]
+ *     parameters:
+ *       - in: path
+ *         name: patronId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: List of active borrows
+ */
 router.get('/patron/:patronId', async (req: Request, res: Response) => {
   const { patronId } = req.params;
   try {
@@ -119,6 +161,21 @@ router.get('/patron/:patronId', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow-internal/shelves:
+ *   get:
+ *     summary: Get shelf layout
+ *     tags: [Borrow Internal]
+ *     parameters:
+ *       - in: query
+ *         name: book_id
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Shelf layout grouped by location
+ */
 router.get('/shelves', async (req: Request, res: Response) => {
   const { book_id } = req.query;
   try {
@@ -151,6 +208,21 @@ router.get('/shelves', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow-internal/books/search:
+ *   get:
+ *     summary: Search books (internal)
+ *     tags: [Borrow Internal]
+ *     parameters:
+ *       - in: query
+ *         name: query
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Search results
+ */
 router.get('/books/search', async (req: Request, res: Response) => {
   const { query } = req.query;
   try {
@@ -177,6 +249,25 @@ router.get('/books/search', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow-internal/books/lookup:
+ *   get:
+ *     summary: Lookup book by ISBN or query
+ *     tags: [Borrow Internal]
+ *     parameters:
+ *       - in: query
+ *         name: isbn
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: query
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Book lookup result
+ */
 router.get('/books/lookup', async (req: Request, res: Response) => {
   const { isbn, query } = req.query;
   try {
@@ -234,6 +325,26 @@ router.get('/books/lookup', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow-internal/return:
+ *   post:
+ *     summary: Return book by barcode (internal)
+ *     tags: [Borrow Internal]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [barcode]
+ *             properties:
+ *               barcode:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Return successful
+ */
 router.post('/return', async (req: Request, res: Response) => {
   const { barcode } = req.body;
   try {
@@ -316,6 +427,27 @@ router.post('/return', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow-internal/renew:
+ *   post:
+ *     summary: Renew a borrow (internal)
+ *     tags: [Borrow Internal]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [recordId]
+ *             properties:
+ *               recordId:
+ *                 type: string
+ *                 format: uuid
+ *     responses:
+ *       200:
+ *         description: Renewal successful
+ */
 router.post('/renew', async (req: Request, res: Response) => {
   const { recordId } = req.body;
   try {
@@ -371,6 +503,28 @@ router.post('/renew', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow-internal/batch-return:
+ *   post:
+ *     summary: Batch return books by barcodes
+ *     tags: [Borrow Internal]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [barcodes]
+ *             properties:
+ *               barcodes:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Batch return results
+ */
 router.post('/batch-return', async (req: Request, res: Response) => {
   const { barcodes } = req.body;
   try {
@@ -436,6 +590,40 @@ router.post('/batch-return', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow-internal/books:
+ *   post:
+ *     summary: Create a new book
+ *     tags: [Borrow Internal]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [isbn, title]
+ *             properties:
+ *               isbn:
+ *                 type: string
+ *               title:
+ *                 type: string
+ *               author:
+ *                 type: string
+ *               quantity:
+ *                 type: integer
+ *               shelf_location:
+ *                 type: string
+ *               categories:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               cover_url:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Book created
+ */
 router.post('/books', async (req: Request, res: Response) => {
   try {
     const { isbn, title, author, quantity, shelf_location, categories, description, cover_url } = req.body;
@@ -492,6 +680,32 @@ router.post('/books', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow-internal/books/{book_id}/quantity:
+ *   put:
+ *     summary: Update book copy quantity (internal)
+ *     tags: [Borrow Internal]
+ *     parameters:
+ *       - in: path
+ *         name: book_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [quantity]
+ *             properties:
+ *               quantity:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Quantity updated
+ */
 router.put('/books/:book_id/quantity', async (req: Request, res: Response) => {
   try {
     const { book_id } = req.params;
@@ -552,6 +766,16 @@ router.put('/books/:book_id/quantity', async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow-internal/active-borrowers:
+ *   get:
+ *     summary: List active borrowers (internal)
+ *     tags: [Borrow Internal]
+ *     responses:
+ *       200:
+ *         description: List of active borrowers
+ */
 router.get('/active-borrowers', async (_req: Request, res: Response) => {
   try {
     const overdue = await records().createQueryBuilder('record')

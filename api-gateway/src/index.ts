@@ -7,7 +7,9 @@ import jwt from 'jsonwebtoken';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
 import swaggerUi from 'swagger-ui-express';
-import { swaggerSpec } from './config/swagger';
+import { swaggerSpec, fetchAndMergeSpecs } from './config/swagger';
+
+let unifiedSpec = swaggerSpec;
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 import {
   createJiraBug,
@@ -647,7 +649,25 @@ app.post('/api/jira/issue/:key/comment', express.json(), async (req, res) => {
 
 // ---- Swagger docs (dev only) ----
 if (config.nodeEnv !== 'production') {
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  fetchAndMergeSpecs()
+    .then((merged) => {
+      unifiedSpec = merged;
+      console.log(`[Swagger] Unified spec loaded — ${Object.keys(merged.paths).length} paths`);
+    })
+    .catch((err) => {
+      console.error('[Swagger] Failed to merge specs, using fallback:', err.message);
+    });
+
+  app.get('/api-docs/swagger.json', (_req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(unifiedSpec);
+  });
+
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup({
+    swaggerOptions: {
+      url: '/api-docs/swagger.json',
+    },
+  }));
 }
 
 // ---- 404 handler ----
