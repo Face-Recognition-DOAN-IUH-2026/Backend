@@ -24,6 +24,9 @@ app.use('/internal', internalRoutes);
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'access-service' }));
 
 if (config.nodeEnv !== 'production') {
+  app.get('/api-docs/swagger.json', (_req, res) => {
+    res.json(swaggerSpec);
+  });
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 }
 

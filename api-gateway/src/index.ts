@@ -9,7 +9,7 @@ import { config } from './config';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec, fetchAndMergeSpecs } from './config/swagger';
 
-let unifiedSpec = swaggerSpec;
+let unifiedSpec: Record<string, any> = swaggerSpec;
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 import {
   createJiraBug,
@@ -296,6 +296,12 @@ app.use('/api/automation', createProxyMiddleware({
 }));
 
 // Users admin routes (list/delete patrons with face status)
+// Specific routes first, then catch-all
+app.use('/api/users/me', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,  // /api/users/me → /users/me
+}));
 app.use('/api/users', createProxyMiddleware({
   target: config.services.faceRecognitionApi,
   changeOrigin: true,
@@ -329,6 +335,62 @@ app.get('/', (req, res) => {
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'api-gateway', timestamp: new Date().toISOString() });
 });
+
+// ---- Swagger docs (dev only) — setup swagger.json endpoint early ----
+if (config.nodeEnv !== 'production') {
+  app.get('/api-docs/swagger.json', (_req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.json(unifiedSpec);
+  });
+
+  // Bypass CSP for swagger resources (dev-only)
+  app.use('/api-docs', (_req, res, next) => {
+    res.removeHeader('Content-Security-Policy');
+    next();
+  });
+  app.use('/swagger-ui-dist', (_req, res, next) => {
+    res.removeHeader('Content-Security-Policy');
+    next();
+  });
+
+  // Serve swagger-ui-dist static files (JS, CSS, favicons)
+  const swaggerUiDistPath = require('swagger-ui-dist').getAbsoluteFSPath();
+  app.use('/swagger-ui-dist', express.static(swaggerUiDistPath, { index: false }));
+
+  // Custom working Swagger UI — loads from local swagger-ui-dist, spec from local endpoint
+  app.get('/api-docs', (_req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>IUH Library API — Unified Swagger</title>
+  <link rel="stylesheet" href="/swagger-ui-dist/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="/swagger-ui-dist/swagger-ui-bundle.js" charset="UTF-8"></script>
+  <script src="/swagger-ui-dist/swagger-ui-standalone-preset.js" charset="UTF-8"></script>
+  <script>
+    window.onload = function() {
+      SwaggerUIBundle({
+        url: '/api-docs/swagger.json',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
+        ],
+        plugins: [SwaggerUIBundle.plugins.DownloadUrl],
+        layout: 'StandaloneLayout',
+        validatorUrl: null
+      });
+    };
+  </script>
+</body>
+</html>`);
+  });
+}
 
 // Frontend - proxy all other requests to Next.js dev server
 app.all('/*', (req, res) => {
@@ -647,29 +709,6 @@ app.post('/api/jira/issue/:key/comment', express.json(), async (req, res) => {
   }
 });
 
-// ---- Swagger docs (dev only) ----
-if (config.nodeEnv !== 'production') {
-  fetchAndMergeSpecs()
-    .then((merged) => {
-      unifiedSpec = merged;
-      console.log(`[Swagger] Unified spec loaded — ${Object.keys(merged.paths).length} paths`);
-    })
-    .catch((err) => {
-      console.error('[Swagger] Failed to merge specs, using fallback:', err.message);
-    });
-
-  app.get('/api-docs/swagger.json', (_req, res) => {
-    res.setHeader('Content-Type', 'application/json');
-    res.send(unifiedSpec);
-  });
-
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup({
-    swaggerOptions: {
-      url: '/api-docs/swagger.json',
-    },
-  }));
-}
-
 // ---- 404 handler ----
 app.use((req, res) => {
   res.status(404).json({ error: 'Not Found' });
@@ -681,14 +720,7 @@ app.use(errorHandler);
 const PORT = config.port;
 setupProcessErrorHandlers();
 
-if (config.nodeEnv !== 'test') {
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 API Gateway running on port ${PORT}`);
-    if (config.nodeEnv !== 'production') {
-      console.log('Routing: auth=user-service, borrow=borrow-service, access=access-service, face/camera=face-recognition-service');
-    }
-  });
-
+function setupServerHandlers(server: ReturnType<typeof app.listen>) {
   server.on('upgrade', (req, socket, head) => {
     if (req.url?.startsWith('/api/access/ws')) {
       accessProxy.upgrade(req, socket as any, head);
@@ -700,9 +732,7 @@ if (config.nodeEnv !== 'test') {
     }
     socket.destroy();
   });
-
-  server.keepAliveTimeout = 120000; // 120s keep-alive (up from 60s to accommodate SSE keepalive)
-
+  server.keepAliveTimeout = 120000;
   const shutdown = async () => {
     console.log('SIGTERM received, shutting down gracefully');
     server.close(() => {
@@ -714,9 +744,58 @@ if (config.nodeEnv !== 'test') {
       process.exit(1);
     }, 10000);
   };
-
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
+}
+
+if (config.nodeEnv !== 'test') {
+  // In development: fetch spec, THEN setup swagger, THEN start server
+  // This ensures swagger-ui-init.js has all 134 paths
+  if (config.nodeEnv !== 'production') {
+    fetchAndMergeSpecs()
+      .then((merged) => {
+        unifiedSpec.openapi = merged.openapi;
+        unifiedSpec.info = merged.info;
+        unifiedSpec.servers = merged.servers;
+        unifiedSpec.tags = merged.tags;
+        unifiedSpec.paths = merged.paths;
+        unifiedSpec.components = merged.components;
+        unifiedSpec.security = merged.security;
+        console.log(`[Swagger] Unified spec loaded — ${Object.keys(merged.paths).length} paths`);
+        return merged;
+      })
+      .then(() => {
+        app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(unifiedSpec, {
+          swaggerUrl: '/api-docs/swagger.json',
+        }));
+      })
+      .then(() => {
+        const server = app.listen(PORT, '0.0.0.0', () => {
+          console.log(`🚀 API Gateway running on port ${PORT}`);
+          console.log('Routing: auth=user-service, borrow=borrow-service, access=access-service, face/camera=face-recognition-service');
+        });
+        setupServerHandlers(server);
+      })
+      .catch((err) => {
+        console.error('[Swagger] Failed to load spec:', err instanceof Error ? err.message : String(err));
+        app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(unifiedSpec, {
+          swaggerUrl: '/api-docs/swagger.json',
+        }));
+        const server = app.listen(PORT, '0.0.0.0', () => {
+          console.log(`🚀 API Gateway running on port ${PORT}`);
+        });
+        setupServerHandlers(server);
+      });
+  } else {
+    // production / test: no swagger, just start server
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 API Gateway running on port ${PORT}`);
+      if (config.nodeEnv !== 'production') {
+        console.log('Routing: auth=user-service, borrow=borrow-service, access=access-service, face/camera=face-recognition-service');
+      }
+    });
+    setupServerHandlers(server);
+  }
 }
 
 export { app };

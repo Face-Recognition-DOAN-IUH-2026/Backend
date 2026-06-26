@@ -4,7 +4,7 @@ dotenv.config();
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
-  jwtSecret: process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET || '',
+  jwtSecret: process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || '',
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || '',
   jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
@@ -23,7 +23,7 @@ export const config = {
   borrowServiceUrl: process.env.BORROW_SERVICE_URL || 'http://borrow-service:8000',
   accessServiceUrl: process.env.ACCESS_SERVICE_URL || 'http://access-service:3003',
   notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:3006',
-  faceRecognitionServiceUrl: process.env.FACE_RECOGNITION_SERVICE_URL || 'http://face-recognition-service:5000',
+  faceRecognitionServiceUrl: process.env.FACE_RECOGNITION_SERVICE_URL || 'http://face-recognition-api:8000',
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
     apiKey: process.env.CLOUDINARY_API_KEY || '',

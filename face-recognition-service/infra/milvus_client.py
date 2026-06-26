@@ -30,13 +30,6 @@ class MilvusClient:
         self.client = _MilvusClient(uri=f"http://{host}:{port}")
         self._get_or_create_collection()
         self._ensure_index()
-        self._flush()
-
-    def _flush(self) -> None:
-        try:
-            self.client.flush(collection_name=self.collection_name)
-        except Exception:
-            pass
 
     def _with_retry(self, fn, max_retries=4, base_delay=1.0):
         for attempt in range(max_retries):
@@ -44,7 +37,6 @@ class MilvusClient:
                 return fn()
             except MilvusException as e:
                 if "Timestamp lag too large" in str(e) and attempt < max_retries - 1:
-                    self._flush()
                     delay = base_delay * (2 ** attempt)
                     logger.warning("Milvus timestamp lag, retrying in %.1fs (attempt %d/%d)", delay, attempt + 1, max_retries)
                     time.sleep(delay)

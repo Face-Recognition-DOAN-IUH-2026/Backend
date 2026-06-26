@@ -75,10 +75,24 @@ jest.mock('./src/config', () => ({
 }));
 
 jest.mock('jsonwebtoken', () => ({
-  sign: jest.fn().mockReturnValue('mock-signed-token'),
+  sign: jest.fn().mockImplementation((payload) => {
+    return 'mock.' + Buffer.from(JSON.stringify(payload)).toString('base64url');
+  }),
   verify: jest.fn().mockImplementation((token) => {
     if (token === 'expired-token' || token === 'invalid-token') {
       throw new Error('Token expired or invalid');
+    }
+    try {
+      const parts = token.split('.');
+      if (parts.length >= 2) {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+        if (payload.exp && payload.exp * 1000 < Date.now()) {
+          throw new Error('jwt expired');
+        }
+        return payload;
+      }
+    } catch (e) {
+      if (e && e.message === 'jwt expired') throw e;
     }
     return {
       sub: '11111111-1111-1111-1111-111111111111',

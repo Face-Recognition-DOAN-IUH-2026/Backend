@@ -78,6 +78,8 @@ services:
     environment:
       POSTGRES_URL: postgresql+psycopg://postgres:postgres@postgres:5432/facedb
       POSTGRES_DB: facedb
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - insightface_models:/root/.insightface/models
     depends_on:
@@ -112,6 +114,8 @@ services:
     environment:
       POSTGRES_URL: postgresql+psycopg://postgres:postgres@postgres:5432/facedb
       POSTGRES_DB: facedb
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - insightface_models:/root/.insightface/models
     depends_on:

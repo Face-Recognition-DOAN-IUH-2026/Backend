@@ -89,6 +89,23 @@ export class RedisService {
     const key = `reset_code:${email.toLowerCase()}`;
     await this.client.del(key);
   }
+
+  async cacheFaceStatus(userId: string, enrolled: boolean): Promise<void> {
+    const key = `face_status:${userId}`;
+    await this.client.setex(key, 3600, JSON.stringify(enrolled));
+  }
+
+  async getFaceStatus(userId: string): Promise<boolean | null> {
+    const key = `face_status:${userId}`;
+    const val = await this.client.get(key);
+    if (val === null) return null;
+    return JSON.parse(val);
+  }
+
+  async invalidateFaceStatus(userId: string): Promise<void> {
+    const key = `face_status:${userId}`;
+    await this.client.del(key);
+  }
 }
 
 export function verifyUserDeletedEvent(

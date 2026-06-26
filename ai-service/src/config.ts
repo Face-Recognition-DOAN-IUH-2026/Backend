@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Validate required secrets at startup
-const jwtSecret = process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET;
+const jwtSecret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
 const internalApiKey = process.env.INTERNAL_API_KEY;
 
 if (!jwtSecret) {

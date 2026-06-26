@@ -20,6 +20,9 @@ app.use('/schedules', scheduleRoutes);
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'schedule-service' }));
 
 if (config.nodeEnv !== 'production') {
+  app.get('/api-docs/swagger.json', (_req, res) => {
+    res.json(swaggerSpec);
+  });
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 }
 
