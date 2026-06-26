@@ -127,6 +127,9 @@ describe('Borrow Event Publishing', () => {
       mockRepo.countActiveBorrows = jest.fn().mockResolvedValue(0);
       mockRepo.createSlip = jest.fn().mockResolvedValue({ slip: mockSlip, records: mockRecords });
       mockRepo.setCopyAvailable = jest.fn().mockResolvedValue(undefined);
+      mockRepo.copies.find = jest.fn().mockResolvedValue([mockCopy]);
+      mockRepo.books.find = jest.fn().mockResolvedValue([mockBook]);
+      mockRepo.copies.save = jest.fn().mockResolvedValue(undefined);
 
       const res = await request(app)
         .post('/borrow/staff/slip/confirm')
