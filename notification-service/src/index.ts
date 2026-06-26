@@ -24,6 +24,9 @@ app.use('/notifications', notificationRoutes);
 app.use('/internal', internalRoutes);
 
 if (config.nodeEnv !== 'production') {
+  app.get('/api-docs/swagger.json', (_req, res) => {
+    res.json(swaggerSpec);
+  });
   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 }
 
