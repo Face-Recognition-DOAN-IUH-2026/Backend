@@ -23,6 +23,26 @@ export class FaceServiceClient {
       return false;
     }
   }
+
+  async checkEnrollmentBatch(userIds: string[]): Promise<Record<string, boolean>> {
+    if (userIds.length === 0) return {};
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/patrons/internal/batch-status`,
+        { user_ids: userIds },
+        {
+          headers: { 'x-internal-api-key': config.internalApiKey },
+          timeout: 10000,
+        }
+      );
+      return response.data.statuses || {};
+    } catch (error) {
+      console.error('[FaceServiceClient] Batch enrollment check failed:', error);
+      const fallback: Record<string, boolean> = {};
+      for (const id of userIds) fallback[id] = false;
+      return fallback;
+    }
+  }
 }
 
 export const faceServiceClient = new FaceServiceClient();
