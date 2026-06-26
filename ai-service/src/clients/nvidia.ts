@@ -77,10 +77,12 @@ class NvidiaNIMClient implements LLMClient {
 
         if (response.data.choices && response.data.choices.length > 0) {
           const content = response.data.choices[0].message.content;
-          return content || '';
+          if (content && content.trim() !== '') {
+            return content;
+          }
         }
 
-        throw new Error('No response content from NVIDIA NIM');
+        throw new Error('Empty or invalid response content from NVIDIA NIM');
       } catch (error: any) {
         lastError = error;
 
@@ -161,10 +163,12 @@ class OpenRouterClient implements LLMClient {
 
         if (response.data.choices && response.data.choices.length > 0) {
           const content = response.data.choices[0].message.content;
-          return content || '';
+          if (content && content.trim() !== '') {
+            return content;
+          }
         }
 
-        throw new Error('No response content from OpenRouter');
+        throw new Error('Empty or invalid response content from OpenRouter');
       } catch (error: any) {
         lastError = error;
 
@@ -210,19 +214,19 @@ class FallbackLLMClient implements LLMClient {
   private fallbackName: string;
 
   constructor() {
-    if (config.openRouter.apiKey) {
-      this.primary = new OpenRouterClient();
-      this.primaryName = 'OpenRouter';
-      if (config.nvidiaApiKey) {
-        this.fallback = new NvidiaNIMClient();
-        this.fallbackName = 'NVIDIA NIM';
+    if (config.nvidiaApiKey) {
+      this.primary = new NvidiaNIMClient();
+      this.primaryName = 'NVIDIA NIM';
+      if (config.openRouter.apiKey) {
+        this.fallback = new OpenRouterClient();
+        this.fallbackName = 'OpenRouter';
       } else {
         this.fallback = null;
         this.fallbackName = '';
       }
-    } else if (config.nvidiaApiKey) {
-      this.primary = new NvidiaNIMClient();
-      this.primaryName = 'NVIDIA NIM';
+    } else if (config.openRouter.apiKey) {
+      this.primary = new OpenRouterClient();
+      this.primaryName = 'OpenRouter';
       this.fallback = null;
       this.fallbackName = '';
     } else {

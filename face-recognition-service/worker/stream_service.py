@@ -42,6 +42,8 @@ class CameraStream:
         self._cooldown: float = max(settings.frame_process_interval, 0.5)
         self._lock = threading.Lock()
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self._last_frame: Optional[np.ndarray] = None
+        self._last_frame_lock = threading.Lock()
         self.status = CameraStatus(camera_id, url)
 
     def start(self):
@@ -106,6 +108,8 @@ class CameraStream:
 
     def _run_callback(self, camera_id: str, frame: np.ndarray):
         try:
+            with self._last_frame_lock:
+                self._last_frame = frame.copy()
             self.on_frame(camera_id, frame)
             with self._lock:
                 self.status.connected = True
@@ -154,6 +158,16 @@ class CameraStream:
     def reconnect(self) -> bool:
         logger.info("Camera %s manual reconnect triggered", self.camera_id)
         return self._running
+
+    def get_last_frame_jpeg(self) -> Optional[bytes]:
+        with self._last_frame_lock:
+            if self._last_frame is None:
+                return None
+            frame = self._last_frame.copy()
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if not ok:
+            return None
+        return buf.tobytes()
 
 
 class StreamService:
@@ -211,6 +225,12 @@ class StreamService:
         if not cam:
             return False
         return cam.reconnect()
+
+    def get_last_frame_jpeg(self, camera_id: str) -> Optional[bytes]:
+        cam = self._cameras.get(camera_id)
+        if not cam:
+            return None
+        return cam.get_last_frame_jpeg()
 
 
 stream_service = StreamService()

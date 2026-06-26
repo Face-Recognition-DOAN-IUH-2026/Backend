@@ -286,6 +286,9 @@ export async function processMessage(
           .join('\n');
         finalResponse = toolSummary || 'Đã truy vấn xong.';
       }
+      if (!finalResponse) {
+        finalResponse = 'Xin lỗi, tôi đã gặp sự cố khi xử lý câu hỏi của bạn. Vui lòng thử lại.';
+      }
       return {
         response: finalResponse,
         toolResults: toolResults.length > 0 ? toolResults : undefined,

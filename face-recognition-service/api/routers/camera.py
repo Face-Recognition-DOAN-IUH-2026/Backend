@@ -4,6 +4,7 @@ import logging
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 
 from api.dependencies import get_current_user
 from core.schemas import CameraStatusResponse
@@ -16,6 +17,15 @@ router = APIRouter(prefix="/camera", tags=["camera"])
 def _get_stream_service():
     from worker.stream_service import stream_service
     return stream_service
+
+
+@router.get("/snapshot/{camera_id}")
+async def camera_snapshot(camera_id: str):
+    ss = _get_stream_service()
+    jpeg = ss.get_last_frame_jpeg(camera_id)
+    if jpeg is None:
+        raise HTTPException(status_code=503, detail=f"Camera {camera_id} not connected")
+    return Response(content=jpeg, media_type="image/jpeg")
 
 
 @router.get("/status", response_model=List[CameraStatusResponse])
