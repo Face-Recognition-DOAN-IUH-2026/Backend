@@ -155,31 +155,61 @@ export class AccessService {
   }
 
   async getActive() {
+    const MAX_INSIDE_HOURS = 24;
     const states = await stateRepo().find({
       where: { currentStatus: 'inside' },
       order: { lastEntryAt: 'DESC' },
     });
+
     const userMap = await users.getUsers(states.map((state) => state.patronId));
-    return states
-      .filter((state) => !state.lastEntryCamera || ACTIVE_CAMERA_IDS.includes(state.lastEntryCamera as any))
-      .map((state) => {
-        const user = userMap.get(state.patronId);
-        return {
-          id: state.patronId,
-          patron_id: state.patronId,
-          full_name: user?.fullName || null,
-          fullName: user?.fullName || null,
-          email: user?.email || null,
-          student_code: user?.studentCode || null,
-          studentCode: user?.studentCode || null,
-          current_status: state.currentStatus,
-          currentStatus: state.currentStatus,
-          last_entry_at: state.lastEntryAt,
-          lastEntryAt: state.lastEntryAt,
-          last_entry_camera: state.lastEntryCamera,
-          lastEntryCamera: state.lastEntryCamera,
-        };
+
+    const now = Date.now();
+    const results: any[] = [];
+    const staleIds: string[] = [];
+
+    for (const state of states) {
+      const user = userMap.get(state.patronId);
+
+      if (!user || user.status === 'deleted') {
+        staleIds.push(state.patronId);
+        continue;
+      }
+
+      const entryTime = state.lastEntryAt ? new Date(state.lastEntryAt).getTime() : 0;
+      const hoursInside = (now - entryTime) / (1000 * 60 * 60);
+      if (hoursInside > MAX_INSIDE_HOURS) {
+        staleIds.push(state.patronId);
+        continue;
+      }
+
+      if (state.lastEntryCamera && !ACTIVE_CAMERA_IDS.includes(state.lastEntryCamera as any)) {
+        continue;
+      }
+
+      results.push({
+        id: state.patronId,
+        patron_id: state.patronId,
+        full_name: user.fullName || null,
+        fullName: user.fullName || null,
+        email: user.email || null,
+        student_code: user.studentCode || null,
+        studentCode: user.studentCode || null,
+        current_status: state.currentStatus,
+        currentStatus: state.currentStatus,
+        last_entry_at: state.lastEntryAt,
+        lastEntryAt: state.lastEntryAt,
+        last_entry_camera: state.lastEntryCamera,
+        lastEntryCamera: state.lastEntryCamera,
       });
+    }
+
+    if (staleIds.length > 0) {
+      stateRepo().update(staleIds, { currentStatus: 'outside' }).catch(err => {
+        console.error('[AccessService] Stale patron cleanup failed:', err);
+      });
+    }
+
+    return results;
   }
 
   async getFrequency(days = 7) {
@@ -206,13 +236,22 @@ export class AccessService {
   async getStats() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const [activeCount, todayLogs, totalLogs] = await Promise.all([
+
+    const [activeCount, entryExitCounts] = await Promise.all([
       stateRepo().count({ where: { currentStatus: 'inside' } }),
-      logRepo().find({ where: { accessTime: MoreThanOrEqual(today), cameraId: In([...ACTIVE_CAMERA_IDS]) } }),
-      logRepo().count({ where: { cameraId: In([...ACTIVE_CAMERA_IDS]) } }),
+      logRepo()
+        .createQueryBuilder('log')
+        .select('log.access_type', 'accessType')
+        .addSelect('COUNT(*)', 'count')
+        .where('log.access_time >= :today', { today })
+        .andWhere('log.camera_id IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
+        .groupBy('log.access_type')
+        .getRawMany(),
     ]);
-    const todayEntries = todayLogs.filter((log) => log.accessType === 'entry').length;
-    const todayExits = todayLogs.filter((log) => log.accessType === 'exit').length;
+
+    const todayEntries = Number(entryExitCounts.find(c => c.accessType === 'entry')?.count || 0);
+    const todayExits = Number(entryExitCounts.find(c => c.accessType === 'exit')?.count || 0);
+
     return {
       active_inside: activeCount,
       activeInside: activeCount,
@@ -220,10 +259,8 @@ export class AccessService {
       todayEntries,
       today_exits: todayExits,
       todayExits,
-      today_total: todayLogs.length,
-      todayTotal: todayLogs.length,
-      total_logs: totalLogs,
-      totalLogs,
+      today_total: todayEntries + todayExits,
+      todayTotal: todayEntries + todayExits,
     };
   }
 

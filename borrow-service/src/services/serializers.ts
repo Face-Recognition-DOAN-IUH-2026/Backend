@@ -51,6 +51,9 @@ export function serializeBorrowRecord(record: BorrowRecord) {
     returned_by_email: record.returnedByEmail,
     return_method: record.returnMethod,
     note: record.note,
+    fine_amount: record.fineAmount ?? 0,
+    fine_paid: record.finePaid ?? false,
+    renewal_count: record.renewalCount ?? 0,
     book: record.book ? serializeBook(record.book) : undefined,
   };
 }
@@ -65,6 +68,7 @@ export function serializeBorrowSlip(slip: BorrowSlip) {
     created_by_user_id: slip.createdByUserId,
     created_by_email: slip.createdByEmail,
     total_items: slip.totalItems,
+    note: slip.note,
     created_at: slip.createdAt,
     updated_at: slip.updatedAt,
   };

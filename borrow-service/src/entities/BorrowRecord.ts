@@ -1,7 +1,11 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Book } from './Book';
 import { BookCopy } from './BookCopy';
 
+@Index(['patronId', 'status'])
+@Index(['bookId', 'status'])
+@Index(['borrowAt'])
+@Index(['slipId'])
 @Entity({ name: 'borrow_records' })
 export class BorrowRecord {
   @PrimaryGeneratedColumn('uuid')
@@ -45,6 +49,15 @@ export class BorrowRecord {
 
   @Column({ name: 'note', type: 'text', nullable: true })
   note!: string | null;
+
+  @Column({ name: 'fine_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  fineAmount!: number;
+
+  @Column({ name: 'fine_paid', type: 'boolean', default: false })
+  finePaid!: boolean;
+
+  @Column({ name: 'renewal_count', type: 'int', default: 0 })
+  renewalCount!: number;
 
   @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt!: Date;

@@ -2,14 +2,16 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY api-gateway/package*.json ./
 RUN npm install
 
-COPY . .
+COPY api-gateway/src ./src
+COPY api-gateway/tsconfig.json ./
+COPY shared ./shared
 RUN npx tsc
 
 RUN npm prune --production
 
 EXPOSE 80
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/src/index.js"]

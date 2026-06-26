@@ -42,4 +42,32 @@ router.post('/access/patrons/:id/status', async (req, res, next) => {
   }
 });
 
+router.get('/access/stats', async (_req, res, next) => {
+  try {
+    res.json(await accessService.getStats());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/access/active', async (_req, res, next) => {
+  try {
+    res.json(await accessService.getActive());
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/access/force-exit', async (req, res, next) => {
+  try {
+    const body = z.object({
+      patron_id: z.string(),
+    }).parse(req.body || {});
+    await accessService.setStatus(body.patron_id, 'outside', 'manual_override');
+    res.json({ ok: true, message: 'Đã đánh dấu độc giả đã ra' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

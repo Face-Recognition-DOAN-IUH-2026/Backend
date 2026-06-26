@@ -7,9 +7,12 @@ import { config } from './config';
 import { AppDataSource } from './data-source';
 import accessRoutes from './routes/access.routes';
 import internalRoutes from './routes/internal.routes';
-import { errorHandler } from './middlewares/errorHandler';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
+import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 import { decodeToken } from './middlewares/auth';
 import { realtimeHub } from './realtime/RealtimeHub';
+import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
 
 const app = express();
 
@@ -20,12 +23,20 @@ app.use('/access', accessRoutes);
 app.use('/internal', internalRoutes);
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'access-service' }));
 
+if (config.nodeEnv !== 'production') {
+  app.get('/api-docs/swagger.json', (_req, res) => {
+    res.json(swaggerSpec);
+  });
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
+
 app.use(errorHandler);
 
 async function start() {
   try {
     await AppDataSource.initialize();
     await realtimeHub.connectRedis();
+    await startUserEventSubscriber();
 
     const server = http.createServer(app);
     const wss = new WebSocketServer({ noServer: true });
@@ -51,9 +62,26 @@ async function start() {
       }
     });
 
+    setupProcessErrorHandlers();
     server.listen(config.port, () => {
       console.log(`Access service running on port ${config.port}`);
     });
+
+    const shutdown = async () => {
+      console.log('SIGTERM received, shutting down gracefully');
+      server.close(async () => {
+        await AppDataSource.destroy();
+        console.log('Database connections closed');
+        process.exit(0);
+      });
+      setTimeout(() => {
+        console.error('Forced shutdown after timeout');
+        process.exit(1);
+      }, 10000);
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
   } catch (error) {
     console.error('Failed to start access-service:', error);
     process.exit(1);

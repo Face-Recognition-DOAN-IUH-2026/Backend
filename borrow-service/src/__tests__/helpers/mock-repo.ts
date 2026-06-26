@@ -119,6 +119,7 @@ export type MockBorrowRepository = {
   getActiveBorrow: jest.Mock;
   getActiveBorrowsByPatronAndBook: jest.Mock;
   getActiveBorrowByCopy: jest.Mock;
+  getBookByNormalizedIsbn: jest.Mock;
   getBorrowRecordById: jest.Mock;
   getAllActiveBorrows: jest.Mock;
   getActiveBorrowsByPatron: jest.Mock;
@@ -144,9 +145,12 @@ export type MockBorrowRepository = {
   hasActiveBorrows: jest.Mock;
   createQueryBuilder: jest.Mock;
   copies: {
+    find: jest.Mock;
+    save: jest.Mock;
     createQueryBuilder: jest.Mock;
   };
   books: {
+    find: jest.Mock;
     createQueryBuilder: jest.Mock;
   };
   records: {
@@ -167,6 +171,7 @@ export function createMockBorrowRepository(): MockBorrowRepository {
     getActiveBorrow: jest.fn().mockResolvedValue(null),
     getActiveBorrowsByPatronAndBook: jest.fn().mockResolvedValue([]),
     getActiveBorrowByCopy: jest.fn().mockResolvedValue(null),
+    getBookByNormalizedIsbn: jest.fn().mockResolvedValue(null),
     getBorrowRecordById: jest.fn().mockResolvedValue(null),
     getAllActiveBorrows: jest.fn().mockResolvedValue([]),
     getActiveBorrowsByPatron: jest.fn().mockResolvedValue([]),
@@ -232,14 +237,17 @@ export function createMockBorrowRepository(): MockBorrowRepository {
       getRawOne: jest.fn().mockResolvedValue(null),
     }),
     copies: {
+      find: jest.fn().mockResolvedValue([]),
       createQueryBuilder: jest.fn().mockReturnValue({
         orderBy: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue([]),
       }),
+      save: jest.fn().mockResolvedValue(undefined),
     },
     books: {
+      find: jest.fn().mockResolvedValue([]),
       createQueryBuilder: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnThis(),
         getMany: jest.fn().mockResolvedValue([]),

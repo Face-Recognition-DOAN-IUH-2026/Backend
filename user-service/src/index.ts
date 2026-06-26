@@ -4,7 +4,9 @@ import cors from 'cors';
 import { config } from './config';
 import { AppDataSource } from './data-source';
 import { authRoutes, userRoutes, patronRoutes, internalRoutes } from './routes';
-import { errorHandler } from './middlewares';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
+import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 
 
 const app = express();
@@ -21,6 +23,13 @@ app.use('/users', userRoutes);
 app.use('/patrons', patronRoutes);
 app.use('/internal', internalRoutes);
 
+if (config.nodeEnv !== 'production') {
+  app.get('/api-docs/swagger.json', (_req, res) => {
+    res.json(swaggerSpec);
+  });
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
+
 app.use(errorHandler);
 
 async function start() {
@@ -28,10 +37,27 @@ async function start() {
     await AppDataSource.initialize();
     console.log('Database initialized via TypeORM');
 
-    app.listen(config.port, () => {
+    setupProcessErrorHandlers();
+    const server = app.listen(config.port, () => {
       console.log(`User service running on port ${config.port}`);
       console.log(`Environment: ${config.nodeEnv}`);
     });
+
+    const shutdown = async () => {
+      console.log('SIGTERM received, shutting down gracefully');
+      server.close(async () => {
+        await AppDataSource.destroy();
+        console.log('Database connections closed');
+        process.exit(0);
+      });
+      setTimeout(() => {
+        console.error('Forced shutdown after timeout');
+        process.exit(1);
+      }, 10000);
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
   } catch (error) {
     console.error('Failed to start:', error);
     process.exit(1);

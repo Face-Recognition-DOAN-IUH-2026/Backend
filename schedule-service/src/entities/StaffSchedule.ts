@@ -1,5 +1,6 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
+@Index(['staffId', 'workDate', 'status'])
 @Entity({ name: 'staff_schedules', schema: 'schedule' })
 export class StaffSchedule {
   @PrimaryGeneratedColumn('uuid')

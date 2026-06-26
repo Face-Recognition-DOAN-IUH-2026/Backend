@@ -21,8 +21,8 @@ export function auth(req: AuthRequest, res: Response, next: NextFunction) {
   const token = header.split(' ')[1];
   try {
     const decoded: any = jwt.verify(token, config.jwtSecret, {
-      audience: config.jwtAudience,
-      issuer: config.jwtIssuer,
+      audience: config.jwtAudience || undefined,
+      issuer: config.jwtIssuer || undefined,
     });
     req.user = {
       userId: decoded.sub,

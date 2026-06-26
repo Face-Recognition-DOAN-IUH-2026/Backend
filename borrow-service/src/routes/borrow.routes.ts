@@ -2,17 +2,20 @@ import { Router } from 'express';
 import multer from 'multer';
 import ExcelJS from 'exceljs';
 import { z } from 'zod';
+import { In } from 'typeorm';
 import { AppDataSource } from '../data-source';
 import { auth, AuthRequest, requireRole } from '../middlewares/auth';
 import { HttpError } from '../middlewares/errorHandler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { isPatronInside, getPatronAccessStatus, getPatronRawAccessStatus } from '../clients/AccessServiceClient';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
-import { lookupPatronById, lookupPatronByStudentCode, PatronSummary } from '../clients/UserServiceClient';
+import { lookupPatronById, lookupPatronByStudentCode, lookupPatronsByIds, PatronSummary } from '../clients/UserServiceClient';
 import { serializeBook, serializeBookWithStats, serializeBorrowRecord, serializeBorrowSlip, serializeCopy } from '../services/serializers';
+import { publishEvent } from '../utils/eventPublisher';
 import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
+import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowSlip } from '../entities/BorrowSlip';
 
 const router = Router();
@@ -107,6 +110,18 @@ async function getOrCreateBookAndCopy(repo: BorrowRepository, barcode: string, i
 }
 
 const patronStatusMiddleware = requireRole(['patron', 'admin', 'staff'], 'Chi xem trang thai trong thu vien');
+/**
+ * @swagger
+ * /borrow/patron/inside-status:
+ *   get:
+ *     summary: Get patron inside library status
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Patron access status
+ */
 router.get('/patron/inside-status', patronStatusMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const userId = patronIdFrom(req.user);
@@ -128,7 +143,31 @@ router.get('/patron/inside-status', patronStatusMiddleware, async (req: AuthRequ
   }
 });
 
-router.post('/', requireRole(['patron'], 'Chi doc gia moi co the tu muon sach tren ung dung'), async (req: AuthRequest, res, next) => {
+/**
+ * @swagger
+ * /borrow/:
+ *   post:
+ *     summary: Create a single borrow (barcode scan)
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [barcode]
+ *             properties:
+ *               barcode:
+ *                 type: string
+ *               isbn:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Borrow successful
+ */
+router.post('/', requireRole(['admin', 'staff'], 'Chi nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ barcode: z.string().min(1), isbn: z.string().optional() }).parse(req.body);
     const userId = patronIdFrom(req.user);
@@ -141,32 +180,48 @@ router.post('/', requireRole(['patron'], 'Chi doc gia moi co the tu muon sach tr
     }
     const repo = new BorrowRepository();
     const barcode = body.barcode.trim();
-    let book: Book | null | undefined;
-    let copy: BookCopy | null | undefined;
-    if (body.isbn || (/^\d+$/.test(barcode) && [10, 13].includes(barcode.length))) {
-      const isbn = body.isbn || barcode;
-      book = await repo.getBookByIsbn(isbn);
-      if (!book) {
-        throw new HttpError(404, 'Khong co sach nay trong thu vien');
+
+    const { record, book } = await AppDataSource.transaction(async (manager) => {
+      let book: Book | null | undefined;
+      let copy: BookCopy | null | undefined;
+      if (body.isbn || (/^\d+$/.test(barcode) && [10, 13].includes(barcode.length))) {
+        const isbn = body.isbn || barcode;
+        book = await repo.getBookByIsbn(isbn);
+        if (!book) {
+          throw new HttpError(404, 'Khong co sach nay trong thu vien');
+        } else {
+          copy = await repo.getAvailableCopy(book.id);
+          if (!copy) throw new HttpError(409, 'Sach nay hien da het ban co the muon');
+        }
       } else {
-        copy = await repo.getAvailableCopy(book.id);
-        if (!copy) throw new HttpError(409, 'Sach nay hien da het ban co the muon');
+        copy = await repo.getCopyByBarcode(barcode);
+        if (!copy) throw new HttpError(404, `Khong tim thay ban sao nao voi ma vach ${barcode}`);
+        book = copy.book || await repo.getBookById(copy.bookId);
+        if (!book) throw new HttpError(404, 'Khong tim thay sach');
+        if (!copy.isAvailable) throw new HttpError(409, 'Ban sao nay hien dang duoc muon');
       }
-    } else {
-      copy = await repo.getCopyByBarcode(barcode);
-      if (!copy) throw new HttpError(404, `Khong tim thay ban sao nao voi ma vach ${barcode}`);
-      book = copy.book || await repo.getBookById(copy.bookId);
-      if (!book) throw new HttpError(404, 'Khong tim thay sach');
-      if (!copy.isAvailable) throw new HttpError(409, 'Ban sao nay hien dang duoc muon');
-    }
-    if (!book || !copy) throw new HttpError(404, 'Khong tim thay sach');
-    if (await repo.getActiveBorrow(userId, book.id)) throw new HttpError(409, 'Sach nay ban dang muon');
-    if ((await repo.getOverdueBorrows(userId)).length) throw new HttpError(409, 'Ban co sach qua han. Vui long tra sach truoc khi muon them.');
-    if (await repo.countActiveBorrows(userId) >= config.maxBorrowBooks) throw new HttpError(409, `Da qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
-    await repo.setCopyAvailable(copy, false);
-    const record = await repo.createBorrowRecord(userId, book.id, copy.id, copy.shelfLocation || book.shelfLocation);
-    record.book = book;
-    record.copy = copy;
+      if (!book || !copy) throw new HttpError(404, 'Khong tim thay sach');
+      if (await repo.getActiveBorrow(userId, book.id)) throw new HttpError(409, 'Sach nay ban dang muon');
+      if ((await repo.getOverdueBorrows(userId)).length) throw new HttpError(409, 'Ban co sach qua han. Vui long tra sach truoc khi muon them.');
+      if (await repo.countActiveBorrows(userId) >= config.maxBorrowBooks) throw new HttpError(409, `Da qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
+
+      copy!.isAvailable = false;
+      await manager.save(copy!);
+
+      const record = await repo.createBorrowRecord(userId, book!.id, copy!.id, copy!.shelfLocation || book!.shelfLocation);
+      record.book = book!;
+      record.copy = copy!;
+      return { record, book: book! };
+    });
+
+    publishEvent('book.borrowed', {
+      bookId: book.id,
+      title: book.title,
+      patronId: userId,
+      borrowRecordId: record.id,
+      dueAt: record.dueAt,
+    });
+
     res.json({ status: 'success', message: `Muon sach thanh cong. Vui long tra truoc ngay ${record.dueAt.toLocaleDateString('vi-VN')}.`, record: serializeBorrowRecord(record), book: serializeBook(book) });
   } catch (error) {
     next(error);
@@ -187,6 +242,37 @@ async function lookupBookAndCopy(repo: BorrowRepository, barcode: string, isbn?:
   return { book, copy, reason: null, totalCopies, availableCopies };
 }
 
+/**
+ * @swagger
+ * /borrow/staff/slip/lookup:
+ *   post:
+ *     summary: Lookup items for slip creation
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [patron_id, items]
+ *             properties:
+ *               patron_id:
+ *                 type: string
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     barcode:
+ *                       type: string
+ *                     isbn:
+ *                       type: string
+ *     responses:
+ *       200:
+ *         description: Lookup results
+ */
 router.post('/staff/slip/lookup', requireRole(['admin', 'staff', 'patron'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
@@ -275,6 +361,46 @@ router.post('/staff/slip/lookup', requireRole(['admin', 'staff', 'patron'], 'Chi
   }
 });
 
+/**
+ * @swagger
+ * /borrow/staff/slip/confirm:
+ *   post:
+ *     summary: Confirm and create borrow slip
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [patron_id, items]
+ *             properties:
+ *               patron_id:
+ *                 type: string
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     barcode:
+ *                       type: string
+ *                     isbn:
+ *                       type: string
+ *                     book_id:
+ *                       type: string
+ *                       format: uuid
+ *                     copy_id:
+ *                       type: string
+ *                       format: uuid
+ *               note:
+ *                 type: string
+ *                 nullable: true
+ *     responses:
+ *       200:
+ *         description: Slip created successfully
+ */
 router.post('/staff/slip/confirm', requireRole(['admin', 'staff', 'patron'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
@@ -285,6 +411,7 @@ router.post('/staff/slip/confirm', requireRole(['admin', 'staff', 'patron'], 'Ch
         book_id: z.string().uuid(),
         copy_id: z.string().uuid(),
       })).min(1),
+      note: z.string().nullable().optional(),
     }).parse(req.body);
 
     const repo = new BorrowRepository();
@@ -306,12 +433,24 @@ router.post('/staff/slip/confirm', requireRole(['admin', 'staff', 'patron'], 'Ch
     const copyIds: (string | null)[] = [];
     const shelfLocations: (string | null)[] = [];
 
+    // Batch load all copies and books at once instead of per item
+    const copyIdsToLoad = body.items.map(item => item.copy_id);
+    const bookIdsToLoad = body.items.map(item => item.book_id);
+
+    const [allCopies, allBooks] = await Promise.all([
+      repo.copies.find({ where: { id: In(copyIdsToLoad) } }),
+      repo.books.find({ where: { id: In(bookIdsToLoad) } }),
+    ]);
+
+    const copiesMap = new Map(allCopies.map(c => [c.id, c]));
+    const booksMap = new Map(allBooks.map(b => [b.id, b]));
+
     for (const item of body.items) {
-      const copy = await repo.getCopyById(item.copy_id);
+      const copy = copiesMap.get(item.copy_id);
       if (!copy) throw new HttpError(400, `Ban sao ${item.copy_id} khong ton tai`);
       if (copy.bookId !== item.book_id) throw new HttpError(400, 'Du lieu khong hop le: copy_id khong khop voi book_id');
 
-      const book = await repo.getBookById(item.book_id);
+      const book = booksMap.get(item.book_id);
       if (!book) throw new HttpError(400, `Sach ${item.book_id} khong ton tai`);
 
       if (!copy.isAvailable) throw new HttpError(409, `Ban sao ${item.barcode} dang duoc muon`);
@@ -332,18 +471,43 @@ router.post('/staff/slip/confirm', requireRole(['admin', 'staff', 'patron'], 'Ch
     if (activeCount + bookIds.length > config.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
     if (bookIds.length > config.maxBorrowBooksPerSlip) throw new HttpError(409, `Moi phieu muon toi da ${config.maxBorrowBooksPerSlip} cuon`);
 
-    for (const copyId of copyIds) {
-      if (copyId) {
-        const copy = await repo.getCopyById(copyId);
-        if (copy) await repo.setCopyAvailable(copy, false);
-      }
+    // Batch update copy availability
+    const copiesToUpdate = copyIds.filter(id => id).map(id => copiesMap.get(id!)).filter(Boolean) as BookCopy[];
+    for (const copy of copiesToUpdate) {
+      copy.isAvailable = false;
+      copy.updatedAt = new Date();
+    }
+    if (copiesToUpdate.length > 0) {
+      await repo.copies.save(copiesToUpdate);
     }
 
     const { slip, records } = await repo.createSlip(body.patron_id, bookIds, copyIds, shelfLocations, req.user?.id, req.user?.email);
 
-    for (let i = 0; i < records.length; i += 1) {
-      records[i].book = (await repo.getBookById(bookIds[i]))!;
-      records[i].copy = copyIds[i] ? await repo.getCopyById(copyIds[i]!) : null;
+    // Batch load books and copies for records
+    const recordBookIds = records.map(r => r.bookId);
+    const recordCopyIds = records.filter(r => r.copyId).map(r => r.copyId!);
+
+    const [recordBooks, recordCopies] = await Promise.all([
+      repo.books.find({ where: { id: In(recordBookIds) } }),
+      recordCopyIds.length > 0 ? repo.copies.find({ where: { id: In(recordCopyIds) } }) : [],
+    ]);
+
+    const recordBooksMap = new Map(recordBooks.map(b => [b.id, b]));
+    const recordCopiesMap = new Map(recordCopies.map(c => [c.id, c]));
+
+    for (const record of records) {
+      record.book = recordBooksMap.get(record.bookId)!;
+      record.copy = record.copyId ? recordCopiesMap.get(record.copyId) || null : null;
+    }
+
+    for (const record of records) {
+      publishEvent('book.borrowed', {
+        bookId: record.bookId,
+        title: record.book?.title,
+        patronId: record.patronId,
+        borrowRecordId: record.id,
+        dueAt: record.dueAt,
+      });
     }
 
     res.json({
@@ -357,6 +521,24 @@ router.post('/staff/slip/confirm', requireRole(['admin', 'staff', 'patron'], 'Ch
   }
 });
 
+/**
+ * @swagger
+ * /borrow/barcode/{barcode}:
+ *   get:
+ *     summary: Get active borrow by barcode
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: barcode
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Borrow record
+ */
 router.get('/barcode/:barcode', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra cuu tra sach'), async (req, res, next) => {
   try {
     const repo = new BorrowRepository();
@@ -370,16 +552,32 @@ router.get('/barcode/:barcode', requireRole(['admin', 'staff'], 'Chi quan tri vi
   }
 });
 
+/**
+ * @swagger
+ * /borrow/staff/active-borrowers:
+ *   get:
+ *     summary: List active borrowers grouped by patron
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of active borrowers
+ */
 router.get('/staff/active-borrowers', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem danh sach doc gia dang muon'), async (_req, res, next) => {
   try {
     const repo = new BorrowRepository();
     const records = await repo.getAllActiveBorrows();
     const grouped = new Map<string, typeof records>();
     records.forEach((record) => grouped.set(record.patronId, [...(grouped.get(record.patronId) || []), record]));
+
+    const patronIds = Array.from(grouped.keys());
+    const patronMap = await lookupPatronsByIds(patronIds);
+
     const now = Date.now();
     const items = [];
     for (const [patronId, patronRecords] of grouped.entries()) {
-      const patron = await lookupPatronById(patronId);
+      const patron = patronMap.get(patronId) || null;
       const summary = patron ? patronSummary(patron) : { id: patronId, full_name: null, student_code: patronId, email: null, card_number: null, current_status: null };
       items.push({
         patron: summary,
@@ -396,6 +594,24 @@ router.get('/staff/active-borrowers', requireRole(['admin', 'staff'], 'Chi quan 
   }
 });
 
+/**
+ * @swagger
+ * /borrow/staff/patrons/{student_code}/active:
+ *   get:
+ *     summary: Get active borrows by student code
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: student_code
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Active borrows
+ */
 router.get('/staff/patrons/:student_code/active', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra cuu sach dang muon'), async (req, res, next) => {
   try {
     const raw = await lookupPatronByStudentCode(req.params.student_code);
@@ -417,6 +633,28 @@ router.get('/staff/patrons/:student_code/active', requireRole(['admin', 'staff']
   }
 });
 
+/**
+ * @swagger
+ * /borrow/staff/patrons/{student_code}/history:
+ *   get:
+ *     summary: Get borrow history by student code
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: student_code
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: status_filter
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Borrow history
+ */
 router.get('/staff/patrons/:student_code/history', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra cuu lich su muon sach'), async (req, res, next) => {
   try {
     const raw = await lookupPatronByStudentCode(req.params.student_code);
@@ -432,6 +670,28 @@ router.get('/staff/patrons/:student_code/history', requireRole(['admin', 'staff'
   }
 });
 
+/**
+ * @swagger
+ * /borrow/staff/patrons/id/{patron_id}/history:
+ *   get:
+ *     summary: Get borrow history by patron ID
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: patron_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: status_filter
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Borrow history
+ */
 router.get('/staff/patrons/id/:patron_id/history', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra cuu lich su muon sach'), async (req, res, next) => {
   try {
     const records = await new BorrowRepository().getBorrowsByPatron(req.params.patron_id, req.query.status_filter as string | undefined);
@@ -441,6 +701,18 @@ router.get('/staff/patrons/id/:patron_id/history', requireRole(['admin', 'staff'
   }
 });
 
+/**
+ * @swagger
+ * /borrow/staff/stats:
+ *   get:
+ *     summary: Get borrow statistics
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Borrow stats
+ */
 router.get('/staff/stats', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem thong ke'), async (req, res, next) => {
   try {
     res.json(await new BorrowRepository().getStats());
@@ -449,6 +721,18 @@ router.get('/staff/stats', requireRole(['admin', 'staff'], 'Chi quan tri vien ho
   }
 });
 
+/**
+ * @swagger
+ * /borrow/staff/active:
+ *   get:
+ *     summary: List all active borrows (flat list)
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of active borrows
+ */
 router.get('/staff/active', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem danh sach muon'), async (req, res, next) => {
   try {
     const records = await new BorrowRepository().getAllActiveBorrows();
@@ -458,6 +742,40 @@ router.get('/staff/active', requireRole(['admin', 'staff'], 'Chi quan tri vien h
   }
 });
 
+/**
+ * @swagger
+ * /borrow/staff/slip/create:
+ *   post:
+ *     summary: Create borrow slip (staff web)
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [patron_id, items]
+ *             properties:
+ *               patron_id:
+ *                 type: string
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     barcode:
+ *                       type: string
+ *                     isbn:
+ *                       type: string
+ *               note:
+ *                 type: string
+ *                 nullable: true
+ *     responses:
+ *       200:
+ *         description: Slip created
+ */
 router.post('/staff/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
@@ -466,6 +784,7 @@ router.post('/staff/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri 
         barcode: z.string().min(1),
         isbn: z.string().optional(),
       })).min(1),
+      note: z.string().nullable().optional(),
     }).parse(req.body);
 
     const repo = new BorrowRepository();
@@ -530,11 +849,21 @@ router.post('/staff/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri 
       }
     }
 
-    const { slip, records } = await repo.createSlip(body.patron_id, bookIds, copyIds, shelfLocations, req.user?.id, req.user?.email);
+    const { slip, records } = await repo.createSlip(body.patron_id, bookIds, copyIds, shelfLocations, req.user?.id, req.user?.email, body.note);
 
     for (let i = 0; i < records.length; i += 1) {
       records[i].book = (await repo.getBookById(bookIds[i]))!;
       records[i].copy = copyIds[i] ? await repo.getCopyById(copyIds[i]!) : null;
+    }
+
+    for (const record of records) {
+      publishEvent('book.borrowed', {
+        bookId: record.bookId,
+        title: record.book?.title,
+        patronId: record.patronId,
+        borrowRecordId: record.id,
+        dueAt: record.dueAt,
+      });
     }
 
     res.json({
@@ -547,6 +876,33 @@ router.post('/staff/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri 
   }
 });
 
+/**
+ * @swagger
+ * /borrow/staff-return/by-patron:
+ *   post:
+ *     summary: Return book by student code
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [student_code, barcode_or_isbn]
+ *             properties:
+ *               student_code:
+ *                 type: string
+ *               barcode_or_isbn:
+ *                 type: string
+ *               note:
+ *                 type: string
+ *                 nullable: true
+ *     responses:
+ *       200:
+ *         description: Return successful
+ */
 router.post('/staff-return/by-patron', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ student_code: z.string().min(1), barcode_or_isbn: z.string().min(1), note: z.string().nullable().optional() }).parse(req.body);
@@ -565,12 +921,53 @@ router.post('/staff-return/by-patron', requireRole(['admin', 'staff'], 'Chi quan
     const copy = legacyCopy || (record.copyId ? await repo.getCopyById(record.copyId) : null);
     await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_mobile', body.note);
     if (copy) await repo.setCopyAvailable(copy, true);
+
+    publishEvent('book.returned', {
+      bookId: book.id,
+      title: book.title,
+      patronId: patron.id,
+      barcode: copy?.barcode,
+      fineAmount: record.fineAmount || 0,
+    });
+
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
     next(error);
   }
 });
 
+/**
+ * @swagger
+ * /borrow/staff-return/batch:
+ *   post:
+ *     summary: Batch return books
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [student_code, items]
+ *             properties:
+ *               student_code:
+ *                 type: string
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     barcode_or_isbn:
+ *                       type: string
+ *                     note:
+ *                       type: string
+ *                       nullable: true
+ *     responses:
+ *       200:
+ *         description: Batch return results
+ */
 router.post('/staff-return/batch', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
@@ -608,6 +1005,15 @@ router.post('/staff-return/batch', requireRole(['admin', 'staff'], 'Chi quan tri
         const copy = legacyCopy || (record.copyId ? await repo.getCopyById(record.copyId) : null);
         await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_mobile', item.note || null);
         if (copy) await repo.setCopyAvailable(copy, true);
+
+        publishEvent('book.returned', {
+          bookId: book.id,
+          title: book.title,
+          patronId: patron.id,
+          barcode: copy?.barcode,
+          fineAmount: record.fineAmount || 0,
+        });
+
         results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'success', message: 'Tra sach thanh cong' });
         ok += 1;
       } catch (err) {
@@ -623,6 +1029,34 @@ router.post('/staff-return/batch', requireRole(['admin', 'staff'], 'Chi quan tri
   }
 });
 
+/**
+ * @swagger
+ * /borrow/staff-return/record/{record_id}:
+ *   post:
+ *     summary: Return specific borrow record
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: record_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               note:
+ *                 type: string
+ *                 nullable: true
+ *     responses:
+ *       200:
+ *         description: Return successful
+ */
 router.post('/staff-return/record/:record_id', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ note: z.string().nullable().optional() }).parse(req.body);
@@ -633,12 +1067,46 @@ router.post('/staff-return/record/:record_id', requireRole(['admin', 'staff'], '
     const copy = record.copyId ? await repo.getCopyById(record.copyId) : null;
     await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_web', body.note);
     if (copy) await repo.setCopyAvailable(copy, true);
+
+    publishEvent('book.returned', {
+      bookId: record.bookId,
+      title: record.book?.title,
+      patronId: record.patronId,
+      barcode: copy?.barcode,
+      fineAmount: record.fineAmount || 0,
+    });
+
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
     next(error);
   }
 });
 
+/**
+ * @swagger
+ * /borrow/staff-return:
+ *   post:
+ *     summary: Return book by barcode
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [barcode]
+ *             properties:
+ *               barcode:
+ *                 type: string
+ *               note:
+ *                 type: string
+ *                 nullable: true
+ *     responses:
+ *       200:
+ *         description: Return successful
+ */
 router.post('/staff-return', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ barcode: z.string().min(1), note: z.string().nullable().optional() }).parse(req.body);
@@ -649,12 +1117,38 @@ router.post('/staff-return', requireRole(['admin', 'staff'], 'Chi quan tri vien 
     if (!record) throw new HttpError(404, 'Khong co ban ghi muon dang hoat dong cho ban sao nay');
     await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_web', body.note);
     await repo.setCopyAvailable(copy, true);
+
+    publishEvent('book.returned', {
+      bookId: record.bookId,
+      title: record.book?.title,
+      patronId: record.patronId,
+      barcode: copy.barcode,
+      fineAmount: record.fineAmount || 0,
+    });
+
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
     next(error);
   }
 });
 
+/**
+ * @swagger
+ * /borrow/history:
+ *   get:
+ *     summary: Get patron borrow history
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status_filter
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Borrow history
+ */
 router.get('/history', async (req: AuthRequest, res, next) => {
   try {
     const records = await new BorrowRepository().getBorrowsByPatron(patronIdFrom(req.user), req.query.status_filter as string | undefined);
@@ -664,6 +1158,18 @@ router.get('/history', async (req: AuthRequest, res, next) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow/patron/active:
+ *   get:
+ *     summary: Get patron active borrows
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Active borrows with patron info
+ */
 router.get('/patron/active', async (req: AuthRequest, res, next) => {
   try {
     const patronId = patronIdFrom(req.user);
@@ -683,6 +1189,22 @@ router.get('/patron/active', async (req: AuthRequest, res, next) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow/book/{isbn}:
+ *   get:
+ *     summary: Get book by ISBN
+ *     tags: [Borrow]
+ *     parameters:
+ *       - in: path
+ *         name: isbn
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Book with stats
+ */
 router.get('/book/:isbn', async (req, res, next) => {
   try {
     const repo = new BorrowRepository();
@@ -700,6 +1222,31 @@ router.get('/book/:isbn', async (req, res, next) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow/books:
+ *   get:
+ *     summary: List books with pagination
+ *     tags: [Borrow]
+ *     parameters:
+ *       - in: query
+ *         name: skip
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Paginated book list
+ */
 router.get('/books', async (req, res, next) => {
   try {
     const skip = Number(req.query.skip || 0);
@@ -712,6 +1259,22 @@ router.get('/books', async (req, res, next) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow/books/search:
+ *   get:
+ *     summary: Search books by query
+ *     tags: [Borrow]
+ *     parameters:
+ *       - in: query
+ *         name: q
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Search results
+ */
 router.get('/books/search', async (req, res, next) => {
   try {
     const q = String(req.query.q || '');
@@ -723,6 +1286,16 @@ router.get('/books/search', async (req, res, next) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow/books/template:
+ *   get:
+ *     summary: Download book import Excel template
+ *     tags: [Borrow]
+ *     responses:
+ *       200:
+ *         description: Excel file
+ */
 router.get('/books/template', async (_req, res, next) => {
   try {
     const wb = new ExcelJS.Workbook();
@@ -739,6 +1312,16 @@ router.get('/books/template', async (_req, res, next) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow/books/export:
+ *   get:
+ *     summary: Export all books to Excel
+ *     tags: [Borrow]
+ *     responses:
+ *       200:
+ *         description: Excel file
+ */
 router.get('/books/export', async (_req, res, next) => {
   try {
     const repo = new BorrowRepository();
@@ -746,8 +1329,14 @@ router.get('/books/export', async (_req, res, next) => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Books');
     ws.addRow(['ISBN', 'Title', 'Author', 'Total Copies', 'Available Copies', 'Shelf Location', 'Created At']);
+
+    // Batch load all copy counts at once
+    const bookIds = items.map(b => b.id);
+    const copyCounts = await repo.getCopyCountsByBookIds(bookIds);
+
     for (const book of items) {
-      ws.addRow([book.isbn, book.title, book.author || '', await repo.countCopies(book.id), await repo.countCopies(book.id, true), book.shelfLocation || '', book.createdAt?.toISOString?.() || '']);
+      const counts = copyCounts.get(book.id) || { total: 0, available: 0 };
+      ws.addRow([book.isbn, book.title, book.author || '', counts.total, counts.available, book.shelfLocation || '', book.createdAt?.toISOString?.() || '']);
     }
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=books_export.xlsx');
@@ -758,6 +1347,29 @@ router.get('/books/export', async (_req, res, next) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow/books/import/preview:
+ *   post:
+ *     summary: Preview book import from Excel
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [file]
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Import preview
+ */
 router.post('/books/import/preview', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) throw new HttpError(400, 'Chi ho tro file Excel (.xlsx, .xls)');
@@ -797,6 +1409,29 @@ router.post('/books/import/preview', upload.single('file'), async (req, res, nex
   }
 });
 
+/**
+ * @swagger
+ * /borrow/books/import:
+ *   post:
+ *     summary: Import books from Excel
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [file]
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Import results
+ */
 router.post('/books/import', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) throw new HttpError(400, 'Chi ho tro file Excel (.xlsx, .xls)');
@@ -869,6 +1504,39 @@ const ImportFilteredRowSchema = z.object({
   isbn13: z.string().nullable().optional(),
 });
 
+/**
+ * @swagger
+ * /borrow/books/import/filtered:
+ *   post:
+ *     summary: Import books with metadata (filtered)
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [rows]
+ *             properties:
+ *               rows:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     isbn:
+ *                       type: string
+ *                     quantity:
+ *                       type: integer
+ *                     title:
+ *                       type: string
+ *                     author:
+ *                       type: string
+ *     responses:
+ *       200:
+ *         description: Import results
+ */
 router.post('/books/import/filtered', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the nhap sach'), async (req: AuthRequest, res, next) => {
   try {
     const { rows } = z.object({ rows: z.array(ImportFilteredRowSchema) }).parse(req.body);
@@ -924,6 +1592,35 @@ router.post('/books/import/filtered', requireRole(['admin', 'staff'], 'Chi quan 
   }
 });
 
+/**
+ * @swagger
+ * /borrow/isbn-import/batch:
+ *   post:
+ *     summary: Batch import books by ISBN
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [items]
+ *             properties:
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     isbn:
+ *                       type: string
+ *                     quantity:
+ *                       type: integer
+ *     responses:
+ *       200:
+ *         description: Import results
+ */
 router.post('/isbn-import/batch', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the nhap sach qua ISBN'), async (req: AuthRequest, res, next) => {
   try {
     const { items } = z.object({
@@ -982,6 +1679,26 @@ router.post('/isbn-import/batch', requireRole(['admin', 'staff'], 'Chi quan tri 
   }
 });
 
+/**
+ * @swagger
+ * /borrow/barcodes:
+ *   get:
+ *     summary: List recent barcodes
+ *     tags: [Borrow]
+ *     parameters:
+ *       - in: query
+ *         name: book_id
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: available_only
+ *         schema:
+ *           type: string
+ *           enum: ['true', 'false']
+ *     responses:
+ *       200:
+ *         description: List of barcodes
+ */
 router.get('/barcodes', async (req, res, next) => {
   try {
     const repo = new BorrowRepository();
@@ -995,6 +1712,31 @@ router.get('/barcodes', async (req, res, next) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow/books/delete:
+ *   post:
+ *     summary: Bulk delete books
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [book_ids]
+ *             properties:
+ *               book_ids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *     responses:
+ *       200:
+ *         description: Delete results
+ */
 router.post('/books/delete', requireRole(['admin'], 'Chi quan tri vien moi co the xoa sach'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ book_ids: z.array(z.string().uuid()) }).parse(req.body);
@@ -1007,6 +1749,23 @@ router.post('/books/delete', requireRole(['admin'], 'Chi quan tri vien moi co th
   }
 });
 
+/**
+ * @swagger
+ * /borrow/books/{book_id}:
+ *   get:
+ *     summary: Get book by ID
+ *     tags: [Borrow]
+ *     parameters:
+ *       - in: path
+ *         name: book_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Book with stats
+ */
 router.get('/books/:book_id', async (req, res, next) => {
   try {
     const repo = new BorrowRepository();
@@ -1020,6 +1779,33 @@ router.get('/books/:book_id', async (req, res, next) => {
   }
 });
 
+/**
+ * @swagger
+ * /borrow/books/{book_id}/quantity:
+ *   put:
+ *     summary: Update book copy quantity
+ *     tags: [Borrow]
+ *     parameters:
+ *       - in: path
+ *         name: book_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [quantity]
+ *             properties:
+ *               quantity:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Updated book with stats
+ */
 router.put('/books/:book_id/quantity', async (req, res, next) => {
   try {
     const { quantity } = z.object({ quantity: z.number().int() }).parse(req.body);
@@ -1042,6 +1828,190 @@ router.put('/books/:book_id/quantity', async (req, res, next) => {
     const nextTotal = await repo.countCopies(book.id);
     const nextAvailable = await repo.countCopies(book.id, true);
     res.json(serializeBookWithStats(book, nextTotal, nextAvailable));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /borrow/reserve:
+ *   post:
+ *     summary: Reserve a book
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [book_id]
+ *             properties:
+ *               book_id:
+ *                 type: string
+ *                 format: uuid
+ *     responses:
+ *       200:
+ *         description: Reservation created
+ */
+router.post('/reserve', auth, async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({ book_id: z.string().uuid() }).parse(req.body);
+    const userId = patronIdFrom(req.user);
+    const repo = new BorrowRepository();
+    const book = await repo.getBookById(body.book_id);
+    if (!book) throw new HttpError(404, 'Khong tim thay sach');
+
+    const availableCopies = await repo.countCopies(book.id, true);
+    if (availableCopies > 0) {
+      throw new HttpError(409, 'Sach nay con ban, ban co the muon truc tiep');
+    }
+
+    const reservationRepo = AppDataSource.getRepository('BookReservation');
+    const existing = await reservationRepo.findOne({
+      where: { patronId: userId, bookId: book.id, status: 'pending' },
+    });
+    if (existing) throw new HttpError(409, 'Ban da dat sach nay roi');
+
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + config.reservationExpiryHours);
+
+    const reservation = reservationRepo.create({
+      patronId: userId,
+      bookId: book.id,
+      expiresAt,
+      status: 'pending',
+    });
+    await reservationRepo.save(reservation);
+
+    const queuePosition = await reservationRepo.count({ where: { bookId: book.id, status: 'pending' as any } });
+    res.json({
+      status: 'success',
+      message: `Dat sach thanh cong. Hang doi: #${queuePosition}. Sach se duoc giu ${config.reservationExpiryHours} gio.`,
+      reservation,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /borrow/reservations:
+ *   get:
+ *     summary: Get patron reservations
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of reservations
+ */
+router.get('/reservations', auth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = patronIdFrom(req.user);
+    const reservationRepo = AppDataSource.getRepository('BookReservation');
+    const reservations = await reservationRepo.find({
+      where: { patronId: userId, status: 'pending' as any },
+      relations: { book: true },
+      order: { reservedAt: 'ASC' },
+    });
+    res.json({ items: reservations, total: reservations.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /borrow/reservations/{id}:
+ *   delete:
+ *     summary: Cancel a reservation
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Reservation cancelled
+ */
+router.delete('/reservations/:id', auth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = patronIdFrom(req.user);
+    const reservationRepo = AppDataSource.getRepository('BookReservation');
+    const reservation = await reservationRepo.findOne({
+      where: { id: req.params.id, patronId: userId },
+    });
+    if (!reservation) throw new HttpError(404, 'Khong tim thay dat hang');
+    await reservationRepo.remove(reservation);
+    res.json({ status: 'success', message: 'Huy dat hang thanh cong' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /borrow/renew:
+ *   post:
+ *     summary: Renew a borrow
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [record_id]
+ *             properties:
+ *               record_id:
+ *                 type: string
+ *                 format: uuid
+ *     responses:
+ *       200:
+ *         description: Renewal successful
+ */
+router.post('/renew', auth, async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({ record_id: z.string().uuid() }).parse(req.body);
+    const userId = patronIdFrom(req.user);
+
+    const record = await AppDataSource.getRepository(BorrowRecord).findOne({
+      where: { id: body.record_id, patronId: userId, status: 'borrowed' as any },
+      relations: { book: true, copy: true },
+    });
+    if (!record) throw new HttpError(404, 'Khong tim thay phieu muon');
+    if (record.status !== 'borrowed') throw new HttpError(409, 'Phieu muon nay da het hieu luc');
+    if (record.renewalCount >= config.maxRenewals) {
+      throw new HttpError(409, `Da dat gioi han gia han toi da ${config.maxRenewals} lan`);
+    }
+
+    const now = new Date();
+    if (now > new Date(record.dueAt)) {
+      throw new HttpError(409, 'Khong the gia han sach qua han. Vui long tra sach va muon lai.');
+    }
+
+    const newDueAt = new Date(record.dueAt);
+    newDueAt.setDate(newDueAt.getDate() + config.maxBorrowDays);
+    record.dueAt = newDueAt;
+    record.renewalCount += 1;
+    await AppDataSource.getRepository(BorrowRecord).save(record);
+
+    res.json({
+      status: 'success',
+      message: `Gia han thanh cong. Han tra moi: ${newDueAt.toLocaleDateString('vi-VN')}`,
+      record: serializeBorrowRecord(record),
+    });
   } catch (error) {
     next(error);
   }

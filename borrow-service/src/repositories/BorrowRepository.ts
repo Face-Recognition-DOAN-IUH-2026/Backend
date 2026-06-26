@@ -5,6 +5,7 @@ import { BookCopy } from '../entities/BookCopy';
 import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowSlip } from '../entities/BorrowSlip';
 import { config } from '../config';
+import { calculateOverdueFine } from '../utils/fineCalculator';
 
 export class BorrowRepository {
   books = AppDataSource.getRepository(Book);
@@ -164,14 +165,28 @@ export class BorrowRepository {
   }
 
   async createCopiesBatchWithSkip(bookId: string, barcodes: string[], shelfLocation?: string | null) {
-    const inserted: BookCopy[] = [];
-    for (const barcode of barcodes) {
-      const existing = await this.getCopyByBarcode(barcode);
-      if (!existing) {
-        inserted.push(await this.createCopy(bookId, barcode, shelfLocation));
-      }
-    }
-    return inserted;
+    const normalized = barcodes.map(b => this.normalizeCode(b));
+
+    // Batch check which barcodes already exist
+    const existingCopies = await this.copies.find({
+      where: { barcode: In(normalized) }
+    });
+    const existingBarcodes = new Set(existingCopies.map(c => c.barcode));
+
+    // Filter out existing barcodes
+    const newBarcodes = normalized.filter(b => !existingBarcodes.has(b));
+    if (newBarcodes.length === 0) return [];
+
+    // Batch insert new copies
+    const newCopies = this.copies.create(
+      newBarcodes.map(barcode => ({
+        bookId,
+        barcode,
+        isAvailable: true,
+        shelfLocation: shelfLocation || null,
+      }))
+    );
+    return this.copies.save(newCopies);
   }
 
   async setCopyAvailable(copy: BookCopy, isAvailable: boolean) {
@@ -248,6 +263,14 @@ export class BorrowRepository {
     record.returnMethod = returnMethod || null;
     record.note = note || null;
     record.updatedAt = new Date();
+
+    const now = new Date();
+    if (record.dueAt && now > new Date(record.dueAt)) {
+      const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
+      const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
+      record.fineAmount = calculateOverdueFine(overdueDays);
+    }
+
     const saved = await this.records.save(record);
     if (record.slipId) {
       await this.closeSlipIfComplete(record.slipId);
@@ -344,9 +367,9 @@ export class BorrowRepository {
 
   // === Borrow Slip ===
 
-  async createSlip(patronId: string, bookIds: string[], copyIds: (string | null)[], shelfLocations: (string | null)[], createdByUserId?: string | null, createdByEmail?: string | null) {
+  async createSlip(patronId: string, bookIds: string[], copyIds: (string | null)[], shelfLocations: (string | null)[], createdByUserId?: string | null, createdByEmail?: string | null, note?: string | null) {
     const dueAt = new Date(Date.now() + config.maxBorrowDays * 24 * 60 * 60 * 1000);
-    const slip = this.slips.create({ patronId, dueAt, status: 'active', createdByUserId: createdByUserId || null, createdByEmail: createdByEmail || null, totalItems: bookIds.length });
+    const slip = this.slips.create({ patronId, dueAt, status: 'active', createdByUserId: createdByUserId || null, createdByEmail: createdByEmail || null, totalItems: bookIds.length, note: note || null });
     await this.slips.save(slip);
 
     const records: BorrowRecord[] = [];
@@ -384,5 +407,35 @@ export class BorrowRepository {
 
   getSlipsByPatron(patronId: string) {
     return this.slips.find({ where: { patronId }, order: { createdAt: 'DESC' } });
+  }
+
+  async getCopiesByBarcodes(barcodes: string[]): Promise<Map<string, BookCopy & { book: Book }>> {
+    const copies = await this.copies.find({
+      where: { barcode: In(barcodes) },
+      relations: { book: true },
+    });
+    return new Map(copies.map(c => [c.barcode, c]));
+  }
+
+  async getCopyCountsByBookIds(bookIds: string[]): Promise<Map<string, { total: number; available: number }>> {
+    const result = new Map<string, { total: number; available: number }>();
+
+    const counts = await this.copies
+      .createQueryBuilder('copy')
+      .select('copy.book_id', 'bookId')
+      .addSelect('COUNT(*)', 'total')
+      .addSelect('SUM(CASE WHEN copy.is_available = true THEN 1 ELSE 0 END)', 'available')
+      .where('copy.book_id IN (:...bookIds)', { bookIds })
+      .groupBy('copy.book_id')
+      .getRawMany();
+
+    for (const count of counts) {
+      result.set(count.bookId, {
+        total: parseInt(count.total),
+        available: parseInt(count.available),
+      });
+    }
+
+    return result;
   }
 }

@@ -1,6 +1,7 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Book } from './Book';
 
+@Index(['bookId', 'isAvailable'])
 @Entity({ name: 'book_copies' })
 export class BookCopy {
   @PrimaryGeneratedColumn('uuid')

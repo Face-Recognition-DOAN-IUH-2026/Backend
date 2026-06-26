@@ -97,7 +97,7 @@ export class PatronController {
 
   async create(req: AuthRequest, res: Response) {
     try {
-      const { full_name, student_code, class_name, course, permanent_address, membership_expiry, issue_date, email, phone } = req.body;
+      const { full_name, student_code, class_name, course, permanent_address, membership_expiry, issue_date, identity_number, email, phone } = req.body;
       if (!full_name || !student_code || !membership_expiry) {
         res.status(400).json({ error: 'full_name, student_code, and membership_expiry are required' });
         return;
@@ -110,6 +110,7 @@ export class PatronController {
         permanentAddress: permanent_address,
         membershipExpiry: membership_expiry,
         issueDate: issue_date,
+        identityNumber: identity_number,
         email,
         phone,
       });
@@ -214,6 +215,67 @@ export class PatronController {
         new_password,
       );
       res.json({ success: true, message: 'Password changed successfully' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async restore(req: AuthRequest, res: Response) {
+    try {
+      const id = req.params.id;
+      if (!id || id === 'undefined') {
+        res.status(400).json({ error: 'Invalid patron ID' });
+        return;
+      }
+      const patron = await patronService.restorePatron(id);
+      res.json(patron);
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async suspendCard(req: AuthRequest, res: Response) {
+    try {
+      const id = req.params.id;
+      if (!id || id === 'undefined') {
+        res.status(400).json({ error: 'Invalid patron ID' });
+        return;
+      }
+      const { reason } = req.body;
+      if (!reason) {
+        res.status(400).json({ error: 'Suspension reason is required' });
+        return;
+      }
+      const patron = await patronService.suspendCard(id, reason);
+      res.json(patron);
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async renewCard(req: AuthRequest, res: Response) {
+    try {
+      const id = req.params.id;
+      if (!id || id === 'undefined') {
+        res.status(400).json({ error: 'Invalid patron ID' });
+        return;
+      }
+      const patron = await patronService.renewCard(id);
+      res.json(patron);
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async reportLostCard(req: AuthRequest, res: Response) {
+    try {
+      const id = req.params.id;
+      if (!id || id === 'undefined') {
+        res.status(400).json({ error: 'Invalid patron ID' });
+        return;
+      }
+      const patron = await patronService.reportLostCard(id);
+      res.json(patron);
     } catch (error: any) {
       res.status(error.statusCode || 400).json({ error: error.message });
     }
