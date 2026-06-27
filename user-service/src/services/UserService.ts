@@ -5,7 +5,11 @@ import { PatronRepository } from '../repositories/PatronRepository';
 import { RedisService } from './RedisService';
 import { CloudinaryService } from './CloudinaryService';
 import { UserPublicDto } from '../dto';
-import { NotFoundError, BadRequestError } from '../errors';
+import { NotFoundError, BadRequestError, UnauthorizedError } from '../errors';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import axios from 'axios';
+import { config } from '../config';
 
 export class UserService {
   constructor(
@@ -90,17 +94,25 @@ export class UserService {
     await queryRunner.startTransaction();
 
     try {
-      await queryRunner.manager.update(User, id, { status: 'deleted' as any });
-      await this.redis.publishUserDeleted(id, user.email);
-      await queryRunner.commitTransaction();
+      if (user.status === 'deleted' || user.role === 'admin' || user.role === 'staff') {
+        // Hard delete for already deleted users, or for admin/staff immediately
+        await queryRunner.manager.delete(User, id);
+        await this.redis.publishUserDeleted(id, user.email);
+        await queryRunner.commitTransaction();
+        return { deleted: true, id, soft: false };
+      } else {
+        // Soft delete for active users
+        await queryRunner.manager.update(User, id, { status: 'deleted' as any });
+        await this.redis.publishUserDeleted(id, user.email);
+        await queryRunner.commitTransaction();
+        return { deleted: true, id, soft: true };
+      }
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
     } finally {
       await queryRunner.release();
     }
-
-    return { deleted: true, id, soft: true };
   }
 
   async restoreUser(id: string): Promise<UserPublicDto> {
@@ -115,6 +127,82 @@ export class UserService {
     this.redis.publishUserUpdated(id, user.email);
 
     return this.getUserById(id);
+  }
+
+  async updateProfile(id: string, updates: { fullName?: string; phone?: string; permanentAddress?: string }): Promise<UserPublicDto> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    const updateData: any = {};
+    if (updates.fullName !== undefined) updateData.fullName = updates.fullName;
+    if (updates.phone !== undefined) updateData.phone = updates.phone;
+    if (updates.permanentAddress !== undefined) updateData.permanentAddress = updates.permanentAddress;
+
+    await this.userRepo.update(id, updateData);
+    this.redis.publishUserUpdated(id, user.email);
+    
+    const updatedUser = await this.userRepo.findById(id);
+    return this.toPublic(updatedUser!);
+  }
+
+  async changePassword(id: string, oldPass: string, newPass: string): Promise<void> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    const isMatch = await bcrypt.compare(oldPass, user.passwordHash);
+    if (!isMatch) throw new UnauthorizedError('Mat khau hien tai khong dung');
+
+    const passwordHash = await bcrypt.hash(newPass, 10);
+    await this.userRepo.update(id, { passwordHash });
+  }
+
+  async requestEmailChangeOtp(id: string, newEmail: string): Promise<void> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    const normalizedEmail = newEmail.trim().toLowerCase();
+    const existing = await this.userRepo.findByEmail(normalizedEmail);
+    if (existing && existing.id !== id) {
+      throw new BadRequestError('Email nay da duoc su dung');
+    }
+
+    const code = crypto.randomInt(100000, 999999).toString();
+    // Reusing the password reset or verification code logic in Redis, or create a new one.
+    // We'll create a new redis method or use a generic one if possible, but wait, RedisService might not have setEmailChangeCode.
+    // Let's use setEmailVerificationCode but with the newEmail.
+    await this.redis.setEmailVerificationCode(normalizedEmail, code);
+
+    try {
+      await axios.post(
+        `${config.notificationServiceUrl}/internal/send-email-change`,
+        { toEmail: normalizedEmail, code },
+        { headers: { 'x-internal-api-key': config.internalApiKey } }
+      );
+    } catch (e: any) {
+      console.error('[UserService] Failed to send email change OTP:', e.response?.status, e.response?.data || e.message);
+      throw new Error('Khong the gui email, vui long thu lai sau');
+    }
+  }
+
+  async verifyAndChangeEmail(id: string, newEmail: string, code: string): Promise<void> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    const normalizedEmail = newEmail.trim().toLowerCase();
+    const storedCode = await this.redis.getEmailVerificationCode(normalizedEmail);
+    
+    if (!storedCode || storedCode !== code) {
+      throw new BadRequestError('Ma xac thuc khong hop le hoac da het han');
+    }
+
+    const existing = await this.userRepo.findByEmail(normalizedEmail);
+    if (existing && existing.id !== id) {
+      throw new BadRequestError('Email nay da duoc su dung');
+    }
+
+    await this.userRepo.update(id, { email: normalizedEmail });
+    await this.redis.deleteEmailVerificationCode(normalizedEmail);
+    this.redis.publishUserUpdated(id, normalizedEmail);
   }
 
   private toPublic(user: any): UserPublicDto {

@@ -194,4 +194,33 @@ router.post('/verify-reset-code', (req, res) => authController.verifyResetCode(r
  */
 router.post('/reset-password', (req, res) => authController.resetPassword(req, res));
 
+/**
+ * @swagger
+ * /auth/verify-email:
+ *   post:
+ *     summary: Verify email with OTP
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - code
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ *       400:
+ *         description: Invalid or expired code
+ */
+router.post('/verify-email', (req, res) => authController.verifyEmail(req, res));
+
 export default router;

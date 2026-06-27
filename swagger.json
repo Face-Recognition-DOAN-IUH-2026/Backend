@@ -1,0 +1,1 @@
+{"openapi":"3.0.0","info":{"title":"IUH Library System — Unified API","version":"1.0.0","description":"Unified API documentation for all IUH Library microservices"},"servers":[{"url":"/","description":"Local"}],"components":{"securitySchemes":{"bearerAuth":{"type":"http","scheme":"bearer","bearerFormat":"JWT"}},"schemas":{}},"security":[{"bearerAuth":[]}],"paths":{},"tags":[]}

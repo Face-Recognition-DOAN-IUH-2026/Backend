@@ -9,7 +9,7 @@ import notificationRoutes from './routes/notification.routes';
 import internalRoutes from './routes/internal.routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
-import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
+import { errorHandler } from './middlewares/errorHandler';
 import { decodeToken } from './middlewares/auth';
 import { notificationHub } from './realtime/NotificationHub';
 import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
@@ -67,7 +67,7 @@ async function start() {
       }
     });
 
-    setupProcessErrorHandlers();
+
     server.listen(config.port, () => {
       console.log(`Notification service running on port ${config.port}`);
     });

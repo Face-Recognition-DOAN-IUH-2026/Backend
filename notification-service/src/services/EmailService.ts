@@ -162,4 +162,79 @@ Neu ban khong yeu cau dat lai mat khau, vui long bo qua email nay.
     };
     await this.transporter.sendMail(mailOptions);
   }
+
+  async sendEmailVerificationCode(toEmail: string, code: string): Promise<void> {
+    console.log(`[EmailService] Sending email verification OTP to: ${toEmail}`);
+    const mailOptions = {
+      from: config.smtp.from,
+      to: toEmail,
+      subject: '[ThuVienIUH] Xac thuc email cua ban',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); padding: 24px; text-align: center; border-radius: 12px 12px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">Thu Vien IUH</h1>
+          </div>
+          <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px; border: 1px solid #e0e0e0;">
+            <h2 style="color: #333; margin: 0 0 16px; font-size: 20px;">Xac thuc email</h2>
+            <p style="color: #666; font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
+              Vui long su dung ma OTP duoi day de xac thuc email:
+            </p>
+            <div style="background: #f5f5f5; padding: 24px; text-align: center; border-radius: 8px; margin: 24px 0;">
+              <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #4facfe;">${code}</span>
+            </div>
+            <p style="color: #666; font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
+              Ma xac thuc cua ban co hieu luc trong <strong>15 phut</strong>.
+            </p>
+          </div>
+        </div>
+      `,
+    };
+    await this.transporter.sendMail(mailOptions);
+  }
+
+  async sendEmailChangeCode(toEmail: string, code: string): Promise<void> {
+    console.log(`[EmailService] Sending email change OTP to: ${toEmail}`);
+    const mailOptions = {
+      from: config.smtp.from,
+      to: toEmail,
+      subject: '[ThuVienIUH] Xac thuc doi dia chi email',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); padding: 24px; text-align: center; border-radius: 12px 12px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">Thu Vien IUH</h1>
+          </div>
+          <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px; border: 1px solid #e0e0e0;">
+            <h2 style="color: #333; margin: 0 0 16px; font-size: 20px;">Xac thuc thay doi email</h2>
+            <p style="color: #666; font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
+              Ban dang yeu cau thay doi dia chi email. Vui long su dung ma OTP duoi day de xac nhan dia chi email moi:
+            </p>
+            <div style="background: #f5f5f5; padding: 24px; text-align: center; border-radius: 8px; margin: 24px 0;">
+              <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #4facfe;">${code}</span>
+            </div>
+            <p style="color: #666; font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
+              Ma xac thuc cua ban co hieu luc trong <strong>15 phut</strong>.
+            </p>
+            <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin: 24px 0;">
+              <p style="color: #856404; font-size: 13px; margin: 0;">
+                <strong>Luu y:</strong> Neu ban khong thuc hien yeu cau nay, vui long bo qua email va kiem tra lai bao mat tai khoan.
+              </p>
+            </div>
+            <p style="color: #999; font-size: 12px; text-align: center; margin: 24px 0 0;">
+              Email nay duoc gui tu He thong Thu Vien IUH. Vui long khong tra loi email nay.
+            </p>
+          </div>
+        </div>
+      `,
+      text: `
+THU VIEN IUH - XAC THUC DOI EMAIL
+
+Ma xac thuc cua ban la: ${code}
+
+Ma co hieu luc trong 15 phut.
+
+Neu ban khong thuc hien yeu cau nay, vui long bo qua email.
+      `,
+    };
+    await this.transporter.sendMail(mailOptions);
+  }
 }

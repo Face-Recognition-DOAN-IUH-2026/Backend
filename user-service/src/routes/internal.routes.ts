@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { config } from '../config';
-import { patronService, userRepo } from '../services';
+import { patronService, userService, userRepo } from '../services';
 
 const router = Router();
 
@@ -208,6 +208,14 @@ router.delete('/patrons/:id', async (req, res) => {
     res.json(await patronService.deletePatron(req.params.id));
   } catch (error: any) {
     res.status(error.statusCode || 404).json({ error: error.message || 'Failed to delete patron' });
+  }
+});
+
+router.delete('/users/:id', async (req, res) => {
+  try {
+    res.json(await userService.deleteUser(req.params.id));
+  } catch (error: any) {
+    res.status(error.statusCode || 404).json({ error: error.message || 'Failed to delete user' });
   }
 });
 

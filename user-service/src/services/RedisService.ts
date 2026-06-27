@@ -77,16 +77,31 @@ export class RedisService {
 
   async setPasswordResetCode(email: string, code: string): Promise<void> {
     const key = `reset_code:${email.toLowerCase()}`;
-    await this.client.setex(key, 900, code);
+    await this.client.set(key, code, 'EX', 15 * 60); // 15 mins
   }
 
   async getPasswordResetCode(email: string): Promise<string | null> {
     const key = `reset_code:${email.toLowerCase()}`;
-    return this.client.get(key);
+    return await this.client.get(key);
   }
 
   async deletePasswordResetCode(email: string): Promise<void> {
     const key = `reset_code:${email.toLowerCase()}`;
+    await this.client.del(key);
+  }
+
+  async setEmailVerificationCode(email: string, code: string): Promise<void> {
+    const key = `verify_code:${email.toLowerCase()}`;
+    await this.client.set(key, code, 'EX', 24 * 60 * 60); // 24 hours
+  }
+
+  async getEmailVerificationCode(email: string): Promise<string | null> {
+    const key = `verify_code:${email.toLowerCase()}`;
+    return await this.client.get(key);
+  }
+
+  async deleteEmailVerificationCode(email: string): Promise<void> {
+    const key = `verify_code:${email.toLowerCase()}`;
     await this.client.del(key);
   }
 

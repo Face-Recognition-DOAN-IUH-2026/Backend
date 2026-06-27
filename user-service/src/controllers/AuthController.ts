@@ -120,6 +120,20 @@ export class AuthController {
     }
   }
 
+  async verifyEmail(req: Request, res: Response) {
+    try {
+      const { email, code } = req.body;
+      if (!email || !code) {
+        res.status(400).json({ error: 'Email va ma xac thuc la bat buoc' });
+        return;
+      }
+      await authService.verifyEmail(email, code);
+      res.json({ message: 'Xac thuc email thanh cong' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
 }
 
 export const authController = new AuthController();
