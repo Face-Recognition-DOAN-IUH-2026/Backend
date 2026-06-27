@@ -21,6 +21,11 @@ export class PatronService {
     private redis: RedisService,
   ) {}
 
+  private isValidEmail(email: string): boolean {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
+
   async search(
     query?: string,
     status?: string,
@@ -86,6 +91,10 @@ export class PatronService {
     );
     if (dupCard) throw new ConflictError('Student code already exists');
 
+    if (dto.email && !this.isValidEmail(dto.email)) {
+      throw new BadRequestError('Invalid email format');
+    }
+
     const DEFAULT_PASSWORD = '11111111';
     const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
@@ -114,6 +123,10 @@ export class PatronService {
   async update(id: string, dto: UpdatePatronDto): Promise<PatronPublicDto> {
     const patron = await this.patronRepo.findById(id);
     if (!patron) throw new NotFoundError('Patron not found');
+
+    if (dto.email && !this.isValidEmail(dto.email)) {
+      throw new BadRequestError('Invalid email format');
+    }
 
     const updated = await this.patronRepo.update(id, {
       fullName: dto.fullName,
@@ -146,17 +159,25 @@ export class PatronService {
     await queryRunner.startTransaction();
 
     try {
-      await queryRunner.manager.update(User, id, { status: 'deleted' as any });
-      await this.redis.publishUserDeleted(id, patron.email);
-      await queryRunner.commitTransaction();
+      if (patron.status === 'deleted' || patron.role === 'admin' || patron.role === 'staff') {
+        // Hard delete for already deleted patrons, or for admin/staff immediately
+        await queryRunner.manager.delete(User, id);
+        await this.redis.publishUserDeleted(id, patron.email);
+        await queryRunner.commitTransaction();
+        return { deleted: true, id, soft: false };
+      } else {
+        // Soft delete for active patrons
+        await queryRunner.manager.update(User, id, { status: 'deleted' as any });
+        await this.redis.publishUserDeleted(id, patron.email);
+        await queryRunner.commitTransaction();
+        return { deleted: true, id, soft: true };
+      }
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
     } finally {
       await queryRunner.release();
     }
-
-    return { deleted: true, id, soft: true };
   }
 
   async restorePatron(id: string): Promise<PatronPublicDto> {

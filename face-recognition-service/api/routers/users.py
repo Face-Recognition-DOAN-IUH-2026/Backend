@@ -116,7 +116,7 @@ async def delete_user(
         )
 
     async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
-        resp = await client.delete(f"/internal/patrons/{user_id}", headers=_INTERNAL_HEADERS)
+        resp = await client.delete(f"/internal/users/{user_id}", headers=_INTERNAL_HEADERS)
         if resp.status_code == 404:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

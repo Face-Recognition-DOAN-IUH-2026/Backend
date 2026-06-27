@@ -216,4 +216,126 @@ router.post('/me/avatar', auth, upload.single('avatar'), (req, res) => userContr
  */
 router.delete('/me/avatar', auth, (req, res) => userController.deleteAvatar(req, res));
 
+/**
+ * @swagger
+ * /users/me/profile:
+ *   put:
+ *     summary: Update current user profile
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               full_name:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               permanent_address:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *       401:
+ *         description: Unauthorized
+ */
+router.put('/me/profile', auth, (req, res) => userController.updateProfile(req, res));
+
+/**
+ * @swagger
+ * /users/me/password:
+ *   put:
+ *     summary: Change current user password
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - old_password
+ *               - new_password
+ *             properties:
+ *               old_password:
+ *                 type: string
+ *               new_password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password changed successfully
+ *       400:
+ *         description: Invalid input or incorrect old password
+ *       401:
+ *         description: Unauthorized
+ */
+router.put('/me/password', auth, (req, res) => userController.changePassword(req, res));
+
+/**
+ * @swagger
+ * /users/me/email/request-otp:
+ *   post:
+ *     summary: Request OTP to change email
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - new_email
+ *             properties:
+ *               new_email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: OTP sent
+ *       400:
+ *         description: Email already in use or invalid
+ *       401:
+ *         description: Unauthorized
+ */
+router.post('/me/email/request-otp', auth, (req, res) => userController.requestEmailChangeOtp(req, res));
+
+/**
+ * @swagger
+ * /users/me/email:
+ *   put:
+ *     summary: Verify OTP and change email
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - new_email
+ *               - code
+ *             properties:
+ *               new_email:
+ *                 type: string
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Email changed successfully
+ *       400:
+ *         description: Invalid OTP or email
+ *       401:
+ *         description: Unauthorized
+ */
+router.put('/me/email', auth, (req, res) => userController.verifyAndChangeEmail(req, res));
+
 export default router;

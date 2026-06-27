@@ -75,6 +75,19 @@ router.post('/send-password-reset', async (req, res, next) => {
   }
 });
 
+router.post('/send-email-verification', async (req, res, next) => {
+  try {
+    const { toEmail, code } = z.object({
+      toEmail: z.string().email(),
+      code: z.string().length(6),
+    }).parse(req.body);
+    await emailService.sendEmailVerificationCode(toEmail, code);
+    res.json({ success: true, message: 'Email sent successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/send-overdue-email', async (req, res, next) => {
   try {
     const { toEmail, bookTitle, daysOverdue } = z.object({
@@ -112,6 +125,19 @@ router.post('/send-membership-expiry-email', async (req, res, next) => {
     }).parse(req.body);
     await emailService.sendMembershipExpiryEmail(toEmail, new Date(expiryDate));
     res.json({ success: true, message: 'Membership expiry email sent successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/send-email-change', async (req, res, next) => {
+  try {
+    const { toEmail, code } = z.object({
+      toEmail: z.string().email(),
+      code: z.string().length(6),
+    }).parse(req.body);
+    await emailService.sendEmailChangeCode(toEmail, code);
+    res.json({ success: true, message: 'Email sent successfully' });
   } catch (error) {
     next(error);
   }
