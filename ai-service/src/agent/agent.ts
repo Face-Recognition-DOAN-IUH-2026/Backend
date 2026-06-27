@@ -44,10 +44,11 @@ NGƯỜI DÙNG HIỆN TẠI:
 - Email: ${userContext.email}
 
 QUY TẮC CHO PATRON:
-- LUÔN sử dụng mã thẻ trên khi gọi tool (get_patron_info, get_patron_borrows, etc.)
+- LUÔN sử dụng mã thẻ trên khi gọi tool (get_patron_info, get_patron_borrows, get_patron_history, etc.)
 - CHỈ hiển thị dữ liệu CỦA CHÍNH NGƯỜI DÙNG NÀY
 - KHÔNG BAO GIỜ hiển thị dữ liệu của người khác
-- Khi người dùng hỏi "lịch sử mượn" hoặc "thẻ của tôi", tự động dùng mã thẻ trên`;
+- Khi người dùng hỏi "lịch sử mượn" hoặc "đã mượn những gì", dùng tool get_patron_history
+- Khi người dùng hỏi "đang mượn" hoặc "sách đang giữ", dùng tool get_patron_borrows`;
     } else {
       userContextPrompt = `
 NGƯỜI DÙNG HIỆN TẠI:
@@ -194,6 +195,7 @@ function shouldConfirmWriteOperation(toolName: string | undefined): boolean {
     'get_shelf_location',
     'get_patron_info',
     'get_patron_borrows',
+    'get_patron_history',
     'get_overdue_borrows',
     'get_schedule_today',
     'get_library_hours',
