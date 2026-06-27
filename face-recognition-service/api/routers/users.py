@@ -23,6 +23,8 @@ class UserResponse(BaseModel):
     role: str
     has_face: bool = False
     student_code: str | None = None
+    avatar_url: str | None = None
+    status: str | None = None
 
 
 class UserListResponse(BaseModel):
@@ -65,6 +67,8 @@ async def get_current_user_info(
         role=current_user["role"],
         has_face=has_face,
         student_code=current_user.get("student_code"),
+        avatar_url=current_user.get("avatar_url"),
+        status=current_user.get("status"),
     )
 
 
@@ -97,6 +101,8 @@ async def list_users(
                 full_name=u.get("full_name") or u.get("fullName"),
                 role=u["role"],
                 has_face=str(u["id"]) in face_user_ids,
+                avatar_url=u.get("avatar_url") or u.get("avatarUrl"),
+                status=u.get("status"),
             )
             for u in users_data
         ],
