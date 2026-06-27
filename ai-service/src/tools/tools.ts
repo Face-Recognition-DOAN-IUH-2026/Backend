@@ -68,12 +68,17 @@ export async function getShelfLocation(bookId: string): Promise<ToolResult> {
 }
 
 export async function getPatronInfo(patronId: string): Promise<ToolResult> {
-  const url = `${config.userServiceUrl}/patrons/${encodeURIComponent(patronId)}`;
+  const url = `${config.userServiceUrl}/internal/patrons/${encodeURIComponent(patronId)}`;
   return safeGet<any>(url);
 }
 
 export async function getPatronBorrows(patronId: string): Promise<ToolResult> {
   const url = `${config.borrowServiceUrl}/borrow/internal/patron/${encodeURIComponent(patronId)}`;
+  return safeGet<any>(url);
+}
+
+export async function getPatronHistory(patronId: string): Promise<ToolResult> {
+  const url = `${config.borrowServiceUrl}/borrow/internal/patrons/id/${encodeURIComponent(patronId)}/history`;
   return safeGet<any>(url);
 }
 
@@ -194,6 +199,11 @@ export const tools = [
     name: 'get_patron_borrows',
     description: 'Get all currently borrowed books for a specific patron. Use this to check what books a patron has checked out. Input: patron ID.',
     func: getPatronBorrows,
+  },
+  {
+    name: 'get_patron_history',
+    description: 'Get the full borrow history (including returned books) for a specific patron. Use this when user asks about their borrow history, past books, or reading history. Input: patron ID.',
+    func: getPatronHistory,
   },
   {
     name: 'get_overdue_borrows',

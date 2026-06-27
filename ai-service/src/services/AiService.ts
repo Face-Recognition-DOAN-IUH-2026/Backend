@@ -81,7 +81,7 @@ export class AiService {
 
   async recommendBooks(token: string, studentCode: string): Promise<BookRecommendationResponse> {
     const [historyRes, booksRes] = await Promise.all([
-      this.fetchWithAuth(`${config.borrowServiceUrl}/borrow/staff/patrons/${studentCode}/history`, token),
+      this.fetchInternal(`${config.borrowServiceUrl}/borrow/internal/patrons/${studentCode}/history`),
       this.fetchWithAuth(`${config.borrowServiceUrl}/borrow/books?skip=0&limit=200`, token),
     ]);
 
@@ -110,6 +110,7 @@ export class AiService {
       if (borrowedIsbns.has(bookIsbn)) continue;
       if (b.available_copies != null && b.available_copies <= 0) continue;
 
+      const bookCategory = (b.category || b.categories || '').toLowerCase();
       const reasons: string[] = [];
       let score = 0;
 
@@ -117,11 +118,11 @@ export class AiService {
         score += 30;
         reasons.push(`Độc giả đã từng mượn sách của tác giả "${b.author}"`);
       }
-      if (b.category && borrowedAuthorCategory.has(b.category.toLowerCase())) {
+      if (bookCategory && borrowedAuthorCategory.has(bookCategory)) {
         score += 25;
         reasons.push(`Cùng thể loại với sách đã mượn trước đây`);
       }
-      if (b.category && !borrowedAuthorCategory.has(b.category.toLowerCase())) {
+      if (bookCategory && !borrowedAuthorCategory.has(bookCategory)) {
         score += 5;
       }
       if (b.total_copies && b.available_copies && b.available_copies / b.total_copies > 0.5) {
@@ -151,7 +152,7 @@ export class AiService {
         title: b.title || 'Không rõ tên',
         author: b.author || 'Không rõ',
         cover_url: b.cover_url || '',
-        category: b.category || '',
+        category: b.category || b.categories || '',
         reason: item.reasons.length > 0 ? item.reasons[0] : 'Sách phổ biến trong thư viện',
         relevance_score: Math.min(100, Math.max(10, item.score + (item.reasons.length * 5))),
       });
@@ -171,6 +172,19 @@ export class AiService {
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
         signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) return [];
+      return await res.json();
+    } catch {
+      return [];
+    }
+  }
+
+  private async fetchInternal(url: string): Promise<any> {
+    try {
+      const res = await fetch(url, {
+        headers: { 'x-internal-api-key': config.internalApiKey },
+        signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) return [];
       return await res.json();

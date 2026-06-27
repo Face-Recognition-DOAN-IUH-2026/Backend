@@ -192,7 +192,14 @@ export class BorrowRepository {
   async setCopyAvailable(copy: BookCopy, isAvailable: boolean) {
     copy.isAvailable = isAvailable;
     copy.updatedAt = new Date();
-    return this.copies.save(copy);
+    await this.copies.save(copy);
+
+    const availableCount = await this.copies.count({ where: { bookId: copy.bookId, isAvailable: true } });
+    const book = await this.books.findOne({ where: { id: copy.bookId } });
+    if (book) {
+      book.isAvailable = availableCount > 0;
+      await this.books.save(book);
+    }
   }
 
   async getActiveBorrow(patronId: string, bookId: string) {
