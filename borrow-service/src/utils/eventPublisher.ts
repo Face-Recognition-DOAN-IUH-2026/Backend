@@ -1,5 +1,6 @@
 import Redis from 'ioredis';
 import { config } from '../config';
+import { amqpClient } from '../clients/AmqpClient';
 
 const CHANNEL = 'automation.events';
 
@@ -19,10 +20,20 @@ function getPublisher(): Redis | null {
 
 export async function publishEvent(type: string, payload: Record<string, any>) {
   const pub = getPublisher();
-  if (!pub) return;
+  
+  // Publish to Redis Pub/Sub
+  if (pub) {
+    try {
+      await pub.publish(CHANNEL, JSON.stringify({ type, payload, timestamp: new Date().toISOString() }));
+    } catch (error) {
+      console.error('Failed to publish event to Redis:', type, error);
+    }
+  }
+
+  // Publish to RabbitMQ
   try {
-    await pub.publish(CHANNEL, JSON.stringify({ type, payload, timestamp: new Date().toISOString() }));
-  } catch (error) {
-    console.error('Failed to publish event:', type, error);
+    await amqpClient.publish(type, payload);
+  } catch (error: any) {
+    console.error('Failed to publish event to RabbitMQ:', type, error.message);
   }
 }

@@ -104,3 +104,11 @@ jest.mock('jsonwebtoken', () => ({
     };
   }),
 }));
+
+jest.mock('./src/clients/AmqpClient', () => ({
+  amqpClient: {
+    connect: jest.fn().mockResolvedValue(undefined),
+    publish: jest.fn().mockResolvedValue(true),
+    consume: jest.fn().mockResolvedValue(undefined),
+  },
+}));

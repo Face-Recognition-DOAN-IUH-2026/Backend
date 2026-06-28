@@ -81,6 +81,19 @@ export class AuthService {
     }
 
     const user = await this.userRepo.create(userData);
+    
+    if (user.role === 'patron') {
+      const { amqpClient } = require('../clients/AmqpClient');
+      amqpClient.publish('user.registered', {
+        userId: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        studentCode: user.studentCode,
+        cardNumber: user.cardNumber,
+        status: user.status,
+      }).catch((e: any) => console.error('[AMQP] Failed to publish user.registered:', e.message));
+    }
+
     await this.sendVerificationEmail(user.email);
     return this.buildAuthResponse(user);
   }

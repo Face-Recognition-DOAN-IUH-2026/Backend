@@ -157,7 +157,13 @@ export async function getPatronRawAccessStatus(patronId: string): Promise<Patron
         const data = await res.json() as any;
         const lastEntryAt = data.lastEntryAt || data.last_entry_at || null;
         const inside = (data.currentStatus || data.current_status) === 'inside';
-        return { inside, lastEntryAt, expiresAt: null, source: 'access-service', isExpired: false };
+        return applyExpiry({
+          inside,
+          lastEntryAt,
+          expiresAt: null,
+          source: 'access-service',
+          isExpired: false,
+        });
       }
 
       if (res.status >= 500) {

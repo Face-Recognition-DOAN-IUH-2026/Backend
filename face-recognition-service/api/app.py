@@ -99,6 +99,14 @@ async def lifespan(app: FastAPI):
         import logging
         logging.getLogger("uvicorn").warning("User event listener not started: %s", e)
 
+    _rabbitmq_stop = None
+    try:
+        from infra.rabbitmq_consumer import start_rabbitmq_consumer
+        _rabbitmq_thread, _rabbitmq_stop = start_rabbitmq_consumer()
+    except Exception as e:
+        import logging
+        logging.getLogger("uvicorn").warning("RabbitMQ consumer not started: %s", e)
+
     yield
 
     try:
@@ -117,6 +125,11 @@ async def lifespan(app: FastAPI):
             _user_stop()
         except Exception as e:
             logging.getLogger("uvicorn").error("User event listener stop error: %s", e)
+    if _rabbitmq_stop:
+        try:
+            _rabbitmq_stop()
+        except Exception as e:
+            logging.getLogger("uvicorn").error("RabbitMQ consumer stop error: %s", e)
     await engine.dispose()
     cooldown = CooldownService()
     await cooldown.close()

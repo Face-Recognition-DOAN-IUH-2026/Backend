@@ -36,6 +36,9 @@ async function start() {
   try {
     await AppDataSource.initialize();
     console.log('Database initialized via TypeORM');
+    
+    const { startAmqpSubscriber } = require('./subscribers/AmqpSubscriber');
+    startAmqpSubscriber().catch((e: any) => console.error('[AMQP] Subscriber error:', e.message));
 
 
     const server = app.listen(config.port, () => {

@@ -10,6 +10,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import axios from 'axios';
 import { config } from '../config';
+import { accessServiceClient } from '../clients/AccessServiceClient';
 
 export class UserService {
   constructor(
@@ -74,6 +75,12 @@ export class UserService {
   ): Promise<any> {
     const user = await this.userRepo.findById(id);
     if (!user) throw new NotFoundError('User not found');
+
+    try {
+      await accessServiceClient.setPatronStatus(id, currentStatus, cameraId || undefined);
+    } catch (err) {
+      console.error('[UserService] Failed to sync status to access-service:', err);
+    }
 
     const updates: any = { currentStatus };
     if (currentStatus === 'inside') {

@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { amqpClient } from './AmqpClient';
 
 interface RequestOptions {
   method?: string;
@@ -41,6 +42,22 @@ export const notificationClient = {
     body: string;
     data?: Record<string, any>;
   }) {
+    try {
+      const published = await amqpClient.publish('notification.send', {
+        emailType: 'push',
+        userId: input.userId,
+        type: input.type,
+        title: input.title,
+        body: input.body,
+        data: input.data || {},
+      });
+      if (published) {
+        return { success: true, via: 'rabbitmq' };
+      }
+    } catch (err: any) {
+      console.error('[AMQP] RabbitMQ publish failed, falling back to HTTP sync:', err.message);
+    }
+
     return request(`${config.services.notificationService}/internal/`, {
       method: 'POST',
       body: input,
@@ -56,6 +73,26 @@ export const notificationClient = {
       data?: Record<string, any>;
     }>
   ) {
+    try {
+      let allSuccess = true;
+      for (const input of notifications) {
+        const published = await amqpClient.publish('notification.send', {
+          emailType: 'push',
+          userId: input.userId,
+          type: input.type,
+          title: input.title,
+          body: input.body,
+          data: input.data || {},
+        });
+        if (!published) allSuccess = false;
+      }
+      if (allSuccess) {
+        return { success: true, via: 'rabbitmq', count: notifications.length };
+      }
+    } catch (err: any) {
+      console.error('[AMQP] RabbitMQ bulk publish failed, falling back to HTTP sync:', err.message);
+    }
+
     return request(`${config.services.notificationService}/internal/bulk`, {
       method: 'POST',
       body: { notifications },
@@ -135,6 +172,18 @@ export const userClient = {
 
 export const emailClient = {
   async sendOverdueEmail(toEmail: string, bookTitle: string, daysOverdue: number) {
+    try {
+      const published = await amqpClient.publish('notification.send', {
+        emailType: 'overdue',
+        toEmail,
+        bookTitle,
+        daysOverdue,
+      });
+      if (published) return { success: true, via: 'rabbitmq' };
+    } catch (err: any) {
+      console.error('[AMQP] RabbitMQ publish failed for overdue email:', err.message);
+    }
+
     return request(`${config.services.notificationService}/internal/send-overdue-email`, {
       method: 'POST',
       body: { toEmail, bookTitle, daysOverdue },
@@ -142,6 +191,19 @@ export const emailClient = {
   },
 
   async sendFineEmail(toEmail: string, bookTitle: string, fineAmount: number, daysOverdue: number) {
+    try {
+      const published = await amqpClient.publish('notification.send', {
+        emailType: 'fine',
+        toEmail,
+        bookTitle,
+        fineAmount,
+        daysOverdue,
+      });
+      if (published) return { success: true, via: 'rabbitmq' };
+    } catch (err: any) {
+      console.error('[AMQP] RabbitMQ publish failed for fine email:', err.message);
+    }
+
     return request(`${config.services.notificationService}/internal/send-fine-email`, {
       method: 'POST',
       body: { toEmail, bookTitle, fineAmount, daysOverdue },
@@ -149,6 +211,17 @@ export const emailClient = {
   },
 
   async sendMembershipExpiryEmail(toEmail: string, expiryDate: string) {
+    try {
+      const published = await amqpClient.publish('notification.send', {
+        emailType: 'membership_expiry',
+        toEmail,
+        expiryDate,
+      });
+      if (published) return { success: true, via: 'rabbitmq' };
+    } catch (err: any) {
+      console.error('[AMQP] RabbitMQ publish failed for membership expiry email:', err.message);
+    }
+
     return request(`${config.services.notificationService}/internal/send-membership-expiry-email`, {
       method: 'POST',
       body: { toEmail, expiryDate },

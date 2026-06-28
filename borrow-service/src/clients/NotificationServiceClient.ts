@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { amqpClient } from './AmqpClient';
 
 interface RequestOptions {
   method?: string;
@@ -41,6 +42,23 @@ export const notificationServiceClient = {
     message: string;
     data?: Record<string, any>;
   }) {
+    try {
+      const published = await amqpClient.publish('notification.send', {
+        emailType: 'push',
+        userId: input.userId,
+        type: input.type,
+        title: input.title,
+        body: input.message,
+        data: input.data || {},
+      });
+      if (published) {
+        console.log('[AMQP] Published push notification event to RabbitMQ');
+        return { success: true, via: 'rabbitmq' };
+      }
+    } catch (err: any) {
+      console.error('[AMQP] RabbitMQ publish failed, falling back to HTTP sync:', err.message);
+    }
+
     return request(`${config.notificationServiceUrl}/internal/`, {
       method: 'POST',
       body: input,

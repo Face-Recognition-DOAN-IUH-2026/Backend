@@ -46,4 +46,20 @@ export const accessServiceClient = {
       today_exits: result.today_exits || result.todayExits || 0,
     };
   },
+
+  async getPatronStatus(patronId: string): Promise<string> {
+    try {
+      const result = await request(`${config.accessServiceUrl}/internal/access/patrons/${encodeURIComponent(patronId)}/status`);
+      return result.currentStatus || result.current_status || 'outside';
+    } catch {
+      return 'outside';
+    }
+  },
+
+  async setPatronStatus(patronId: string, status: 'inside' | 'outside', cameraId?: string): Promise<void> {
+    await request(`${config.accessServiceUrl}/internal/access/patrons/${encodeURIComponent(patronId)}/status`, {
+      method: 'POST',
+      body: { current_status: status, camera_id: cameraId || 'manual' },
+    });
+  },
 };

@@ -9,6 +9,7 @@ import borrowRoutes from './routes/borrow.routes';
 import borrowInternalRoutes from './routes/borrow-internal.routes';
 import libraryRoutes from './routes/library.routes';
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
+import { amqpClient } from './clients/AmqpClient';
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
@@ -44,6 +45,7 @@ async function start() {
   try {
     await AppDataSource.initialize();
     setupProcessErrorHandlers();
+    await amqpClient.connect().catch((e) => console.error('[AMQP] Init failed:', e.message));
     const server = app.listen(config.port, '0.0.0.0', () => {
       console.log(`Borrow service running on port ${config.port}`);
     });

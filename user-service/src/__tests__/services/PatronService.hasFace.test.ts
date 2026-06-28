@@ -6,6 +6,12 @@ jest.mock('../../repositories/PatronRepository');
 jest.mock('../../services/RedisService');
 jest.mock('../../clients/BorrowServiceClient');
 jest.mock('../../clients/FaceServiceClient');
+jest.mock('../../clients/AccessServiceClient', () => ({
+  accessServiceClient: {
+    getPatronStatus: jest.fn().mockResolvedValue('outside'),
+    setPatronStatus: jest.fn().mockResolvedValue(undefined),
+  },
+}));
 
 describe('PatronService - hasFace Integration', () => {
   let patronService: PatronService;
