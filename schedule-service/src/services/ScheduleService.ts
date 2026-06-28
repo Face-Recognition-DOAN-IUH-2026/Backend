@@ -1000,7 +1000,8 @@ export class ScheduleService {
       .andWhere('av.dateTo >= :from', { from })
       .getMany();
       
-    const templates = await this.templates.findBy({ isActive: true });
+    // Templates with validFrom/validTo date range filtering
+    const allTemplates = await this.templates.findBy({ isActive: true });
 
     let preferences: StaffShiftPreference[] = [];
     try {
@@ -1021,13 +1022,6 @@ export class ScheduleService {
       staffWorkload.set(s.id, count);
     }
 
-    const templatesByDayOfWeek = new Map<number, typeof templates>();
-    for (const t of templates) {
-      const list = templatesByDayOfWeek.get(t.dayOfWeek) || [];
-      list.push(t);
-      templatesByDayOfWeek.set(t.dayOfWeek, list);
-    }
-
     const preferencesByShiftZone = new Map<string, string[]>();
     for (const p of preferences) {
       const key = `${p.shiftId}:${p.zoneId}`;
@@ -1036,18 +1030,74 @@ export class ScheduleService {
       preferencesByShiftZone.set(key, list);
     }
 
+    // Helper: check if a staff member is on leave for a given workDate
+    const isOnLeave = (staffId: string, workDate: string) =>
+      approvedLeaves.some((a) => a.staffId === staffId && workDate >= a.dateFrom && workDate <= a.dateTo);
+
+    // Helper: check time overlap between two shifts
+    const shiftsOverlap = (shiftA: typeof activeShifts[0], shiftB: typeof activeShifts[0]) =>
+      shiftA.startTime < shiftB.endTime && shiftA.endTime > shiftB.startTime;
+
+    // Helper: get all assignments for a staff on a given day (existing + proposed)
+    const getStaffDayAssignments = (staffId: string, workDate: string) => [
+      ...existingAssignments.filter((a) => a.staffId === staffId && a.workDate === workDate),
+      ...proposed.filter((p) => p.staffId === staffId && p.workDate === workDate),
+    ];
+
     while (cursor <= end) {
       const workDate = localDate(cursor);
       if (workDate < today) { cursor.setDate(cursor.getDate() + 1); continue; }
 
       const dayOfWeek = cursor.getDay();
-      const dayTemplates = templatesByDayOfWeek.get(dayOfWeek) || [];
 
+      // ── PASS 1: Apply templates (hard assignments) ──────────────────────────
+      // Templates that are valid on this specific date and day-of-week
+      const validDayTemplates = allTemplates.filter((t) => {
+        if (t.dayOfWeek !== dayOfWeek) return false;
+        if (t.validFrom && workDate < t.validFrom) return false;
+        if (t.validTo && workDate > t.validTo) return false;
+        return true;
+      });
+
+      for (const t of validDayTemplates) {
+        // Skip if staff member is not found in active staff list
+        if (!staff.find((s) => s.id === t.staffId)) continue;
+        // Skip if shift or zone no longer active
+        if (!activeShifts.find((sh) => sh.id === t.shiftId)) continue;
+        if (!activeZones.find((z) => z.id === t.zoneId)) continue;
+        // Skip if already assigned (existing or already proposed)
+        if (existingAssignments.some((a) => a.staffId === t.staffId && a.workDate === workDate && a.shiftId === t.shiftId && a.zoneId === t.zoneId)) {
+          skipped.push(`template_exists:${t.staffId}:${workDate}`);
+          continue;
+        }
+        if (proposed.some((p) => p.staffId === t.staffId && p.workDate === workDate && p.shiftId === t.shiftId && p.zoneId === t.zoneId)) {
+          continue;
+        }
+        // Skip if on approved leave
+        if (isOnLeave(t.staffId, workDate)) {
+          skipped.push(`template_leave:${t.staffId}:${workDate}`);
+          continue;
+        }
+        // Skip if zone conflict (already on a different zone that day)
+        const dayAssignments = getStaffDayAssignments(t.staffId, workDate);
+        const hasZoneConflict = dayAssignments.some((a) => a.zoneId !== t.zoneId);
+        if (hasZoneConflict) { skipped.push(`template_zone_conflict:${t.staffId}:${workDate}`); continue; }
+        // Skip if shift time overlap
+        const templateShift = activeShifts.find((sh) => sh.id === t.shiftId)!;
+        const hasTimeOverlap = dayAssignments.some((a) => {
+          if (a.shiftId === t.shiftId) return false;
+          const existingShift = activeShifts.find((sh) => sh.id === a.shiftId);
+          return existingShift ? shiftsOverlap(templateShift, existingShift) : false;
+        });
+        if (hasTimeOverlap) { skipped.push(`template_time_overlap:${t.staffId}:${workDate}`); continue; }
+
+        proposed.push({ staffId: t.staffId, shiftId: t.shiftId, zoneId: t.zoneId, workDate, note: `Auto-scheduled (template: ${t.name})` });
+        staffWorkload.set(t.staffId, (staffWorkload.get(t.staffId) || 0) + 1);
+      }
+
+      // ── PASS 2: Fill remaining gaps with scoring algorithm ──────────────────
       const dayStaff = [...staff].sort((a, b) => {
-        const aTmpl = dayTemplates.some((t) => t.staffId === a.id);
-        const bTmpl = dayTemplates.some((t) => t.staffId === b.id);
-        if (aTmpl && !bTmpl) return -1;
-        if (!aTmpl && bTmpl) return 1;
+        // Template-matched staff come first (but for fill pass, templates already applied, so sort by pref then workload)
         const aHasPref = preferences.some((p) => p.staffId === a.id);
         const bHasPref = preferences.some((p) => p.staffId === b.id);
         if (aHasPref && !bHasPref) return -1;
@@ -1060,12 +1110,9 @@ export class ScheduleService {
       for (const shift of activeShifts) {
         for (const zone of activeZones) {
           const existing = existingAssignments.filter((a) => a.workDate === workDate && a.shiftId === shift.id && a.zoneId === zone.id);
-          const needed = (shift.minStaff || 1) - existing.length;
+          const alreadyProposed = proposed.filter((p) => p.workDate === workDate && p.shiftId === shift.id && p.zoneId === zone.id);
+          const needed = (shift.minStaff || 1) - existing.length - alreadyProposed.length;
           if (needed <= 0) continue;
-
-          const templateMatchFirst = dayTemplates
-            .filter((t) => t.shiftId === shift.id && t.zoneId === zone.id)
-            .map((t) => t.staffId);
 
           const prefKey = `${shift.id}:${zone.id}`;
           const prefMatchFirst = preferencesByShiftZone.get(prefKey) || [];
@@ -1073,20 +1120,16 @@ export class ScheduleService {
           let assigned = 0;
           for (const s of dayStaff) {
             if (assigned >= needed) break;
+            // Skip if already assigned via template in this pass
             if (proposed.some((p) => p.staffId === s.id && p.workDate === workDate && p.shiftId === shift.id && p.zoneId === zone.id)) continue;
             if (existing.some((e) => e.staffId === s.id)) continue;
-            if (approvedLeaves.some((a) => a.staffId === s.id && workDate >= a.dateFrom && workDate <= a.dateTo)) {
-              skipped.push(`leave:${s.id}:${workDate}`); continue;
-            }
+            if (isOnLeave(s.id, workDate)) { skipped.push(`leave:${s.id}:${workDate}`); continue; }
 
             const proposedCount = proposed.filter((p) => p.staffId === s.id).length + (staffWorkload.get(s.id) || 0);
             const maxShifts = 5;
             if (proposedCount >= maxShifts) { skipped.push(`max:${s.id}:${workDate}`); continue; }
 
-            const sameDayAssignments = [
-              ...existingAssignments.filter((a) => a.staffId === s.id && a.workDate === workDate),
-              ...proposed.filter((p) => p.staffId === s.id && p.workDate === workDate)
-            ];
+            const sameDayAssignments = getStaffDayAssignments(s.id, workDate);
 
             let hasZoneConflict = false;
             for (const a of sameDayAssignments) {
@@ -1094,11 +1137,12 @@ export class ScheduleService {
             }
             if (hasZoneConflict) { skipped.push(`zone_conflict:${s.id}:${workDate}`); continue; }
 
+            const shiftDef = activeShifts.find((sh) => sh.id === shift.id)!;
             let hasTimeOverlap = false;
             for (const a of sameDayAssignments) {
               if (a.shiftId !== shift.id) {
                 const existingShiftDef = activeShifts.find((sh) => sh.id === a.shiftId);
-                if (existingShiftDef && shift.startTime < existingShiftDef.endTime && shift.endTime > existingShiftDef.startTime) {
+                if (existingShiftDef && shiftsOverlap(shiftDef, existingShiftDef)) {
                   hasTimeOverlap = true;
                   break;
                 }
@@ -1106,11 +1150,8 @@ export class ScheduleService {
             }
             if (hasTimeOverlap) { skipped.push(`time_overlap:${s.id}:${workDate}`); continue; }
 
-            const isTemplate = templateMatchFirst.includes(s.id);
             const isPref = prefMatchFirst.includes(s.id);
-            let note = 'Auto-scheduled';
-            if (isTemplate) note = 'Auto-scheduled (template)';
-            else if (isPref) note = 'Auto-scheduled (preference)';
+            const note = isPref ? 'Auto-scheduled (preference)' : 'Auto-scheduled';
 
             proposed.push({ staffId: s.id, shiftId: shift.id, zoneId: zone.id, workDate, note });
             staffWorkload.set(s.id, (staffWorkload.get(s.id) || 0) + 1);
@@ -1123,6 +1164,7 @@ export class ScheduleService {
     await this.log('auto_schedule.generated', 'staff_schedule', null, actorId, { from, to, proposed: proposed.length, skipped: skipped.length });
     return { proposed, skipped: skipped.length, total: proposed.length };
   }
+
 
   async setGeofence(actorId: string, body: { zoneId: string; latitude: number; longitude: number; radiusMeters?: number; addressHint?: string | null }) {
     const zone = await this.zones.findOneBy({ id: body.zoneId, isActive: true });
