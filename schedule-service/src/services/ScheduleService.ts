@@ -123,7 +123,7 @@ export class ScheduleService {
   }
 
   async listTemplates() {
-    return this.templates.find({ order: { dayOfWeek: 'ASC', createdAt: 'DESC' } });
+    return this.templates.find({ where: { isActive: true }, order: { dayOfWeek: 'ASC', createdAt: 'DESC' } });
   }
 
   async updateTemplate(actorId: string, id: string, body: Partial<StaffScheduleTemplate>) {
