@@ -37,6 +37,20 @@ class SessionStore {
     return this.sessions.get(id);
   }
 
+  getOwned(id: string, patronId: string): ChatSession | undefined {
+    const session = this.sessions.get(id);
+    if (!session) return undefined;
+    if (session.patronId && session.patronId !== patronId) return undefined;
+    return session;
+  }
+
+  findByPatronId(patronId: string): ChatSession | undefined {
+    for (const session of this.sessions.values()) {
+      if (session.patronId === patronId) return session;
+    }
+    return undefined;
+  }
+
   update(id: string, updates: Partial<ChatSession>): ChatSession | undefined {
     const session = this.sessions.get(id);
     if (!session) return undefined;
