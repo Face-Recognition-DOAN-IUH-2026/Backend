@@ -17,8 +17,20 @@ export class ScheduleAuditLog {
   @Column({ type: 'uuid', nullable: true, name: 'actor_id' })
   actorId: string | null;
 
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'actor_name' })
+  actorName: string | null;
+
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, unknown> | null;
+
+  @Column({ type: 'varchar', length: 45, nullable: true, name: 'ip_address' })
+  ipAddress: string | null;
+
+  @Column({ type: 'text', nullable: true, name: 'user_agent' })
+  userAgent: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true, name: 'request_path' })
+  requestPath: string | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

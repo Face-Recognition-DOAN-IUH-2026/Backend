@@ -24,6 +24,7 @@ const shiftSchema = z.object({
   startTime: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
   endTime: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
   minStaff: z.number().int().min(1).optional(),
+  maxStaff: z.number().int().min(1).nullable().optional(),
   isActive: z.boolean().optional(),
 });
 const templateSchema = z.object({
@@ -33,6 +34,8 @@ const templateSchema = z.object({
   zoneId: z.string().uuid(),
   staffId: z.string().uuid(),
   isActive: z.boolean().optional(),
+  validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 const assignmentSchema = z.object({
   staffId: z.string().uuid(),
@@ -86,7 +89,7 @@ router.get('/health', asyncHandler(async (_req, res) => {
  *       200:
  *         description: Staff options retrieved
  */
-router.get('/staff-options', requireRole('admin'), asyncHandler(async (req, res) => {
+router.get('/staff-options', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
   const ids = typeof req.query.ids === 'string'
     ? req.query.ids.split(',').map((id) => id.trim()).filter(Boolean)
     : undefined;
@@ -451,7 +454,11 @@ router.delete('/templates/:id', requireRole('admin'), asyncHandler(async (req, r
  *         description: Preferences retrieved
  */
 router.get('/preferences', requireRole('admin'), asyncHandler(async (req, res) => {
-  res.json(await scheduleService.listPreferences(req.query.staff_id as string | undefined));
+  res.json(await scheduleService.listPreferences(
+    req.query.staff_id as string | undefined,
+    req.query.page ? parseInt(req.query.page as string, 10) : undefined,
+    req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+  ));
 }));
 /**
  * @swagger
@@ -484,8 +491,9 @@ router.get('/preferences', requireRole('admin'), asyncHandler(async (req, res) =
  *         description: Preference created
  */
 router.post('/preferences', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
+  const isAdmin = req.user!.role === 'admin';
   const body = {
-    staffId: req.body.staffId || req.user!.userId,
+    staffId: isAdmin ? (req.body.staffId || req.user!.userId) : req.user!.userId,
     shiftId: req.body.shiftId,
     zoneId: req.body.zoneId,
     priority: req.body.priority,
@@ -587,6 +595,8 @@ router.get('/assignments', requireRole('admin', 'staff'), asyncHandler(async (re
     staffId: req.query.staff_id as string | undefined,
     zoneId: req.query.zone_id as string | undefined,
     status: req.query.status as string | undefined,
+    page: req.query.page ? parseInt(req.query.page as string, 10) : undefined,
+    limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
   }));
 }));
 /**
@@ -1326,6 +1336,111 @@ router.delete('/geofence/:zoneId', requireRole('admin'), asyncHandler(async (req
 
 /**
  * @swagger
+ * /schedules/swaps/{id}/cancel:
+ *   post:
+ *     summary: Cancel a swap request (requester only)
+ *     tags: [Schedule]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Swap cancelled
+ */
+router.post('/swaps/:id/cancel', auth, asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.cancelSwap(req.user!.userId, id));
+}));
+
+/**
+ * @swagger
+ * /schedules/auto-checkout:
+ *   post:
+ *     summary: Auto-checkout stale assignments
+ *     tags: [Schedule]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Auto-checkout completed
+ */
+router.post('/auto-checkout', requireRole('admin'), asyncHandler(async (_req, res) => {
+  res.json(await scheduleService.autoCheckoutStaleAssignments());
+}));
+
+/**
+ * @swagger
+ * /schedules/assignments/{id}/admin-confirm:
+ *   post:
+ *     summary: Admin force-confirm an assignment
+ *     tags: [Schedule]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Assignment confirmed
+ */
+router.post('/assignments/:id/admin-confirm', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.adminConfirmAssignment(req.user!.userId, id));
+}));
+
+const adminAttendanceSchema = z.object({
+  checkInAt: z.string().optional(),
+  checkOutAt: z.string().optional(),
+  status: z.string().optional(),
+});
+/**
+ * @swagger
+ * /schedules/assignments/{id}/attendance:
+ *   put:
+ *     summary: Admin fix attendance for an assignment
+ *     tags: [Schedule]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               checkInAt:
+ *                 type: string
+ *               checkOutAt:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Attendance fixed
+ */
+router.put('/assignments/:id/attendance', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.adminFixAttendance(req.user!.userId, id, adminAttendanceSchema.parse(req.body)));
+}));
+
+/**
+ * @swagger
  * /schedules/audit-logs:
  *   get:
  *     summary: List audit logs
@@ -1336,8 +1451,24 @@ router.delete('/geofence/:zoneId', requireRole('admin'), asyncHandler(async (req
  *       200:
  *         description: Audit logs retrieved
  */
-router.get('/audit-logs', requireRole('admin'), asyncHandler(async (_req, res) => {
-  res.json(await scheduleService.auditLogs());
+router.get('/audit-logs', requireRole('admin'), asyncHandler(async (req, res) => {
+  res.json(await scheduleService.auditLogs({
+    page: req.query.page ? parseInt(req.query.page as string, 10) : undefined,
+    limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+    action: req.query.action as string | undefined,
+    entityType: req.query.entityType as string | undefined,
+    actorId: req.query.actorId as string | undefined,
+    fromDate: req.query.fromDate as string | undefined,
+    toDate: req.query.toDate as string | undefined,
+    search: req.query.search as string | undefined,
+  }));
+}));
+
+router.get('/audit-logs/stats', requireRole('admin'), asyncHandler(async (req, res) => {
+  res.json(await scheduleService.auditStats({
+    fromDate: req.query.fromDate as string | undefined,
+    toDate: req.query.toDate as string | undefined,
+  }));
 }));
 
 export default router;

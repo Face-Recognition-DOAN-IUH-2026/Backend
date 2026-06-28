@@ -14,11 +14,22 @@ function createMockRepo() {
     save: jest.fn().mockImplementation((e) => Promise.resolve(e)),
     create: jest.fn().mockImplementation((e) => e),
     delete: jest.fn().mockResolvedValue(undefined),
-   createQueryBuilder: jest.fn().mockReturnValue({
+    createQueryBuilder: jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      addGroupBy: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue(null),
       getMany: jest.fn().mockResolvedValue([]),
+      getRawMany: jest.fn().mockResolvedValue([]),
+      getCount: jest.fn().mockResolvedValue(0),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
     }),
     preload: jest.fn().mockResolvedValue(null),
     count: jest.fn().mockResolvedValue(0),
@@ -335,10 +346,10 @@ describe('ScheduleService', () => {
       const geofenceRepo = createMockRepo();
 
       scheduleRepo.findOneBy.mockResolvedValue({
-        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: futureDate(1), status: 'scheduled',
+        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: today(), status: 'scheduled',
       });
       attendanceRepo.findOneBy.mockResolvedValue(null);
-      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '08:00', endTime: '12:00' });
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '00:01', endTime: '12:00' });
       geofenceRepo.findOneBy.mockResolvedValue(null);
 
       (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
@@ -363,10 +374,10 @@ describe('ScheduleService', () => {
       const shiftRepo = createMockRepo();
 
       scheduleRepo.findOneBy.mockResolvedValue({
-        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: futureDate(1), status: 'in_progress',
+        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: today(), status: 'in_progress',
       });
       attendanceRepo.findOneBy.mockResolvedValue({ scheduleId: 'a1', checkInAt: new Date() });
-      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '08:00', endTime: '12:00' });
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '00:01', endTime: '12:00' });
 
       (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
         const name = entity?.name || String(entity);
@@ -384,7 +395,7 @@ describe('ScheduleService', () => {
     it('should throw ConflictError if assignment is cancelled', async () => {
       const scheduleRepo = createMockRepo();
       scheduleRepo.findOneBy.mockResolvedValue({
-        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: futureDate(1), status: 'cancelled',
+        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: today(), status: 'cancelled',
       });
 
       (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
@@ -406,10 +417,10 @@ describe('ScheduleService', () => {
       const auditRepo = createMockRepo();
 
       scheduleRepo.findOneBy.mockResolvedValue({
-        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: futureDate(1), status: 'scheduled',
+        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: today(), status: 'scheduled',
       });
       attendanceRepo.findOneBy.mockResolvedValue(null);
-      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '08:00', endTime: '12:00' });
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '00:01', endTime: '12:00' });
       // Geofence at a very different location
       geofenceRepo.findOneBy.mockResolvedValue({ zoneId: 'z1', latitude: 10.0, longitude: 106.0, radiusMeters: 100, isActive: true });
 
@@ -520,6 +531,7 @@ describe('ScheduleService', () => {
     it('should accept swap and swap staffIds on two assignments', async () => {
       const swapRepo = createMockRepo();
       const scheduleRepo = createMockRepo();
+      const shiftRepo = createMockRepo();
 
       swapRepo.findOneBy.mockResolvedValue({
         id: 'sw1', targetStaffId: 'staff-2', requesterStaffId: 'staff-1',
@@ -527,13 +539,22 @@ describe('ScheduleService', () => {
       });
 
       scheduleRepo.findOneBy
-        .mockResolvedValueOnce({ id: 'a1', staffId: 'staff-1' }) // requester assignment
-        .mockResolvedValueOnce({ id: 'a2', staffId: 'staff-2' }); // target assignment
+        .mockResolvedValueOnce({ id: 'a1', staffId: 'staff-1', shiftId: 'sh1', workDate: '2026-07-01' }) // requester assignment
+        .mockResolvedValueOnce({ id: 'a2', staffId: 'staff-2', shiftId: 'sh2', workDate: '2026-07-01' }) // target assignment
+        .mockResolvedValueOnce({ id: 'a1', staffId: 'staff-1', shiftId: 'sh1', workDate: '2026-07-01' }) // inside respondSwap load again
+        .mockResolvedValueOnce({ id: 'a2', staffId: 'staff-2', shiftId: 'sh2', workDate: '2026-07-01' });
+
+      shiftRepo.findOneBy.mockImplementation((query: any) => {
+        if (query.id === 'sh1') return Promise.resolve({ id: 'sh1', isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' });
+        if (query.id === 'sh2') return Promise.resolve({ id: 'sh2', isActive: true, startTime: '13:00', endTime: '17:00', name: 'Afternoon' });
+        return Promise.resolve(null);
+      });
 
       (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
         const name = entity?.name || String(entity);
         if (name === 'ShiftSwap') return swapRepo;
         if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffShift') return shiftRepo;
         if (!mockRepos[name]) mockRepos[name] = createMockRepo();
         return mockRepos[name];
       });
@@ -809,10 +830,12 @@ describe('ScheduleService', () => {
     it('should throw ConflictError if staff has approved leave on assignment date', async () => {
       const bidRepo = createMockRepo();
       const scheduleRepo = createMockRepo();
+      const shiftRepo = createMockRepo();
       const availabilityRepo = createMockRepo();
 
       scheduleRepo.findOneBy.mockResolvedValue({ id: 'a1', status: 'scheduled', workDate: '2026-07-01', shiftId: 'sh1' });
       bidRepo.findOneBy.mockResolvedValue(null);
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' });
       availabilityRepo.createQueryBuilder.mockReturnValue({
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
@@ -823,6 +846,7 @@ describe('ScheduleService', () => {
         const name = entity?.name || String(entity);
         if (name === 'ShiftBid') return bidRepo;
         if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffShift') return shiftRepo;
         if (name === 'StaffAvailabilityRequest') return availabilityRepo;
         if (!mockRepos[name]) mockRepos[name] = createMockRepo();
         return mockRepos[name];
@@ -915,10 +939,16 @@ describe('ScheduleService', () => {
       const zoneRepo = createMockRepo();
 
       const todayStr = today();
-      scheduleRepo.find.mockResolvedValue([
-        { id: 'a1', workDate: todayStr, shiftId: 'sh1', zoneId: 'z1', status: 'scheduled' },
-        { id: 'a2', workDate: todayStr, shiftId: 'sh1', zoneId: 'z1', status: 'scheduled' },
-      ]);
+      scheduleRepo.createQueryBuilder.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        addGroupBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          { shift_id: 'sh1', zone_id: 'z1', work_date: todayStr, assigned: '2' }
+        ]),
+      });
       shiftRepo.findBy.mockResolvedValue([
         { id: 'sh1', minStaff: 2, isActive: true },
       ]);
