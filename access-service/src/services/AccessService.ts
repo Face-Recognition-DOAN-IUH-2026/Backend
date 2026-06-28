@@ -237,17 +237,17 @@ export class AccessService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [activeCount, entryExitCounts] = await Promise.all([
-      stateRepo().count({ where: { currentStatus: 'inside' } }),
-      logRepo()
-        .createQueryBuilder('log')
-        .select('log.access_type', 'accessType')
-        .addSelect('COUNT(*)', 'count')
-        .where('log.access_time >= :today', { today })
-        .andWhere('log.camera_id IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
-        .groupBy('log.access_type')
-        .getRawMany(),
-    ]);
+    const activeList = await this.getActive();
+    const activeCount = activeList.length;
+
+    const entryExitCounts = await logRepo()
+      .createQueryBuilder('log')
+      .select('log.access_type', 'accessType')
+      .addSelect('COUNT(*)', 'count')
+      .where('log.access_time >= :today', { today })
+      .andWhere('log.camera_id IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
+      .groupBy('log.access_type')
+      .getRawMany();
 
     const todayEntries = Number(entryExitCounts.find(c => c.accessType === 'entry')?.count || 0);
     const todayExits = Number(entryExitCounts.find(c => c.accessType === 'exit')?.count || 0);
@@ -267,7 +267,7 @@ export class AccessService {
   async getStatus(patronId: string) {
     let state = await stateRepo().findOne({ where: { patronId } });
     if (!state) {
-      state = stateRepo().create({ patronId, currentStatus: 'inside', lastEntryAt: new Date(), lastEntryCamera: 'auto_created' });
+      state = stateRepo().create({ patronId, currentStatus: 'outside', lastEntryAt: null, lastEntryCamera: null });
       await stateRepo().save(state);
     }
     return {
@@ -305,6 +305,16 @@ export class AccessService {
       state.lastExitCamera = cameraId;
     }
     await stateRepo().save(state);
+
+    const { amqpClient } = require('../clients/AmqpClient');
+    amqpClient.publish('user.access.status_changed', {
+      patronId,
+      currentStatus: state.currentStatus,
+      lastEntryAt: state.lastEntryAt ? state.lastEntryAt.toISOString() : null,
+      lastEntryCamera: state.lastEntryCamera || null,
+      lastExitAt: state.lastExitAt ? state.lastExitAt.toISOString() : null,
+      lastExitCamera: state.lastExitCamera || null,
+    }).catch((err: any) => console.error('[AMQP] Failed to publish status changed event:', err.message));
   }
 }
 

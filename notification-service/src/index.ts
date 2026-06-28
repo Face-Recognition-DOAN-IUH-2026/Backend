@@ -40,6 +40,9 @@ async function start() {
     console.log('Migrations completed');
     await notificationHub.connectRedis();
     await startUserEventSubscriber();
+    
+    const { startAmqpSubscriber } = require('./subscribers/AmqpSubscriber');
+    startAmqpSubscriber().catch((e: any) => console.error('[AMQP] Subscriber error:', e.message));
 
     const server = http.createServer(app);
     const wss = new WebSocketServer({ noServer: true });

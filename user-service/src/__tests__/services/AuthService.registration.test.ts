@@ -36,6 +36,7 @@ describe('AuthService - Registration', () => {
       setPasswordResetCode: jest.fn(),
       getPasswordResetCode: jest.fn(),
       deletePasswordResetCode: jest.fn(),
+      setEmailVerificationCode: jest.fn(),
     } as any;
 
     authService = new AuthService(userRepo, redis);

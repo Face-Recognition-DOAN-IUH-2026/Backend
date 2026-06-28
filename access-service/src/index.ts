@@ -13,6 +13,7 @@ import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler
 import { decodeToken } from './middlewares/auth';
 import { realtimeHub } from './realtime/RealtimeHub';
 import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
+import { amqpClient } from './clients/AmqpClient';
 
 const app = express();
 
@@ -37,6 +38,7 @@ async function start() {
     await AppDataSource.initialize();
     await realtimeHub.connectRedis();
     await startUserEventSubscriber();
+    await amqpClient.connect().catch((e) => console.error('[AMQP] Init failed:', e.message));
 
     const server = http.createServer(app);
     const wss = new WebSocketServer({ noServer: true });

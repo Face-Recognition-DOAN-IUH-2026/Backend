@@ -30,6 +30,28 @@ export class EventBus {
       }
     });
     console.log('EventBus connected to Redis');
+
+    // Connect to RabbitMQ
+    try {
+      const { amqpClient } = require('../clients/AmqpClient');
+      await amqpClient.connect();
+      await amqpClient.consume(
+        'automation_service_queue',
+        ['book.borrowed', 'book.returned'],
+        async (envelope: any) => {
+          console.log(`[AMQP] Automation EventBus received: ${envelope.eventType}`);
+          const event: AutomationEvent = {
+            type: envelope.eventType,
+            payload: envelope.payload,
+            timestamp: envelope.occurredAt,
+          };
+          await this.dispatch(event);
+        }
+      );
+      console.log('EventBus connected to RabbitMQ');
+    } catch (err: any) {
+      console.error('EventBus RabbitMQ init failed:', err.message);
+    }
   }
 
   on(eventType: string, handler: EventHandler) {
@@ -45,6 +67,13 @@ export class EventBus {
     // Redis fan-out
     if (this.publisher) {
       await this.publisher.publish(CHANNEL, JSON.stringify(event));
+    }
+    // RabbitMQ publish
+    try {
+      const { amqpClient } = require('../clients/AmqpClient');
+      await amqpClient.publish(event.type, event.payload);
+    } catch (err: any) {
+      console.error('Failed to publish event to RabbitMQ:', err.message);
     }
   }
 
