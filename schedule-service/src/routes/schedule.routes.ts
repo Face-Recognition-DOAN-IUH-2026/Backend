@@ -640,6 +640,44 @@ router.post('/assignments', requireRole('admin'), asyncHandler(async (req, res) 
 router.post('/assignments/bulk', requireRole('admin'), asyncHandler(async (req, res) => {
   res.status(201).json(await scheduleService.createAssignmentsBulk(req.user!.userId, z.array(assignmentSchema).parse(req.body)));
 }));
+
+/**
+ * @swagger
+ * /schedules/assignments/week:
+ *   delete:
+ *     summary: Cancel all future assignments in a date range (bulk delete week)
+ *     tags: [Schedule]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [from, to]
+ *             properties:
+ *               from:
+ *                 type: string
+ *                 format: date
+ *               to:
+ *                 type: string
+ *                 format: date
+ *               notify:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Assignments cancelled
+ */
+router.delete('/assignments/week', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { from, to, notify } = z.object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    notify: z.boolean().optional().default(false),
+  }).parse(req.body);
+  res.json(await scheduleService.deleteWeekAssignments(req.user!.userId, from, to, notify));
+}));
+
 /**
  * @swagger
  * /schedules/assignments/{id}:

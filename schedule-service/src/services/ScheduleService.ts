@@ -346,6 +346,64 @@ export class ScheduleService {
     return { deleted: true, id };
   }
 
+  async deleteWeekAssignments(actorId: string, from: string, to: string, notify: boolean) {
+    const today = new Date().toISOString().split('T')[0];
+
+    // Only cancel future/today assignments (not past)
+    const effectiveFrom = from < today ? today : from;
+
+    if (effectiveFrom > to) {
+      return { cancelled: 0, skipped: 0, message: 'Không có ca nào trong tương lai để hủy' };
+    }
+
+    const candidates = await this.schedules.find({
+      where: {
+        workDate: Between(effectiveFrom, to),
+        status: Not(In(['cancelled', 'completed'])),
+      },
+    });
+
+    if (!candidates.length) {
+      return { cancelled: 0, skipped: 0, message: 'Không có ca nào cần hủy' };
+    }
+
+    // Cancel all
+    await this.schedules.save(candidates.map((s) => ({
+      ...s,
+      status: 'cancelled',
+      note: s.note ? `${s.note}\nHủy hàng loạt bởi admin` : 'Hủy hàng loạt bởi admin',
+    })));
+
+    await this.cancelPendingBidsAndSwapsForAssignments(candidates.map((s) => s.id), actorId);
+
+    await Promise.all(candidates.map((s) =>
+      this.log('assignment.bulk_cancelled', 'staff_schedule', s.id, actorId, { from, to, notify })
+    ));
+
+    // Publish notification events if requested
+    if (notify) {
+      const shiftIds = [...new Set(candidates.map((s) => s.shiftId!).filter(Boolean))];
+      const shiftList = shiftIds.length ? await this.shifts.findBy({ id: In(shiftIds) }) : [];
+      const shiftNameMap = new Map(shiftList.map((s) => [s.id, s.name]));
+
+      for (const s of candidates) {
+        publishEvent('schedule.changed', {
+          staffId: s.staffId,
+          shiftId: s.shiftId,
+          shiftName: s.shiftId ? shiftNameMap.get(s.shiftId) || null : null,
+          workDate: s.workDate,
+          changeType: 'cancelled',
+        });
+      }
+    }
+
+    return {
+      cancelled: candidates.length,
+      skipped: from < today ? (await this.schedules.count({ where: { workDate: Between(from, today), status: Not(In(['cancelled'])) } })) : 0,
+      message: `Đã hủy ${candidates.length} ca trực${notify ? ' và gửi thông báo' : ''}`,
+    };
+  }
+
   async createAvailability(staffId: string, body: Partial<StaffAvailabilityRequest>) {
     if (body.dateFrom! > body.dateTo!) {
       throw new BadRequestError('dateFrom must be before or equal to dateTo');
