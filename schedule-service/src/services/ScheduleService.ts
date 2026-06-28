@@ -399,6 +399,10 @@ export class ScheduleService {
     if (assignment.status !== 'scheduled') throw new ConflictError('Can only bid on scheduled/open assignments');
     const existing = await this.bids.findOneBy({ staffId, assignmentId, status: 'pending' });
     if (existing) throw new ConflictError('You already have a pending bid for this assignment');
+
+    await this.ensureNoApprovedLeave(staffId, assignment.workDate);
+    await this.ensureNoShiftTimeOverlap(staffId, assignment.shiftId, assignment.workDate);
+
     const bid = await this.bids.save(this.bids.create({ staffId, assignmentId, note: note ?? null, status: 'pending' }));
     await this.log('bid.created', 'shift_bid', bid.id, staffId, { assignmentId });
     return bid;
@@ -434,19 +438,24 @@ export class ScheduleService {
     const bid = await this.bids.findOneBy({ id });
     if (!bid) throw new NotFoundError('Bid not found');
     if (bid.status !== 'pending') throw new ConflictError('Bid is no longer pending');
-    bid.status = action;
-    bid.reviewedBy = actorId;
-    bid.reviewedAt = new Date();
-    await this.bids.save(bid);
+
     if (action === 'approved') {
       const assignment = await this.schedules.findOneBy({ id: bid.assignmentId });
       if (assignment) {
+        await this.ensureNoApprovedLeave(bid.staffId, assignment.workDate);
+        await this.ensureNoShiftTimeOverlap(bid.staffId, assignment.shiftId, assignment.workDate);
+
         assignment.staffId = bid.staffId;
         assignment.assignedBy = actorId;
         assignment.note = assignment.note ? `${assignment.note}\nAssigned via bid` : 'Assigned via bid';
         await this.schedules.save(assignment);
       }
     }
+
+    bid.status = action;
+    bid.reviewedBy = actorId;
+    bid.reviewedAt = new Date();
+    await this.bids.save(bid);
     await this.log(`bid.${action}`, 'shift_bid', id, actorId, { staffId: bid.staffId, assignmentId: bid.assignmentId });
     return bid;
   }
@@ -681,6 +690,12 @@ async autoSchedule(actorId: string, from: string, to: string) {
         const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
         const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         if (distance > gf.radiusMeters) {
+          await this.log('attendance.check_in_failed_geofence', 'staff_schedule', id, staffId, {
+            latitude: lat,
+            longitude: lng,
+            distance: Math.round(distance),
+            allowedRadius: gf.radiusMeters,
+          });
           throw new BadRequestError(`Bạn đang ở ngoài khu vực làm việc (${Math.round(distance)}m > ${gf.radiusMeters}m cho phép)`);
         }
       }
