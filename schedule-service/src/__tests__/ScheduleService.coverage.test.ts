@@ -875,10 +875,14 @@ describe('ScheduleService — Coverage Part 2', () => {
       ]);
       zoneRepo.findBy.mockResolvedValue([{ id: 'z1', isActive: true }]);
       scheduleRepo.find.mockResolvedValue([]);
-      availRepo.find.mockResolvedValue([{
-        id: 'av1', staffId: 'staff-1', status: 'approved',
-        dateFrom: futureDate(1), dateTo: futureDate(1),
-      }]);
+      availRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([{
+          id: 'av1', staffId: 'staff-1', status: 'approved',
+          dateFrom: futureDate(1), dateTo: futureDate(1),
+        }]),
+      });
       templateRepo.findBy.mockResolvedValue([]);
       prefRepo.find.mockResolvedValue([]);
 

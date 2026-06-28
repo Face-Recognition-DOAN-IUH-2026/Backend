@@ -637,6 +637,9 @@ router.get('/assignments', requireRole('admin', 'staff'), asyncHandler(async (re
 router.post('/assignments', requireRole('admin'), asyncHandler(async (req, res) => {
   res.status(201).json(await scheduleService.createAssignment(req.user!.userId, assignmentSchema.parse(req.body)));
 }));
+router.post('/assignments/bulk', requireRole('admin'), asyncHandler(async (req, res) => {
+  res.status(201).json(await scheduleService.createAssignmentsBulk(req.user!.userId, z.array(assignmentSchema).parse(req.body)));
+}));
 /**
  * @swagger
  * /schedules/assignments/{id}:

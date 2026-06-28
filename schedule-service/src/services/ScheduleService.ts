@@ -350,6 +350,18 @@ export class ScheduleService {
     if (body.dateFrom! > body.dateTo!) {
       throw new BadRequestError('dateFrom must be before or equal to dateTo');
     }
+
+    const overlapping = await this.availability.createQueryBuilder('av')
+      .where('av.staffId = :staffId', { staffId })
+      .andWhere('av.status IN (:...statuses)', { statuses: ['pending', 'approved'] })
+      .andWhere('av.dateFrom <= :dateTo', { dateTo: body.dateTo })
+      .andWhere('av.dateTo >= :dateFrom', { dateFrom: body.dateFrom })
+      .getOne();
+
+    if (overlapping) {
+      throw new ConflictError('Bạn đã có đơn đăng ký bận hoặc nghỉ phép trùng lặp trong khoảng thời gian này');
+    }
+
     const item = await this.availability.save(this.availability.create({
       staffId,
       dateFrom: body.dateFrom!,
@@ -801,7 +813,121 @@ export class ScheduleService {
     return swap;
   }
 
-async autoSchedule(actorId: string, from: string, to: string) {
+  async createAssignmentsBulk(actorId: string, items: Array<{ staffId: string; shiftId: string; zoneId: string; workDate: string; note?: string | null; status?: string }>) {
+    for (const item of items) {
+      await this.ensureScheduleTargets(item.staffId, item.shiftId, item.zoneId);
+      await this.ensureFutureDate(item.workDate);
+      await this.ensureNoApprovedLeave(item.staffId, item.workDate);
+    }
+
+    const shiftIds = [...new Set(items.map(item => item.shiftId))];
+    const activeShifts = await this.shifts.find({ where: { id: In(shiftIds), isActive: true } });
+    const shiftMap = new Map(activeShifts.map(s => [s.id, s]));
+
+    const staffIds = [...new Set(items.map(item => item.staffId))];
+    const dates = [...new Set(items.map(item => item.workDate))];
+    const dbAssignments = await this.schedules.find({
+      where: {
+        staffId: In(staffIds),
+        workDate: In(dates),
+        status: Not(In(['cancelled']))
+      }
+    });
+
+    const currentAssignments = [...dbAssignments];
+
+    const uniqueShiftZoneDates = [...new Set(items.map(item => `${item.shiftId}:${item.zoneId}:${item.workDate}`))];
+    const capacityCounts = new Map<string, number>();
+    for (const key of uniqueShiftZoneDates) {
+      const [shId, zId, wDate] = key.split(':');
+      const count = await this.schedules.count({
+        where: { shiftId: shId, zoneId: zId, workDate: wDate, status: Not(In(['cancelled', 'completed'])) }
+      });
+      capacityCounts.set(key, count);
+    }
+
+    const savedEntities: StaffSchedule[] = [];
+
+    return await AppDataSource.transaction(async (transactionalEntityManager) => {
+      for (const item of items) {
+        const key = `${item.shiftId}:${item.zoneId}:${item.workDate}`;
+        const shiftDef = shiftMap.get(item.shiftId);
+        if (!shiftDef) throw new NotFoundError('Shift not found or inactive');
+
+        if (shiftDef.maxStaff) {
+          const currentCount = capacityCounts.get(key) || 0;
+          if (currentCount >= shiftDef.maxStaff) {
+            throw new ConflictError(`Shift is already at maximum capacity (${shiftDef.maxStaff} staff)`);
+          }
+          capacityCounts.set(key, currentCount + 1);
+        }
+
+        const hasDuplicate = currentAssignments.some(
+          a => a.staffId === item.staffId &&
+               a.shiftId === item.shiftId &&
+               a.zoneId === item.zoneId &&
+               a.workDate === item.workDate &&
+               a.status !== 'completed'
+        );
+        if (hasDuplicate) throw new ConflictError('Staff is already assigned to this shift and zone');
+
+        const dayAssignments = currentAssignments.filter(a => a.staffId === item.staffId && a.workDate === item.workDate);
+        const hasZoneConflict = dayAssignments.some(a => a.zoneId !== item.zoneId);
+        if (hasZoneConflict) throw new ConflictError('Staff is already assigned to a different zone on this day');
+
+        const newStart = shiftDef.startTime.slice(0, 5);
+        const newEnd = shiftDef.endTime.slice(0, 5);
+        for (const existingAsg of dayAssignments) {
+          if (existingAsg.shiftId === item.shiftId) continue;
+          
+          let existShift = shiftMap.get(existingAsg.shiftId);
+          if (!existShift) {
+            const found = await this.shifts.findOneBy({ id: existingAsg.shiftId });
+            if (found) {
+              existShift = found;
+              shiftMap.set(found.id, found);
+            }
+          }
+          if (!existShift) continue;
+
+          const existStart = existShift.startTime.slice(0, 5);
+          const existEnd = existShift.endTime.slice(0, 5);
+          if (newStart < existEnd && newEnd > existStart) {
+            throw new ConflictError(
+              `New shift time (${newStart}-${newEnd}) overlaps with existing shift "${existShift.name}" (${existStart}-${existEnd}) on ${item.workDate}`,
+            );
+          }
+        }
+
+        const schedule = transactionalEntityManager.create(StaffSchedule, {
+          staffId: item.staffId,
+          shiftId: item.shiftId,
+          zoneId: item.zoneId,
+          workDate: item.workDate,
+          assignedBy: actorId || null,
+          note: item.note ?? null,
+          status: item.status ?? 'scheduled',
+        });
+        const saved = await transactionalEntityManager.save(StaffSchedule, schedule);
+        savedEntities.push(saved);
+
+        currentAssignments.push(saved);
+
+        await this.log('assignment.created', 'staff_schedule', saved.id, actorId, item);
+
+        publishEvent('schedule.changed', {
+          staffId: item.staffId,
+          shiftId: item.shiftId,
+          shiftName: shiftDef.name || null,
+          workDate: item.workDate,
+          changeType: 'assigned',
+        });
+      }
+      return savedEntities;
+    });
+  }
+
+  async autoSchedule(actorId: string, from: string, to: string) {
     const activeShifts = await this.shifts.findBy({ isActive: true });
     const activeZones = await this.zones.findBy({ isActive: true });
     const allStaff = await this.users.listStaff();
@@ -809,7 +935,13 @@ async autoSchedule(actorId: string, from: string, to: string) {
     const existingAssignments = await this.schedules.find({
       where: { workDate: Between(from, to), status: Not(In(['cancelled'])) },
     });
-    const approvedLeaves = await this.availability.find({ where: { status: 'approved' } });
+    
+    const approvedLeaves = await this.availability.createQueryBuilder('av')
+      .where('av.status = :status', { status: 'approved' })
+      .andWhere('av.dateFrom <= :to', { to })
+      .andWhere('av.dateTo >= :from', { from })
+      .getMany();
+      
     const templates = await this.templates.findBy({ isActive: true });
 
     let preferences: StaffShiftPreference[] = [];
@@ -883,27 +1015,31 @@ async autoSchedule(actorId: string, from: string, to: string) {
           let assigned = 0;
           for (const s of dayStaff) {
             if (assigned >= needed) break;
-            if (proposed.some((p) => p.staffId === s.id && p.workDate === workDate)) continue;
+            if (proposed.some((p) => p.staffId === s.id && p.workDate === workDate && p.shiftId === shift.id && p.zoneId === zone.id)) continue;
             if (existing.some((e) => e.staffId === s.id)) continue;
             if (approvedLeaves.some((a) => a.staffId === s.id && workDate >= a.dateFrom && workDate <= a.dateTo)) {
               skipped.push(`leave:${s.id}:${workDate}`); continue;
             }
 
             const proposedCount = proposed.filter((p) => p.staffId === s.id).length + (staffWorkload.get(s.id) || 0);
-            const maxShifts = shift.maxStaff || 10;
+            const maxShifts = 5;
             if (proposedCount >= maxShifts) { skipped.push(`max:${s.id}:${workDate}`); continue; }
 
-            const sameDayProposed = proposed.filter((p) => p.staffId === s.id && p.workDate === workDate);
+            const sameDayAssignments = [
+              ...existingAssignments.filter((a) => a.staffId === s.id && a.workDate === workDate),
+              ...proposed.filter((p) => p.staffId === s.id && p.workDate === workDate)
+            ];
+
             let hasZoneConflict = false;
-            for (const p of sameDayProposed) {
-              if (p.zoneId !== zone.id) { hasZoneConflict = true; break; }
+            for (const a of sameDayAssignments) {
+              if (a.zoneId !== zone.id) { hasZoneConflict = true; break; }
             }
             if (hasZoneConflict) { skipped.push(`zone_conflict:${s.id}:${workDate}`); continue; }
 
             let hasTimeOverlap = false;
-            for (const p of sameDayProposed) {
-              if (p.shiftId !== shift.id) {
-                const existingShiftDef = activeShifts.find((sh) => sh.id === p.shiftId);
+            for (const a of sameDayAssignments) {
+              if (a.shiftId !== shift.id) {
+                const existingShiftDef = activeShifts.find((sh) => sh.id === a.shiftId);
                 if (existingShiftDef && shift.startTime < existingShiftDef.endTime && shift.endTime > existingShiftDef.startTime) {
                   hasTimeOverlap = true;
                   break;
