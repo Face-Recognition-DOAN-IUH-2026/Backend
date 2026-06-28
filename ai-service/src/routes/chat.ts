@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { sessionStore } from '../sessions';
 import { processMessage } from '../agent/agent';
 import { AuthRequest } from '../middlewares/auth';
@@ -192,6 +192,31 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    const hasImageContent =
+      message.includes('data:image/') ||
+      /\bdata:image\/[^;]+;base64,/i.test(message) ||
+      /\bimage\/[^;\s]*/i.test(message);
+
+    if (hasImageContent) {
+      res.status(400).json({
+        error: 'Image input not supported',
+        message: 'Xin lỗi, tính năng này chỉ hỗ trợ tin nhắn văn bản. Không hỗ trợ gửi ảnh.',
+      });
+      return;
+    }
+
+    const trimmedMessage = message.trim().toLowerCase();
+    if (trimmedMessage === 'clipboard' || trimmedMessage === 'paste' || trimmedMessage === 'dán') {
+      res.json({
+        response: 'Xin lỗi, tôi không thể truy cập clipboard của bạn. Bạn vui lòng nhập nội dung trực tiếp bằng văn bản nhé.',
+        requiresConfirmation: false,
+        toolResults: undefined,
+        sessionId: undefined,
+        userRole: user.role,
+      });
+      return;
+    }
+
     const user = req.user;
     if (!user) {
       res.status(401).json({ error: 'User not authenticated' });
@@ -209,12 +234,10 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       effectivePatronId = user.userId;
     }
 
-    let session = sessionId ? sessionStore.get(sessionId) : undefined;
+    let session = sessionId ? sessionStore.getOwned(sessionId, effectivePatronId) : undefined;
 
     if (!session) {
       session = sessionStore.create(effectivePatronId);
-    } else if (effectivePatronId) {
-      sessionStore.update(session.id, { patronId: effectivePatronId });
     }
 
     sessionStore.addMessage(session.id, {
@@ -356,10 +379,22 @@ router.post('/', async (req: AuthRequest, res: Response) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get('/sessions/:sessionId', (req: Request, res: Response) => {
+router.get('/sessions/:sessionId', (req: AuthRequest, res: Response) => {
   const { sessionId } = req.params;
+  const user = req.user;
 
-  const session = sessionStore.get(sessionId);
+  if (!user) {
+    res.status(401).json({ error: 'User not authenticated' });
+    return;
+  }
+
+  const isStaff = user.role === 'admin' || user.role === 'staff';
+  const patronId = isStaff ? undefined : user.userId;
+
+  const session = patronId
+    ? sessionStore.getOwned(sessionId, patronId)
+    : sessionStore.get(sessionId);
+
   if (!session) {
     res.status(404).json({ error: 'Session not found' });
     return;
