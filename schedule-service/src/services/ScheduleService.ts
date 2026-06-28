@@ -237,11 +237,12 @@ export class ScheduleService {
     return { created: created.length, items: created };
   }
 
-  async listAssignments(filters: { from?: string; to?: string; staffId?: string; zoneId?: string; status?: string; page?: number; limit?: number }) {
+  async listAssignments(filters: { from?: string; to?: string; staffId?: string; zoneId?: string; shiftId?: string; status?: string; page?: number; limit?: number }) {
     const where: any = {};
     if (filters.from && filters.to) where.workDate = Between(filters.from, filters.to);
     if (filters.staffId) where.staffId = filters.staffId;
     if (filters.zoneId) where.zoneId = filters.zoneId;
+    if (filters.shiftId) where.shiftId = filters.shiftId;
     if (filters.status) {
       where.status = filters.status;
     } else {
@@ -1253,6 +1254,7 @@ export class ScheduleService {
   async auditLogs(filters: {
     page?: number;
     limit?: number;
+    category?: string;
     action?: string;
     entityType?: string;
     actorId?: string;
@@ -1261,6 +1263,22 @@ export class ScheduleService {
     search?: string;
   } = {}) {
     const qb = this.audit.createQueryBuilder('log');
+
+    if (filters.category) {
+      const catPrefixes: Record<string, string[]> = {
+        assignment: ['assignment.'],
+        attendance: ['attendance.'],
+        availability: ['availability.'],
+        bid: ['bid.'],
+        swap: ['swap.'],
+        config: ['zone.', 'shift.', 'template.'],
+      };
+      const prefixes = catPrefixes[filters.category];
+      if (prefixes) {
+        const conditions = prefixes.map((p, i) => `log.action LIKE :prefix${i}`);
+        qb.andWhere(`(${conditions.join(' OR ')})`, Object.fromEntries(prefixes.map((p, i) => [`prefix${i}`, `${p}%`])));
+      }
+    }
 
     if (filters.action) qb.andWhere('log.action = :action', { action: filters.action });
     if (filters.entityType) qb.andWhere('log.entity_type = :entityType', { entityType: filters.entityType });

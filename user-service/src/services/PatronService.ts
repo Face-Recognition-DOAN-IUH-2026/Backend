@@ -238,18 +238,20 @@ export class PatronService {
     todayExits: number;
   }> {
     const totalPatrons = await this.patronRepo.countActivePatrons();
-    const activePatrons = await this.patronRepo.countActiveInside();
-    
+
+    let activePatrons = 0;
     let todayEntries = 0;
     let todayExits = 0;
     
     try {
       const dailyStats = await accessServiceClient.getDailyStats();
+      activePatrons = dailyStats.active_inside || 0;
       todayEntries = dailyStats.today_entries || 0;
       todayExits = dailyStats.today_exits || 0;
     } catch (err: any) {
       console.error('[PatronService] Failed to fetch access stats:', err.message);
-      // Fallback to 0, don't crash
+      // Fallback to user-service count if access-service is down
+      activePatrons = await this.patronRepo.countActiveInside();
     }
     
     return { totalPatrons, activePatrons, todayEntries, todayExits };

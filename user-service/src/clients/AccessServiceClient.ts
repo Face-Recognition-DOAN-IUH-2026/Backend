@@ -35,11 +35,13 @@ async function request(url: string, options: RequestOptions = {}): Promise<any> 
 
 export const accessServiceClient = {
   async getDailyStats(): Promise<{
+    active_inside: number;
     today_entries: number;
     today_exits: number;
   }> {
     const result = await request(`${config.accessServiceUrl}/internal/access/stats`);
     return {
+      active_inside: result.active_inside ?? result.activeInside ?? 0,
       today_entries: result.today_entries || result.todayEntries || 0,
       today_exits: result.today_exits || result.todayExits || 0,
     };

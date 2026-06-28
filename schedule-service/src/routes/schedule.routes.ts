@@ -594,6 +594,7 @@ router.get('/assignments', requireRole('admin', 'staff'), asyncHandler(async (re
     to: req.query.to as string | undefined,
     staffId: req.query.staff_id as string | undefined,
     zoneId: req.query.zone_id as string | undefined,
+    shiftId: req.query.shift_id as string | undefined,
     status: req.query.status as string | undefined,
     page: req.query.page ? parseInt(req.query.page as string, 10) : undefined,
     limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
@@ -1496,6 +1497,7 @@ router.get('/audit-logs', requireRole('admin'), asyncHandler(async (req, res) =>
   res.json(await scheduleService.auditLogs({
     page: req.query.page ? parseInt(req.query.page as string, 10) : undefined,
     limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+    category: req.query.category as string | undefined,
     action: req.query.action as string | undefined,
     entityType: req.query.entityType as string | undefined,
     actorId: req.query.actorId as string | undefined,
