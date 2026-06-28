@@ -14,11 +14,22 @@ function createMockRepo() {
     save: jest.fn().mockImplementation((e) => Promise.resolve(e)),
     create: jest.fn().mockImplementation((e) => e),
     delete: jest.fn().mockResolvedValue(undefined),
-   createQueryBuilder: jest.fn().mockReturnValue({
+    createQueryBuilder: jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      addGroupBy: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue(null),
       getMany: jest.fn().mockResolvedValue([]),
+      getRawMany: jest.fn().mockResolvedValue([]),
+      getCount: jest.fn().mockResolvedValue(0),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
     }),
     preload: jest.fn().mockResolvedValue(null),
     count: jest.fn().mockResolvedValue(0),
@@ -32,6 +43,13 @@ jest.mock('../data-source', () => ({
       const name = entity?.name || String(entity);
       if (!mockRepos[name]) mockRepos[name] = createMockRepo();
       return mockRepos[name];
+    }),
+    transaction: jest.fn().mockImplementation(async (cb: any) => {
+      const mockManager = {
+        create: jest.fn().mockImplementation((entity, data) => data),
+        save: jest.fn().mockImplementation((entity, data) => Promise.resolve(data)),
+      };
+      return cb(mockManager);
     }),
   },
 }));
@@ -335,10 +353,10 @@ describe('ScheduleService', () => {
       const geofenceRepo = createMockRepo();
 
       scheduleRepo.findOneBy.mockResolvedValue({
-        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: futureDate(1), status: 'scheduled',
+        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: today(), status: 'scheduled',
       });
       attendanceRepo.findOneBy.mockResolvedValue(null);
-      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '08:00', endTime: '12:00' });
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '00:01', endTime: '12:00' });
       geofenceRepo.findOneBy.mockResolvedValue(null);
 
       (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
@@ -363,10 +381,10 @@ describe('ScheduleService', () => {
       const shiftRepo = createMockRepo();
 
       scheduleRepo.findOneBy.mockResolvedValue({
-        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: futureDate(1), status: 'in_progress',
+        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: today(), status: 'in_progress',
       });
       attendanceRepo.findOneBy.mockResolvedValue({ scheduleId: 'a1', checkInAt: new Date() });
-      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '08:00', endTime: '12:00' });
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '00:01', endTime: '12:00' });
 
       (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
         const name = entity?.name || String(entity);
@@ -384,7 +402,7 @@ describe('ScheduleService', () => {
     it('should throw ConflictError if assignment is cancelled', async () => {
       const scheduleRepo = createMockRepo();
       scheduleRepo.findOneBy.mockResolvedValue({
-        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: futureDate(1), status: 'cancelled',
+        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: today(), status: 'cancelled',
       });
 
       (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
@@ -398,17 +416,18 @@ describe('ScheduleService', () => {
       await expect(service.checkIn('staff-1', 'a1')).rejects.toThrow(ConflictError);
     });
 
-    it('should throw BadRequestError if out of geofence', async () => {
+    it('should throw BadRequestError and log failure if out of geofence', async () => {
       const scheduleRepo = createMockRepo();
       const attendanceRepo = createMockRepo();
       const shiftRepo = createMockRepo();
       const geofenceRepo = createMockRepo();
+      const auditRepo = createMockRepo();
 
       scheduleRepo.findOneBy.mockResolvedValue({
-        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: futureDate(1), status: 'scheduled',
+        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: today(), status: 'scheduled',
       });
       attendanceRepo.findOneBy.mockResolvedValue(null);
-      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '08:00', endTime: '12:00' });
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '00:01', endTime: '12:00' });
       // Geofence at a very different location
       geofenceRepo.findOneBy.mockResolvedValue({ zoneId: 'z1', latitude: 10.0, longitude: 106.0, radiusMeters: 100, isActive: true });
 
@@ -418,6 +437,7 @@ describe('ScheduleService', () => {
         if (name === 'StaffAttendance') return attendanceRepo;
         if (name === 'StaffShift') return shiftRepo;
         if (name === 'GeofenceConfig') return geofenceRepo;
+        if (name === 'ScheduleAuditLog') return auditRepo;
         if (!mockRepos[name]) mockRepos[name] = createMockRepo();
         return mockRepos[name];
       });
@@ -425,6 +445,18 @@ describe('ScheduleService', () => {
       service = new ScheduleService();
       // Check in from a very different lat/lng (should be out of 100m radius)
       await expect(service.checkIn('staff-1', 'a1', 'web', 20.0, 110.0)).rejects.toThrow(BadRequestError);
+
+      expect(auditRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'attendance.check_in_failed_geofence',
+          entityType: 'staff_schedule',
+          entityId: 'a1',
+          actorId: 'staff-1',
+          metadata: expect.objectContaining({
+            allowedRadius: 100
+          })
+        })
+      );
     });
   });
 
@@ -506,6 +538,7 @@ describe('ScheduleService', () => {
     it('should accept swap and swap staffIds on two assignments', async () => {
       const swapRepo = createMockRepo();
       const scheduleRepo = createMockRepo();
+      const shiftRepo = createMockRepo();
 
       swapRepo.findOneBy.mockResolvedValue({
         id: 'sw1', targetStaffId: 'staff-2', requesterStaffId: 'staff-1',
@@ -513,13 +546,22 @@ describe('ScheduleService', () => {
       });
 
       scheduleRepo.findOneBy
-        .mockResolvedValueOnce({ id: 'a1', staffId: 'staff-1' }) // requester assignment
-        .mockResolvedValueOnce({ id: 'a2', staffId: 'staff-2' }); // target assignment
+        .mockResolvedValueOnce({ id: 'a1', staffId: 'staff-1', shiftId: 'sh1', workDate: '2026-07-01' }) // requester assignment
+        .mockResolvedValueOnce({ id: 'a2', staffId: 'staff-2', shiftId: 'sh2', workDate: '2026-07-01' }) // target assignment
+        .mockResolvedValueOnce({ id: 'a1', staffId: 'staff-1', shiftId: 'sh1', workDate: '2026-07-01' }) // inside respondSwap load again
+        .mockResolvedValueOnce({ id: 'a2', staffId: 'staff-2', shiftId: 'sh2', workDate: '2026-07-01' });
+
+      shiftRepo.findOneBy.mockImplementation((query: any) => {
+        if (query.id === 'sh1') return Promise.resolve({ id: 'sh1', isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' });
+        if (query.id === 'sh2') return Promise.resolve({ id: 'sh2', isActive: true, startTime: '13:00', endTime: '17:00', name: 'Afternoon' });
+        return Promise.resolve(null);
+      });
 
       (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
         const name = entity?.name || String(entity);
         if (name === 'ShiftSwap') return swapRepo;
         if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffShift') return shiftRepo;
         if (!mockRepos[name]) mockRepos[name] = createMockRepo();
         return mockRepos[name];
       });
@@ -596,14 +638,24 @@ describe('ScheduleService', () => {
     it('should approve bid and reassign assignment', async () => {
       const bidRepo = createMockRepo();
       const scheduleRepo = createMockRepo();
+      const shiftRepo = createMockRepo();
+      const availabilityRepo = createMockRepo();
 
       bidRepo.findOneBy.mockResolvedValue({ id: 'b1', status: 'pending', staffId: 'staff-2', assignmentId: 'a1' });
-      scheduleRepo.findOneBy.mockResolvedValue({ id: 'a1', staffId: 'staff-1', note: 'Original' });
+      scheduleRepo.findOneBy.mockResolvedValue({ id: 'a1', staffId: 'staff-1', note: 'Original', workDate: '2026-07-01', shiftId: 'sh1' });
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' });
+      availabilityRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      });
 
       (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
         const name = entity?.name || String(entity);
         if (name === 'ShiftBid') return bidRepo;
         if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffShift') return shiftRepo;
+        if (name === 'StaffAvailabilityRequest') return availabilityRepo;
         if (!mockRepos[name]) mockRepos[name] = createMockRepo();
         return mockRepos[name];
       });
@@ -644,6 +696,72 @@ describe('ScheduleService', () => {
       service = new ScheduleService();
       await expect(service.reviewBid('admin-1', 'b1', 'approved')).rejects.toThrow(ConflictError);
     });
+
+    it('should throw ConflictError during approval if staff has approved leave', async () => {
+      const bidRepo = createMockRepo();
+      const scheduleRepo = createMockRepo();
+      const availabilityRepo = createMockRepo();
+
+      bidRepo.findOneBy.mockResolvedValue({ id: 'b1', status: 'pending', staffId: 'staff-2', assignmentId: 'a1' });
+      scheduleRepo.findOneBy.mockResolvedValue({ id: 'a1', staffId: 'staff-1', workDate: '2026-07-01', shiftId: 'sh1' });
+      availabilityRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({ id: 'l1', status: 'approved' }),
+      });
+
+      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
+        const name = entity?.name || String(entity);
+        if (name === 'ShiftBid') return bidRepo;
+        if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffAvailabilityRequest') return availabilityRepo;
+        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
+        return mockRepos[name];
+      });
+
+      service = new ScheduleService();
+      await expect(service.reviewBid('admin-1', 'b1', 'approved')).rejects.toThrow(ConflictError);
+    });
+
+    it('should throw ConflictError during approval if staff has overlapping shift', async () => {
+      const bidRepo = createMockRepo();
+      const scheduleRepo = createMockRepo();
+      const shiftRepo = createMockRepo();
+      const availabilityRepo = createMockRepo();
+
+      bidRepo.findOneBy.mockResolvedValue({ id: 'b1', status: 'pending', staffId: 'staff-2', assignmentId: 'a1' });
+      scheduleRepo.findOneBy.mockResolvedValue({ id: 'a1', staffId: 'staff-1', workDate: '2026-07-01', shiftId: 'sh1' });
+      availabilityRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      });
+
+      scheduleRepo.find.mockResolvedValue([
+        { id: 'a2', workDate: '2026-07-01', shiftId: 'sh2', staffId: 'staff-2', status: 'scheduled' }
+      ]);
+      shiftRepo.findOneBy.mockImplementation((query: any) => {
+        if (query.id === 'sh1') return Promise.resolve({ id: 'sh1', isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' });
+        if (query.id === 'sh2') return Promise.resolve({ id: 'sh2', isActive: true, startTime: '10:00', endTime: '14:00', name: 'Overlap' });
+        return Promise.resolve(null);
+      });
+      shiftRepo.find.mockResolvedValue([
+        { id: 'sh2', isActive: true, startTime: '10:00', endTime: '14:00', name: 'Overlap' }
+      ]);
+
+      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
+        const name = entity?.name || String(entity);
+        if (name === 'ShiftBid') return bidRepo;
+        if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffShift') return shiftRepo;
+        if (name === 'StaffAvailabilityRequest') return availabilityRepo;
+        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
+        return mockRepos[name];
+      });
+
+      service = new ScheduleService();
+      await expect(service.reviewBid('admin-1', 'b1', 'approved')).rejects.toThrow(ConflictError);
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -654,14 +772,24 @@ describe('ScheduleService', () => {
     it('should create bid on scheduled assignment', async () => {
       const bidRepo = createMockRepo();
       const scheduleRepo = createMockRepo();
+      const shiftRepo = createMockRepo();
+      const availabilityRepo = createMockRepo();
 
-      scheduleRepo.findOneBy.mockResolvedValue({ id: 'a1', status: 'scheduled' });
+      scheduleRepo.findOneBy.mockResolvedValue({ id: 'a1', status: 'scheduled', workDate: '2026-07-01', shiftId: 'sh1' });
       bidRepo.findOneBy.mockResolvedValue(null); // no existing bid
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' });
+      availabilityRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      });
 
       (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
         const name = entity?.name || String(entity);
         if (name === 'ShiftBid') return bidRepo;
         if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffShift') return shiftRepo;
+        if (name === 'StaffAvailabilityRequest') return availabilityRepo;
         if (!mockRepos[name]) mockRepos[name] = createMockRepo();
         return mockRepos[name];
       });
@@ -698,6 +826,75 @@ describe('ScheduleService', () => {
         const name = entity?.name || String(entity);
         if (name === 'ShiftBid') return bidRepo;
         if (name === 'StaffSchedule') return scheduleRepo;
+        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
+        return mockRepos[name];
+      });
+
+      service = new ScheduleService();
+      await expect(service.createBid('staff-1', 'a1')).rejects.toThrow(ConflictError);
+    });
+
+    it('should throw ConflictError if staff has approved leave on assignment date', async () => {
+      const bidRepo = createMockRepo();
+      const scheduleRepo = createMockRepo();
+      const shiftRepo = createMockRepo();
+      const availabilityRepo = createMockRepo();
+
+      scheduleRepo.findOneBy.mockResolvedValue({ id: 'a1', status: 'scheduled', workDate: '2026-07-01', shiftId: 'sh1' });
+      bidRepo.findOneBy.mockResolvedValue(null);
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' });
+      availabilityRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({ id: 'l1', type: 'unavailable', status: 'approved' }),
+      });
+
+      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
+        const name = entity?.name || String(entity);
+        if (name === 'ShiftBid') return bidRepo;
+        if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffShift') return shiftRepo;
+        if (name === 'StaffAvailabilityRequest') return availabilityRepo;
+        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
+        return mockRepos[name];
+      });
+
+      service = new ScheduleService();
+      await expect(service.createBid('staff-1', 'a1')).rejects.toThrow(ConflictError);
+    });
+
+    it('should throw ConflictError if staff has overlapping shift on assignment date', async () => {
+      const bidRepo = createMockRepo();
+      const scheduleRepo = createMockRepo();
+      const shiftRepo = createMockRepo();
+      const availabilityRepo = createMockRepo();
+
+      scheduleRepo.findOneBy.mockResolvedValue({ id: 'a1', status: 'scheduled', workDate: '2026-07-01', shiftId: 'sh1' });
+      bidRepo.findOneBy.mockResolvedValue(null);
+      availabilityRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      });
+
+      scheduleRepo.find.mockResolvedValue([
+        { id: 'a2', workDate: '2026-07-01', shiftId: 'sh2', staffId: 'staff-1', status: 'scheduled' }
+      ]);
+      shiftRepo.findOneBy.mockImplementation((query: any) => {
+        if (query.id === 'sh1') return Promise.resolve({ id: 'sh1', isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' });
+        if (query.id === 'sh2') return Promise.resolve({ id: 'sh2', isActive: true, startTime: '10:00', endTime: '14:00', name: 'Overlap' });
+        return Promise.resolve(null);
+      });
+      shiftRepo.find.mockResolvedValue([
+        { id: 'sh2', isActive: true, startTime: '10:00', endTime: '14:00', name: 'Overlap' }
+      ]);
+
+      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
+        const name = entity?.name || String(entity);
+        if (name === 'ShiftBid') return bidRepo;
+        if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffShift') return shiftRepo;
+        if (name === 'StaffAvailabilityRequest') return availabilityRepo;
         if (!mockRepos[name]) mockRepos[name] = createMockRepo();
         return mockRepos[name];
       });
@@ -749,10 +946,16 @@ describe('ScheduleService', () => {
       const zoneRepo = createMockRepo();
 
       const todayStr = today();
-      scheduleRepo.find.mockResolvedValue([
-        { id: 'a1', workDate: todayStr, shiftId: 'sh1', zoneId: 'z1', status: 'scheduled' },
-        { id: 'a2', workDate: todayStr, shiftId: 'sh1', zoneId: 'z1', status: 'scheduled' },
-      ]);
+      scheduleRepo.createQueryBuilder.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        addGroupBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn().mockResolvedValue([
+          { shift_id: 'sh1', zone_id: 'z1', work_date: todayStr, assigned: '2' }
+        ]),
+      });
       shiftRepo.findBy.mockResolvedValue([
         { id: 'sh1', minStaff: 2, isActive: true },
       ]);
@@ -999,6 +1202,67 @@ describe('ScheduleService', () => {
 
       service = new ScheduleService();
       await expect(service.cancelBid('staff-1', 'b1')).rejects.toThrow(ConflictError);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // createAvailability & createAssignmentsBulk
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  describe('createAvailability with overlap check', () => {
+    it('should throw ConflictError if there is an overlapping leave request', async () => {
+      const availRepo = createMockRepo();
+      availRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({ id: 'av-existing', staffId: 'staff-1', status: 'approved' }),
+      });
+
+      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
+        const name = entity?.name || String(entity);
+        if (name === 'StaffAvailabilityRequest') return availRepo;
+        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
+        return mockRepos[name];
+      });
+
+      service = new ScheduleService();
+      await expect(service.createAvailability('staff-1', { dateFrom: '2026-07-01', dateTo: '2026-07-05' })).rejects.toThrow(ConflictError);
+    });
+  });
+
+  describe('createAssignmentsBulk', () => {
+    it('should save assignments successfully if no conflicts', async () => {
+      const scheduleRepo = createMockRepo();
+      const shiftRepo = createMockRepo();
+      const zoneRepo = createMockRepo();
+      const availRepo = createMockRepo();
+
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '08:00', endTime: '12:00', maxStaff: 5 });
+      shiftRepo.find.mockResolvedValue([{ id: 'sh1', startTime: '08:00', endTime: '12:00', maxStaff: 5 }]);
+      zoneRepo.findOneBy.mockResolvedValue({ id: 'z1', isActive: true });
+      availRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      });
+
+
+
+      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
+        const name = entity?.name || String(entity);
+        if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffShift') return shiftRepo;
+        if (name === 'LibraryZone') return zoneRepo;
+        if (name === 'StaffAvailabilityRequest') return availRepo;
+        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
+        return mockRepos[name];
+      });
+
+      service = new ScheduleService();
+      const items = [{ staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: futureDate(1) }];
+      const result = await service.createAssignmentsBulk('admin-1', items);
+      expect(result).toHaveLength(1);
+      expect(result[0].staffId).toBe('staff-1');
     });
   });
 });

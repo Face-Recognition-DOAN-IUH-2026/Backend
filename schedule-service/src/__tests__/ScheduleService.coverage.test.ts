@@ -15,10 +15,21 @@ function createMockRepo() {
     create: jest.fn().mockImplementation((e) => e),
     delete: jest.fn().mockResolvedValue(undefined),
     createQueryBuilder: jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      addGroupBy: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue(null),
       getMany: jest.fn().mockResolvedValue([]),
+      getRawMany: jest.fn().mockResolvedValue([]),
+      getCount: jest.fn().mockResolvedValue(0),
+      getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
     }),
     preload: jest.fn().mockResolvedValue(null),
     count: jest.fn().mockResolvedValue(0),
@@ -368,8 +379,9 @@ describe('ScheduleService — Coverage Part 2', () => {
       const shiftRepo = createMockRepo();
       const zoneRepo = createMockRepo();
 
-      prefRepo.find.mockResolvedValue([
-        { id: 'p1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', priority: 1, isActive: true },
+      prefRepo.findAndCount.mockResolvedValue([
+        [{ id: 'p1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', priority: 1, isActive: true }],
+        1
       ]);
       shiftRepo.findBy.mockResolvedValue([{ id: 'sh1', name: 'Morning' }]);
       zoneRepo.findBy.mockResolvedValue([{ id: 'z1', zoneName: 'A' }]);
@@ -385,9 +397,9 @@ describe('ScheduleService — Coverage Part 2', () => {
 
       service = new ScheduleService();
       const result = await service.listPreferences('staff-1');
-      expect(result).toHaveLength(1);
-      expect(result[0].shift).toEqual({ id: 'sh1', name: 'Morning' });
-      expect(result[0].zone).toEqual({ id: 'z1', zoneName: 'A' });
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].shift).toEqual({ id: 'sh1', name: 'Morning' });
+      expect(result.items[0].zone).toEqual({ id: 'z1', zoneName: 'A' });
     });
   });
 
@@ -528,8 +540,9 @@ describe('ScheduleService — Coverage Part 2', () => {
       const zoneRepo = createMockRepo();
       const attendanceRepo = createMockRepo();
 
-      scheduleRepo.find.mockResolvedValue([
-        { id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: '2026-07-01', status: 'scheduled' },
+      scheduleRepo.findAndCount.mockResolvedValue([
+        [{ id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: '2026-07-01', status: 'scheduled' }],
+        1
       ]);
       shiftRepo.findBy.mockResolvedValue([{ id: 'sh1', name: 'Morning' }]);
       zoneRepo.findBy.mockResolvedValue([{ id: 'z1', zoneName: 'A' }]);
@@ -781,17 +794,20 @@ describe('ScheduleService — Coverage Part 2', () => {
     it('should accept swap and reassign single assignment (no target)', async () => {
       const swapRepo = createMockRepo();
       const scheduleRepo = createMockRepo();
+      const shiftRepo = createMockRepo();
 
       swapRepo.findOneBy.mockResolvedValue({
         id: 'sw1', targetStaffId: 'staff-2', requesterStaffId: 'staff-1',
         requesterAssignmentId: 'a1', targetAssignmentId: null, status: 'pending',
       });
-      scheduleRepo.findOneBy.mockResolvedValue({ id: 'a1', staffId: 'staff-1' });
+      scheduleRepo.findOneBy.mockResolvedValue({ id: 'a1', staffId: 'staff-1', shiftId: 'sh1', workDate: '2026-07-01' });
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' });
 
       (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
         const name = entity?.name || String(entity);
         if (name === 'ShiftSwap') return swapRepo;
         if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffShift') return shiftRepo;
         if (!mockRepos[name]) mockRepos[name] = createMockRepo();
         return mockRepos[name];
       });
@@ -859,10 +875,14 @@ describe('ScheduleService — Coverage Part 2', () => {
       ]);
       zoneRepo.findBy.mockResolvedValue([{ id: 'z1', isActive: true }]);
       scheduleRepo.find.mockResolvedValue([]);
-      availRepo.find.mockResolvedValue([{
-        id: 'av1', staffId: 'staff-1', status: 'approved',
-        dateFrom: futureDate(1), dateTo: futureDate(1),
-      }]);
+      availRepo.createQueryBuilder.mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([{
+          id: 'av1', staffId: 'staff-1', status: 'approved',
+          dateFrom: futureDate(1), dateTo: futureDate(1),
+        }]),
+      });
       templateRepo.findBy.mockResolvedValue([]);
       prefRepo.find.mockResolvedValue([]);
 
@@ -1097,7 +1117,18 @@ describe('ScheduleService — Coverage Part 2', () => {
   describe('auditLogs', () => {
     it('should return last 200 audit logs', async () => {
       const auditRepo = createMockRepo();
-      auditRepo.find.mockResolvedValue([{ id: 'log1', action: 'zone.created' }]);
+      auditRepo.createQueryBuilder.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([
+          [{ id: 'log1', action: 'zone.created', metadata: null }],
+          1
+        ]),
+      });
 
       (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
         const name = entity?.name || String(entity);
@@ -1108,8 +1139,8 @@ describe('ScheduleService — Coverage Part 2', () => {
 
       service = new ScheduleService();
       const result = await service.auditLogs();
-      expect(result).toHaveLength(1);
-      expect(auditRepo.find).toHaveBeenCalledWith({ order: { createdAt: 'DESC' }, take: 200 });
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].action).toBe('zone.created');
     });
   });
 
