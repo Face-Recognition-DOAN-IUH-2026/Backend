@@ -9,10 +9,16 @@ import confirmRouter from './routes/confirm';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
-import { auth } from './middlewares/auth';
+import { createAuth } from '../../shared';
 import { getCollection } from './clients/chromadb';
 import { indexDocuments } from './rag/indexer';
 import { sessionStore } from './sessions';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
 
 const app = express();
 

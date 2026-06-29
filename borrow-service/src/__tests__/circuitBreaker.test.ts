@@ -1,4 +1,4 @@
-import { CircuitBreaker } from '../utils/circuitBreaker';
+import { CircuitBreaker } from '../../../shared/utils/circuitBreaker';
 
 describe('CircuitBreaker', () => {
   describe('initial state', () => {

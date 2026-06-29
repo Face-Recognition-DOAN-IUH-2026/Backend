@@ -2,6 +2,7 @@ import * as jwt from 'jsonwebtoken';
 import { decodeToken } from '../auth/decodeToken';
 import { createInternalAuth } from '../auth/internalAuth';
 import { AuthConfig, InternalAuthConfig } from '../auth/types';
+import { generateServiceToken } from '../auth/serviceToken';
 
 const TEST_SECRET = 'test-secret';
 const TEST_CONFIG: AuthConfig = {
@@ -41,11 +42,11 @@ describe('decodeToken', () => {
 describe('createInternalAuth', () => {
   const config: InternalAuthConfig = {
     serviceName: 'test-service',
-    internalApiKey: 'test-api-key',
+    jwtSecret: TEST_SECRET,
   };
 
-  const mockReq = (apiKey?: string) => ({
-    headers: apiKey ? { 'x-internal-api-key': apiKey } : {},
+  const mockReq = (authHeader?: string) => ({
+    headers: authHeader ? { authorization: authHeader } : {},
     path: '/test',
   } as any);
 
@@ -62,20 +63,22 @@ describe('createInternalAuth', () => {
     mockNext.mockClear();
   });
 
-  it('should call next for valid API key', () => {
+  it('should call next for valid service token', () => {
+    const token = generateServiceToken('test-service', ['user:read'], TEST_SECRET);
     const middleware = createInternalAuth(config);
-    const req = mockReq('test-api-key');
+    const req = mockReq(`Bearer ${token}`);
     const res = mockRes();
 
     middleware(req, res, mockNext);
 
     expect(mockNext).toHaveBeenCalled();
     expect(res.status).not.toHaveBeenCalled();
+    expect(req.service).toBeDefined();
   });
 
-  it('should return 403 for invalid API key', () => {
+  it('should return 403 for invalid token', () => {
     const middleware = createInternalAuth(config);
-    const req = mockReq('wrong-key');
+    const req = mockReq('Bearer invalid-token');
     const res = mockRes();
 
     middleware(req, res, mockNext);
@@ -83,13 +86,27 @@ describe('createInternalAuth', () => {
     expect(mockNext).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({
-      error: 'Invalid or missing internal API key',
+      error: 'Invalid service token',
     });
   });
 
-  it('should return 403 for missing API key', () => {
+  it('should return 403 for missing Authorization header', () => {
     const middleware = createInternalAuth(config);
     const req = mockReq();
+    const res = mockRes();
+
+    middleware(req, res, mockNext);
+
+    expect(mockNext).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Missing Authorization header',
+    });
+  });
+
+  it('should return 403 for non-Bearer Authorization header', () => {
+    const middleware = createInternalAuth(config);
+    const req = mockReq('Basic some-token');
     const res = mockRes();
 
     middleware(req, res, mockNext);

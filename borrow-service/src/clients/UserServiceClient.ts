@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { HttpError } from '../middlewares/errorHandler';
-import { CircuitBreaker } from '../utils/circuitBreaker';
+import { CircuitBreaker } from '../../../shared/utils/circuitBreaker';
+import { getServiceToken } from '../../../shared';
 
 const circuit = new CircuitBreaker(5, 60_000);
 
@@ -25,7 +26,7 @@ async function request(path: string, init?: RequestInit) {
     const res = await fetch(`${config.userServiceUrl}${path}`, {
       ...init,
       headers: {
-        'x-internal-api-key': config.internalApiKey,
+        'Authorization': `Bearer ${getServiceToken('borrow-service', config.jwtSecret)}`,
         ...(init?.headers || {}),
       },
       signal: AbortSignal.timeout(5000),

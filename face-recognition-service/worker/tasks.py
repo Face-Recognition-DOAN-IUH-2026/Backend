@@ -39,11 +39,19 @@ _storage: MinioStorage | None = None
 _USER_SERVICE_URL = settings.user_service_url
 _ACCESS_SERVICE_URL = settings.access_service_url
 
+def _get_service_auth_headers() -> dict:
+    """Get Authorization headers with service JWT token."""
+    from core.service_token import get_auth_headers
+    return get_auth_headers(
+        service_name="face-recognition-service",
+        scopes=["users:read", "users:write", "access:read", "access:write"],
+        secret=settings.jwt_access_secret,
+    )
+
 def _call_user_service(method: str, path: str, **kwargs) -> dict | None:
     try:
         headers = kwargs.pop("headers", {})
-        if settings.internal_api_key:
-            headers["x-internal-api-key"] = settings.internal_api_key
+        headers.update(_get_service_auth_headers())
         with httpx.Client(base_url=_USER_SERVICE_URL, timeout=5.0) as client:
             resp = client.request(method, path, headers=headers, **kwargs)
             if resp.status_code == 200:
@@ -80,8 +88,7 @@ def _get_user_via_api(user_id: str) -> dict | None:
 def _call_access_service(method: str, path: str, **kwargs) -> dict | None:
     try:
         headers = kwargs.pop("headers", {})
-        if settings.internal_api_key:
-            headers["x-internal-api-key"] = settings.internal_api_key
+        headers.update(_get_service_auth_headers())
         with httpx.Client(base_url=_ACCESS_SERVICE_URL, timeout=5.0) as client:
             resp = client.request(method, path, headers=headers, **kwargs)
             if resp.status_code < 300:

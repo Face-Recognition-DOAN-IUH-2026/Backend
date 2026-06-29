@@ -1,10 +1,17 @@
 import { Router } from 'express';
-import { auth, requireRole, AuthRequest } from '../middlewares/auth';
+import { createAuth, requireRole, AuthRequest } from '../../../shared';
+import { config } from '../config';
 import { AppDataSource } from '../data-source';
 import { AutomationTask } from '../entities/AutomationTask';
 import { AutomationRun } from '../entities/AutomationRun';
 import { cronScheduler } from '../scheduler/CronScheduler';
 import { eventBus } from '../events/EventBus';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
 
 const taskRepo = () => AppDataSource.getRepository(AutomationTask);
 const runRepo = () => AppDataSource.getRepository(AutomationRun);

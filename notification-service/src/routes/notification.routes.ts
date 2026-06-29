@@ -1,7 +1,14 @@
 import { Router } from 'express';
-import { auth, AuthRequest } from '../middlewares/auth';
+import { createAuth, AuthRequest } from '../../../shared';
+import { config } from '../config';
 import { notificationService } from '../services/NotificationService';
 import { notificationHub } from '../realtime/NotificationHub';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
 
 const router = Router();
 router.use(auth);

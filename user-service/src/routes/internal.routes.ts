@@ -1,17 +1,16 @@
 import { Router } from 'express';
 import { config } from '../config';
 import { patronService, userService, userRepo } from '../services';
+import { createInternalAuth } from '../../../shared';
+
+const internalAuth = createInternalAuth({
+  serviceName: 'user-service',
+  jwtSecret: config.serviceJwtSecret,
+});
 
 const router = Router();
 
-router.use((req, _res, next) => {
-  const key = req.headers['x-internal-api-key'];
-  if (!key || key !== config.internalApiKey) {
-    _res.status(403).json({ error: 'Invalid internal API key' });
-    return;
-  }
-  next();
-});
+router.use(internalAuth);
 
 router.get('/users', async (req, res) => {
   const role = typeof req.query.role === 'string' ? req.query.role : undefined;

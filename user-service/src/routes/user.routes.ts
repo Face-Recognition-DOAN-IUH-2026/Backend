@@ -1,7 +1,15 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { userController } from '../controllers';
-import { auth, requireRole } from '../middlewares';
+import { createAuth } from '../../shared';
+import { requireRole } from '../middlewares/requireRole';
+import { config } from '../config';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
 

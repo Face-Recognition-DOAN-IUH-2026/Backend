@@ -1,9 +1,15 @@
 import { Router } from 'express';
-import { internalAuth } from '../middlewares/internalAuth';
+import { createInternalAuth } from '../../../shared';
+import { config } from '../config';
 import { AppDataSource } from '../data-source';
 import { AutomationTask } from '../entities/AutomationTask';
 import { AutomationRun } from '../entities/AutomationRun';
 import { eventBus } from '../events/EventBus';
+
+const internalAuth = createInternalAuth({
+  serviceName: 'automation-service',
+  jwtSecret: config.serviceJwtSecret,
+});
 
 const taskRepo = () => AppDataSource.getRepository(AutomationTask);
 const runRepo = () => AppDataSource.getRepository(AutomationRun);

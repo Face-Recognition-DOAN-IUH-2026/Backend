@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { getServiceToken } from '../../../shared';
 
 interface RequestOptions {
   method?: string;
@@ -16,7 +17,7 @@ async function request(url: string, options: RequestOptions = {}): Promise<any> 
       method,
       headers: {
         'Content-Type': 'application/json',
-        'x-internal-api-key': config.internalApiKey,
+        'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}`,
       },
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,

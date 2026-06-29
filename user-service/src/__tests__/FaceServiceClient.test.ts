@@ -2,6 +2,9 @@ import axios from 'axios';
 import { FaceServiceClient } from '../clients/FaceServiceClient';
 
 jest.mock('axios');
+jest.mock('../../../shared', () => ({
+  getServiceToken: () => 'mock-service-token',
+}));
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 describe('FaceServiceClient', () => {

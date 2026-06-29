@@ -28,7 +28,7 @@ jest.mock('ioredis', () => {
 jest.mock('../config', () => ({
   config: {
     redisUrl: 'redis://localhost:6379/0',
-    internalApiKey: 'test-key',
+    serviceJwtSecret: 'test-key',
   },
 }));
 

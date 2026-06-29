@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { sessionStore } from '../sessions';
 import { processMessage } from '../agent/agent';
-import { AuthRequest } from '../middlewares/auth';
+import { AuthRequest } from '../../../shared';
 
 const router = Router();
 

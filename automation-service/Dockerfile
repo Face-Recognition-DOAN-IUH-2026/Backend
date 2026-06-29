@@ -8,6 +8,7 @@ RUN npm install
 
 COPY automation-service/src ./src
 COPY shared ./shared
+RUN ln -s /app/shared /shared
 
 RUN npm run build
 RUN npm prune --omit=dev

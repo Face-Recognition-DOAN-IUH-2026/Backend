@@ -1,8 +1,14 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { accessService } from '../services/AccessService';
-import { auth } from '../middlewares/auth';
-import { requireRole } from '../middlewares/requireRole';
+import { createAuth, requireRole } from '../../shared';
+import { config } from '../config';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
 import { realtimeHub } from '../realtime/RealtimeHub';
 
 const router = Router();

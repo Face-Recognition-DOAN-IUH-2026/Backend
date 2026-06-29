@@ -1,5 +1,12 @@
 import { Response, NextFunction } from 'express';
-import { AuthRequest, auth } from './auth';
+import { AuthRequest, createAuth } from '../../../shared';
+import { config } from '../config';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
 
 export function requireRole(...roles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {

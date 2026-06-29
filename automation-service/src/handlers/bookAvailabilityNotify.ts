@@ -1,6 +1,7 @@
 import { notificationClient } from '../clients/serviceClients';
 import { config } from '../config';
 import { AutomationEvent } from '../events/EventBus';
+import { getServiceToken } from '../../../shared';
 
 export async function bookAvailabilityNotify(
   _cfg: Record<string, any>,
@@ -23,7 +24,7 @@ export async function bookAvailabilityNotify(
       `${config.services.borrowService}/borrow/internal/book/${bookId}/waitlist`,
       {
         headers: {
-          'x-internal-api-key': config.internalApiKey,
+          'Authorization': `Bearer ${getServiceToken('automation-service', config.jwtSecret)}`,
           'Content-Type': 'application/json',
         },
       }

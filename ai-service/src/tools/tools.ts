@@ -1,10 +1,13 @@
 import axios from 'axios';
 import { config } from '../config';
+import { getServiceToken } from '../../../shared';
 
-const INTERNAL_HEADERS = {
-  'X-Internal-Api-Key': config.internalApiKey,
-  'Content-Type': 'application/json',
-};
+function getInternalHeaders() {
+  return {
+    'Authorization': `Bearer ${getServiceToken('ai-service', config.serviceJwtSecret)}`,
+    'Content-Type': 'application/json',
+  };
+}
 
 export interface ToolResult {
   success: boolean;
@@ -15,7 +18,7 @@ export interface ToolResult {
 async function safeGet<T>(url: string): Promise<ToolResult> {
   try {
     const response = await axios.get<T>(url, {
-      headers: INTERNAL_HEADERS,
+      headers: getInternalHeaders(),
       timeout: 10000,
     });
     return { success: true, data: response.data };
@@ -30,7 +33,7 @@ async function safeGet<T>(url: string): Promise<ToolResult> {
 async function safePost<T>(url: string, body: any): Promise<ToolResult> {
   try {
     const response = await axios.post<T>(url, body, {
-      headers: INTERNAL_HEADERS,
+      headers: getInternalHeaders(),
       timeout: 10000,
     });
     return { success: true, data: response.data };
@@ -45,7 +48,7 @@ async function safePost<T>(url: string, body: any): Promise<ToolResult> {
 async function safePut<T>(url: string, body: any): Promise<ToolResult> {
   try {
     const response = await axios.put<T>(url, body, {
-      headers: INTERNAL_HEADERS,
+      headers: getInternalHeaders(),
       timeout: 10000,
     });
     return { success: true, data: response.data };

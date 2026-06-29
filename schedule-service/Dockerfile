@@ -9,6 +9,7 @@ RUN npm install
 COPY schedule-service/src ./src
 COPY schedule-service/migrations ./migrations
 COPY shared ./shared
+RUN ln -s /app/shared /shared
 
 RUN npm run build
 

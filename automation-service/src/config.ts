@@ -7,7 +7,7 @@ export const config = {
   jwtSecret: process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || '',
   jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
-  internalApiKey: process.env.INTERNAL_API_KEY || '',
+  serviceJwtSecret: process.env.SERVICE_JWT_SECRET || '',
   redisUrl: process.env.REDIS_URL || 'redis://redis:6379/0',
   db: {
     host: process.env.DB_HOST || 'localhost',

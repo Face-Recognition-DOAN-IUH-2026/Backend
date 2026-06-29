@@ -1,5 +1,6 @@
 import { config } from '../config';
 import { NotFoundError, ServiceUnavailableError } from '../errors';
+import { getServiceToken } from '../../../shared';
 
 export interface StaffUser {
   id: string;
@@ -49,7 +50,7 @@ export class UserServiceClient {
       const timeout = setTimeout(() => controller.abort(), 4000);
       try {
         const response = await fetch(`${config.userServiceUrl}${path}`, {
-          headers: { 'x-internal-api-key': config.internalApiKey },
+          headers: { 'Authorization': `Bearer ${getServiceToken('schedule-service', config.jwtSecret)}` },
           signal: controller.signal,
         });
         clearTimeout(timeout);

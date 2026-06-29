@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import Redis from 'ioredis';
 import { config } from '../config';
-import { amqpClient } from '../../shared/AmqpClient';
+import { amqpClient } from '../clients/AmqpClient';
 
 function signPayload(payload: object, secret: string): string {
   const body = JSON.stringify(payload);
@@ -52,7 +52,7 @@ export class RedisService {
         email,
         timestamp: new Date().toISOString(),
       };
-      const signature = signPayload(body, config.internalApiKey);
+      const signature = signPayload(body, config.serviceJwtSecret);
       const message: UserDeletedEvent = { ...body, signature };
 
       await amqpClient.publishFanout(EXCHANGE, message);
@@ -69,7 +69,7 @@ export class RedisService {
         email,
         timestamp: new Date().toISOString(),
       };
-      const signature = signPayload(body, config.internalApiKey);
+      const signature = signPayload(body, config.serviceJwtSecret);
       const message: UserUpdatedEvent = { ...body, signature };
 
       await amqpClient.publishFanout(EXCHANGE, message);

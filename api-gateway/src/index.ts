@@ -8,6 +8,7 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec, fetchAndMergeSpecs } from './config/swagger';
+import xss from 'xss';
 
 let unifiedSpec: Record<string, any> = swaggerSpec;
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
@@ -80,11 +81,12 @@ const errorReportLimiter = rateLimit({
 });
 
 export function sanitizeInput(input: string): string {
-  return input
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;');
+  if (!input) return '';
+  return xss(input, {
+    whiteList: {},
+    stripIgnoreTag: true,
+    stripIgnoreTagBody: ['script', 'style'],
+  });
 }
 
 export function verifyToken(req: express.Request, res: express.Response, next: express.NextFunction) {

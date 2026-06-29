@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { config } from '../config';
+import { getServiceToken } from '../../../shared';
 
 export class FaceServiceClient {
   private baseUrl: string;
@@ -13,7 +14,7 @@ export class FaceServiceClient {
       const response = await axios.get(
         `${this.baseUrl}/internal/face/${userId}/status`,
         {
-          headers: { 'x-internal-api-key': config.internalApiKey },
+          headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` },
           timeout: 5000,
         }
       );
@@ -31,7 +32,7 @@ export class FaceServiceClient {
         `${this.baseUrl}/patrons/internal/batch-status`,
         { user_ids: userIds },
         {
-          headers: { 'x-internal-api-key': config.internalApiKey },
+          headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` },
           timeout: 10000,
         }
       );

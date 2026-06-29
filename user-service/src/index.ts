@@ -6,7 +6,7 @@ import { AppDataSource } from './data-source';
 import { authRoutes, userRoutes, patronRoutes, internalRoutes } from './routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
-import { errorHandler } from './middlewares';
+import { errorHandler } from './middlewares/errorHandler';
 
 
 const app = express();

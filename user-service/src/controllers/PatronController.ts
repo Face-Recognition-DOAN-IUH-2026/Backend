@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { AuthRequest } from '../middlewares';
+import { AuthRequest } from '../../shared';
 import { patronService } from '../services';
 
 export class PatronController {
