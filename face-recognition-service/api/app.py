@@ -16,14 +16,14 @@ def _camera_callback_factory():
     import logging
     _logger = logging.getLogger("uvicorn")
     from celery import Celery as _Celery
-    _worker = _Celery("face_recognition", broker=settings.celery_broker_url, backend=settings.celery_result_backend)
+    _worker = _Celery("face_recognition", broker=settings.celery_broker_url, backend=settings.celery_result_backend or None)
 
     def _on_frame(camera_id: str, frame):
         import cv2, uuid as _uuid
         _logger.info("Camera %s received frame, caching to Redis...", camera_id)
         try:
             import redis as _redis
-            r = _redis.Redis.from_url(settings.celery_broker_url)
+            r = _redis.Redis.from_url(settings.redis_url)
             try:
                 queue_key = f"camera_queue:{camera_id}"
                 depth = r.incr(queue_key)
@@ -84,20 +84,20 @@ async def lifespan(app: FastAPI):
     _sse_stop = None
     try:
         import asyncio
-        from infra.redis_pubsub import start_sse_bridge
+        from infra.amqp_pubsub import start_sse_bridge
         _sse_thread, _sse_stop = start_sse_bridge(asyncio.get_running_loop())
     except Exception as e:
         import logging
-        logging.getLogger("uvicorn").warning("SSE bridge not started: %s", e)
+        logging.getLogger("uvicorn").warning("AMQP SSE bridge not started: %s", e)
 
     _user_stop = None
     try:
         import asyncio
-        from infra.redis_pubsub import start_user_event_listener
+        from infra.amqp_pubsub import start_user_event_listener
         _user_thread, _user_stop = start_user_event_listener(asyncio.get_running_loop())
     except Exception as e:
         import logging
-        logging.getLogger("uvicorn").warning("User event listener not started: %s", e)
+        logging.getLogger("uvicorn").warning("AMQP User event listener not started: %s", e)
 
     _rabbitmq_stop = None
     try:

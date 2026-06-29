@@ -36,7 +36,7 @@ app.use(errorHandler);
 async function start() {
   try {
     await AppDataSource.initialize();
-    await realtimeHub.connectRedis();
+    await realtimeHub.connectBroker();
     await startUserEventSubscriber();
     await amqpClient.connect().catch((e) => console.error('[AMQP] Init failed:', e.message));
 

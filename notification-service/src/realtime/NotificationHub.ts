@@ -1,33 +1,46 @@
+import crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { Response } from 'express';
-import Redis from 'ioredis';
 import { WebSocket } from 'ws';
+import { amqpClient } from '../clients/AmqpClient';
 import { config } from '../config';
 import { Notification } from '../entities/Notification';
 
-const CHANNEL = 'notifications.events';
+const EXCHANGE = 'notifications.realtime.fanout';
+
+function signPayload(payload: object, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
+}
 
 export class NotificationHub {
   private sseClients = new Map<string, Set<Response>>();
   private wsClients = new Map<string, Set<WebSocket>>();
   private instanceId = randomUUID();
-  private publisher?: Redis;
-  private subscriber?: Redis;
 
-  async connectRedis() {
-    if (!config.redisUrl) return;
-    this.publisher = new Redis(config.redisUrl);
-    this.subscriber = new Redis(config.redisUrl);
-    await this.subscriber.subscribe(CHANNEL);
-    this.subscriber.on('message', (_channel, raw) => {
-      try {
-        const message = JSON.parse(raw);
+  async connectBroker() {
+    try {
+      await amqpClient.connect();
+      await amqpClient.subscribeFanout(EXCHANGE, (message: any) => {
         if (message.originId === this.instanceId) return;
+        if (message.signature && config.internalApiKey) {
+          const { signature, ...rest } = message;
+          const expected = signPayload(rest, config.internalApiKey);
+          try {
+            if (!crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'))) {
+              console.warn('[NotificationHub] Invalid signature, ignoring event');
+              return;
+            }
+          } catch {
+            console.warn('[NotificationHub] Signature verification failed, ignoring event');
+            return;
+          }
+        }
         this.pushToUser(message.userId, message.notification);
-      } catch {
-        // Ignore malformed messages
-      }
-    });
+      });
+      console.log('[NotificationHub] Connected to RabbitMQ fanout:', EXCHANGE);
+    } catch (err: any) {
+      console.error('[NotificationHub] RabbitMQ connection failed:', err.message);
+    }
   }
 
   addSseClient(userId: string, res: Response) {
@@ -64,7 +77,6 @@ export class NotificationHub {
   }
 
   async pushToUser(userId: string, notification: Notification) {
-    // Local push
     const payload = JSON.stringify({ event: 'notification_created', data: notification });
 
     const sseClients = this.sseClients.get(userId);
@@ -87,12 +99,14 @@ export class NotificationHub {
 
   async publish(userId: string, notification: Notification) {
     this.pushToUser(userId, notification);
-    if (this.publisher) {
-      await this.publisher.publish(
-        CHANNEL,
-        JSON.stringify({ originId: this.instanceId, userId, notification })
-      );
-    }
+    const body = {
+      originId: this.instanceId,
+      userId,
+      notification,
+      timestamp: new Date().toISOString(),
+    };
+    const signature = config.internalApiKey ? signPayload(body, config.internalApiKey) : '';
+    await amqpClient.publishFanout(EXCHANGE, { ...body, signature });
   }
 }
 

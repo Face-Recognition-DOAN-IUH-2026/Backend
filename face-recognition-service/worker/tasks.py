@@ -532,7 +532,7 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
 
         try:
             import redis as _redis
-            r = _redis.Redis.from_url(settings.celery_broker_url)
+            r = _redis.Redis.from_url(settings.redis_url)
             lockout_key = f"face_login_lockout:{user_id}"
             locked = r.get(lockout_key)
             if locked:
@@ -549,7 +549,7 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
             logger.warning("Spoof attempt detected for user %s (%s)", user_email, user_id)
             try:
                 import redis as _redis
-                r = _redis.Redis.from_url(settings.celery_broker_url)
+                r = _redis.Redis.from_url(settings.redis_url)
                 fail_key = f"face_login_fail:{user_id}"
                 fail_count = r.incr(fail_key)
                 if fail_count == 1:
@@ -592,7 +592,7 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
 
         try:
             import redis as _redis
-            r = _redis.Redis.from_url(settings.celery_broker_url)
+            r = _redis.Redis.from_url(settings.redis_url)
             r.delete(f"face_login_fail:{user_id}")
             r.close()
         except Exception:
@@ -891,7 +891,7 @@ def _get_redis_throttle():
     try:
         from infra.config import settings
         import redis as _redis
-        return _redis.Redis.from_url(settings.celery_broker_url)
+        return _redis.Redis.from_url(settings.redis_url)
     except Exception as e:
         logger.warning("Redis throttle unavailable: %s", e)
         return None
@@ -912,7 +912,7 @@ def _check_redis_cooldown(patron_id: str, access_type: str) -> bool:
     """Check Redis cooldown — returns True if still in cooldown (skip)."""
     try:
         import redis as _redis
-        r = _redis.Redis.from_url(settings.celery_broker_url)
+        r = _redis.Redis.from_url(settings.redis_url)
         try:
             key = f"cooldown:{access_type}:{patron_id}"
             if r.get(key):
@@ -1111,7 +1111,7 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
     # Decrement backpressure counter (Phase 3)
     try:
         import redis as _redis
-        r = _redis.Redis.from_url(settings.celery_broker_url)
+        r = _redis.Redis.from_url(settings.redis_url)
         try:
             r.decr(f"camera_queue:{camera_id}")
         finally:

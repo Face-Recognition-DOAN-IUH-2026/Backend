@@ -1,7 +1,7 @@
 import crypto from 'crypto';
-import Redis from 'ioredis';
 import { config } from '../config';
 import { AppDataSource } from '../data-source';
+import { amqpClient } from '../../shared/AmqpClient';
 
 interface UserDeletedMessage {
   event: 'USER_DELETED';
@@ -36,49 +36,38 @@ const CLEANUP_QUERIES = [
 ];
 
 export async function startUserEventSubscriber(): Promise<void> {
-  const redis = new Redis(config.redisUrl, {
-    retryStrategy: (times) => Math.min(times * 50, 2000),
-    maxRetriesPerRequest: 3,
-  });
-
-  redis.on('error', (err) => {
-    console.error('[UserEventSubscriber] Redis error:', err.message);
-  });
-
-  await redis.subscribe('user.events', (err) => {
-    if (err) {
-      console.error('[UserEventSubscriber] Subscribe error:', err.message);
-      return;
-    }
-    console.log('[UserEventSubscriber] Subscribed to user.events');
-  });
-
-  redis.on('message', async (_channel, raw) => {
-    try {
-      const msg: UserDeletedMessage = JSON.parse(raw);
-      if (msg.event !== 'USER_DELETED') return;
-
-      if (!verifySignature(msg)) {
-        console.warn('[UserEventSubscriber] Invalid signature, ignoring event');
-        return;
-      }
-
-      console.log(`[UserEventSubscriber] Processing USER_DELETED for ${msg.user_id}`);
-
-      const queryRunner = AppDataSource.createQueryRunner();
-      await queryRunner.connect();
+  try {
+    await amqpClient.connect();
+    await amqpClient.subscribeFanoutReliable('user.events.fanout', async (payload: any) => {
       try {
-        let totalDeleted = 0;
-        for (const sql of CLEANUP_QUERIES) {
-          const result = await queryRunner.query(sql, [msg.user_id]);
-          totalDeleted += result.rowCount ?? 0;
+        const msg: UserDeletedMessage = payload;
+        if (msg.event !== 'USER_DELETED') return;
+
+        if (!verifySignature(msg)) {
+          console.warn('[UserEventSubscriber] Invalid signature, ignoring event');
+          return;
         }
-        console.log(`[UserEventSubscriber] Cleaned ${totalDeleted} schedule records for user ${msg.user_id}`);
-      } finally {
-        await queryRunner.release();
+
+        console.log(`[UserEventSubscriber] Processing USER_DELETED for ${msg.user_id}`);
+
+        const queryRunner = AppDataSource.createQueryRunner();
+        await queryRunner.connect();
+        try {
+          let totalDeleted = 0;
+          for (const sql of CLEANUP_QUERIES) {
+            const result = await queryRunner.query(sql, [msg.user_id]);
+            totalDeleted += result.rowCount ?? 0;
+          }
+          console.log(`[UserEventSubscriber] Cleaned ${totalDeleted} schedule records for user ${msg.user_id}`);
+        } finally {
+          await queryRunner.release();
+        }
+      } catch (e) {
+        console.error('[UserEventSubscriber] Error processing event:', e);
       }
-    } catch (e) {
-      console.error('[UserEventSubscriber] Error processing event:', e);
-    }
-  });
+    });
+    console.log('[UserEventSubscriber] Subscribed to user.events.fanout');
+  } catch (err: any) {
+    console.error('[UserEventSubscriber] RabbitMQ connection failed:', err.message);
+  }
 }

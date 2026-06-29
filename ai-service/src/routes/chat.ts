@@ -205,6 +205,12 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+
     const trimmedMessage = message.trim().toLowerCase();
     if (trimmedMessage === 'clipboard' || trimmedMessage === 'paste' || trimmedMessage === 'dán') {
       res.json({
@@ -214,12 +220,6 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         sessionId: undefined,
         userRole: user.role,
       });
-      return;
-    }
-
-    const user = req.user;
-    if (!user) {
-      res.status(401).json({ error: 'User not authenticated' });
       return;
     }
 
