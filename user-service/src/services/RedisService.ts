@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import Redis from 'ioredis';
 import { config } from '../config';
+import { amqpClient } from '../../shared/AmqpClient';
 
 function signPayload(payload: object, secret: string): string {
   const body = JSON.stringify(payload);
@@ -22,6 +23,8 @@ export interface UserUpdatedEvent {
   timestamp: string;
   signature: string;
 }
+
+const EXCHANGE = 'user.events.fanout';
 
 export class RedisService {
   private client: Redis;
@@ -52,9 +55,9 @@ export class RedisService {
       const signature = signPayload(body, config.internalApiKey);
       const message: UserDeletedEvent = { ...body, signature };
 
-      await this.client.publish('user.events', JSON.stringify(message));
+      await amqpClient.publishFanout(EXCHANGE, message);
     } catch (e) {
-      console.warn('Redis publish failed, face cleanup may be delayed:', e);
+      console.warn('RabbitMQ publish failed, face cleanup may be delayed:', e);
     }
   }
 
@@ -69,9 +72,9 @@ export class RedisService {
       const signature = signPayload(body, config.internalApiKey);
       const message: UserUpdatedEvent = { ...body, signature };
 
-      await this.client.publish('user.events', JSON.stringify(message));
+      await amqpClient.publishFanout(EXCHANGE, message);
     } catch (e) {
-      console.warn('Redis publish failed, user update notification may be delayed:', e);
+      console.warn('RabbitMQ publish failed, user update notification may be delayed:', e);
     }
   }
 

@@ -38,7 +38,7 @@ async function start() {
     console.log('Database connected, running migrations...');
     await AppDataSource.runMigrations();
     console.log('Migrations completed');
-    await notificationHub.connectRedis();
+    await notificationHub.connectBroker();
     await startUserEventSubscriber();
     
     const { startAmqpSubscriber } = require('./subscribers/AmqpSubscriber');

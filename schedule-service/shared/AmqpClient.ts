@@ -22,6 +22,9 @@ export class AmqpClient {
   constructor(serviceName: string) {
     this.rabbitmqUrl = process.env.RABBITMQ_URL || 'amqp://guest:guest@rabbitmq:5672';
     this.serviceName = serviceName;
+    if (this.rabbitmqUrl.includes('guest:guest')) {
+      console.warn(`[AMQP] WARNING: ${serviceName} using default guest:guest credentials. Change RABBITMQ_URL in production!`);
+    }
   }
 
   async connect(retries = 10, delay = 5000): Promise<void> {
@@ -98,6 +101,83 @@ export class AmqpClient {
       console.error(`[AMQP] Publish error for routingKey=${routingKey}:`, err.message);
       return false;
     }
+  }
+
+  async publishFanout(exchangeName: string, payload: any): Promise<boolean> {
+    try {
+      if (!this.channel) await this.connect();
+      if (!this.channel) throw new Error('No AMQP channel available');
+      await this.channel.assertExchange(exchangeName, 'fanout', { durable: false });
+      const buffer = Buffer.from(JSON.stringify(payload));
+      return this.channel.publish(exchangeName, '', buffer);
+    } catch (error: any) {
+      console.error('[AMQP] Fanout Publish error:', error.message);
+      return false;
+    }
+  }
+
+  async subscribeFanout(exchangeName: string, onMessage: (payload: any) => void): Promise<void> {
+    if (!this.channel) await this.connect();
+    if (!this.channel) throw new Error('No AMQP channel available');
+    await this.channel.assertExchange(exchangeName, 'fanout', { durable: false });
+    const q = await this.channel.assertQueue('', { exclusive: true, autoDelete: true });
+    await this.channel.bindQueue(q.queue, exchangeName, '');
+    await this.channel.consume(
+      q.queue,
+      (msg) => {
+        if (msg) {
+          try {
+            const payload = JSON.parse(msg.content.toString());
+            onMessage(payload);
+          } catch (e) {
+            console.error('[AMQP] Fanout parse message error', e);
+          }
+        }
+      },
+      { noAck: true }
+    );
+    console.log(`[AMQP] Subscribed to fanout exchange: ${exchangeName} (noAck=true, realtime)`);
+  }
+
+  async subscribeFanoutReliable(
+    exchangeName: string,
+    onMessage: (payload: any) => Promise<void>
+  ): Promise<void> {
+    if (!this.channel) await this.connect();
+    if (!this.channel) throw new Error('No AMQP channel available');
+    await this.channel.assertExchange(exchangeName, 'fanout', { durable: false });
+    const dlq = `${exchangeName}.dlq`;
+    await this.channel.assertQueue(dlq, { durable: true });
+    await this.channel.assertQueue(`${exchangeName}.retry`, { durable: true, messageTtl: 5000 });
+    const q = await this.channel.assertQueue('', { exclusive: true, autoDelete: true });
+    await this.channel.bindQueue(q.queue, exchangeName, '');
+    await this.channel.consume(
+      q.queue,
+      async (msg) => {
+        if (!msg) return;
+        try {
+          const payload = JSON.parse(msg.content.toString());
+          await onMessage(payload);
+          this.channel?.ack(msg);
+        } catch (e: any) {
+          console.error(`[AMQP] Reliable fanout error on ${exchangeName}:`, e.message);
+          const retries = (msg.properties.headers?.['x-retry-count'] as number) || 0;
+          if (retries < 3) {
+            const retryQueue = `${exchangeName}.retry`;
+            this.channel?.publish(exchangeName, '', msg.content, {
+              persistent: true,
+              headers: { 'x-retry-count': retries + 1 },
+            });
+            this.channel?.ack(msg);
+          } else {
+            this.channel?.publish(dlq, '', msg.content, { persistent: true });
+            this.channel?.ack(msg);
+          }
+        }
+      },
+      { noAck: false }
+    );
+    console.log(`[AMQP] Subscribed to fanout exchange: ${exchangeName} (manual ack, reliable)`);
   }
 
   async consume(
