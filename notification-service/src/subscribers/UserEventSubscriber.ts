@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { config } from '../config';
 import { AppDataSource } from '../data-source';
 import { Notification } from '../entities/Notification';
-import { amqpClient } from '../../shared/AmqpClient';
+import { amqpClient } from '../clients/AmqpClient';
 
 interface UserDeletedMessage {
   event: 'USER_DELETED';

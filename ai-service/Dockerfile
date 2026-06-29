@@ -9,6 +9,7 @@ RUN npm install
 COPY ai-service/src ./src
 COPY ai-service/migrations ./migrations
 COPY shared ./shared
+RUN ln -s /app/shared /shared
 
 RUN npm run build
 

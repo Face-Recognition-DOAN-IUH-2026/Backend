@@ -9,6 +9,7 @@ RUN npm install
 COPY user-service/src ./src
 COPY user-service/migrations ./migrations
 COPY shared ./shared
+RUN ln -s /app/shared /shared
 
 RUN npm run build
 
