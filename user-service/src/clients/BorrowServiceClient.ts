@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { getServiceToken } from '../../../shared';
 
 interface ActiveBorrowsResponse {
   hasActive: boolean;
@@ -30,7 +31,7 @@ export async function checkActiveBorrows(patronId: string): Promise<ActiveBorrow
   }
   try {
     const res = await fetch(`${config.borrowServiceUrl}/borrow/internal/active-borrowers?patronId=${patronId}`, {
-      headers: { 'x-internal-api-key': config.internalApiKey },
+      headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` },
       signal: AbortSignal.timeout(5000),
     });
     if (res.status === 403) {

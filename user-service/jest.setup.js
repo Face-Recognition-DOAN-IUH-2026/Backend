@@ -35,6 +35,6 @@ jest.mock('../src/config', () => ({
     jwtRefreshExpiresDays: 30,
     notificationServiceUrl: 'http://notification-service:3006',
     faceRecognitionServiceUrl: 'http://face-recognition-service:5000',
-    internalApiKey: 'test-api-key',
+    serviceJwtSecret: 'test-service-jwt-secret',
   },
 }));

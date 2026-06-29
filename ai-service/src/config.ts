@@ -3,13 +3,10 @@ dotenv.config();
 
 // Validate required secrets at startup
 const jwtSecret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
-const internalApiKey = process.env.INTERNAL_API_KEY;
+const serviceJwtSecret = process.env.SERVICE_JWT_SECRET || '';
 
 if (!jwtSecret) {
   throw new Error('[Config] JWT_SECRET or JWT_ACCESS_SECRET must be set');
-}
-if (!internalApiKey) {
-  throw new Error('[Config] INTERNAL_API_KEY must be set');
 }
 
 export const config = {
@@ -18,7 +15,7 @@ export const config = {
   jwtSecret,
   jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
-  internalApiKey,
+  serviceJwtSecret,
 
   // Service URLs
   accessServiceUrl: process.env.ACCESS_SERVICE_URL || 'http://access-service:3003',

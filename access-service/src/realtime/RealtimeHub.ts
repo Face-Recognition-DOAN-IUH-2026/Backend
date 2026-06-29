@@ -22,9 +22,9 @@ export class RealtimeHub {
       await amqpClient.connect();
       await amqpClient.subscribeFanout(EXCHANGE, (message) => {
         if (message.originId === this.instanceId) return;
-        if (message.signature && config.internalApiKey) {
+        if (message.signature && config.serviceJwtSecret) {
           const { signature, ...rest } = message;
-          const expected = signPayload(rest, config.internalApiKey);
+          const expected = signPayload(rest, config.serviceJwtSecret);
           try {
             if (!crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'))) {
               console.warn('[RealtimeHub] Invalid signature, ignoring event');
@@ -67,7 +67,7 @@ export class RealtimeHub {
       event,
       timestamp: new Date().toISOString(),
     };
-    const signature = config.internalApiKey ? signPayload(body, config.internalApiKey) : '';
+    const signature = config.serviceJwtSecret ? signPayload(body, config.serviceJwtSecret) : '';
     await amqpClient.publishFanout(EXCHANGE, { ...body, signature });
   }
 

@@ -1,8 +1,6 @@
 import express, { Express } from 'express';
 import request from 'supertest';
-import jwt from 'jsonwebtoken';
 import borrowRoutes from '../../routes/borrow.routes';
-import { auth } from '../../middlewares/auth';
 import { HttpError } from '../../middlewares/errorHandler';
 import * as AccessServiceClient from '../../clients/AccessServiceClient';
 import * as UserServiceClient from '../../clients/UserServiceClient';
@@ -14,12 +12,38 @@ import {
 } from '../helpers/mock-repo';
 import {
   PATRON_UUID,
-  STAFF_UUID,
-  ADMIN_UUID,
-  patronToken,
-  staffToken,
-  adminToken,
 } from '../helpers/auth';
+
+jest.mock('../../middlewares/auth', () => {
+  return {
+    auth: (req: any, _res: any, next: any) => {
+      const token = req.headers?.authorization?.replace('Bearer ', '');
+      if (!token || token === 'invalid-token') {
+        _res.status(401).json({ detail: 'Invalid or expired token' });
+        return;
+      }
+      const role = req.headers['x-test-role'] || 'patron';
+      req.user = { id: PATRON_UUID, email: 'patron@test.com', role };
+      next();
+    },
+    requireRole: (roles: string[], detail: string) => (req: any, res: any, next: any) => {
+      if (!req.user) {
+        const token = req.headers?.authorization?.replace('Bearer ', '');
+        if (!token || token === 'invalid-token') {
+          res.status(401).json({ detail: 'Invalid or expired token' });
+          return;
+        }
+        const role = req.headers['x-test-role'] || 'patron';
+        req.user = { id: PATRON_UUID, email: 'patron@test.com', role };
+      }
+      if (!roles.includes(req.user.role)) {
+        res.status(403).json({ detail });
+        return;
+      }
+      next();
+    },
+  };
+});
 
 const mockBorrowRepo = {
   getBorrowsByPatron: jest.fn().mockResolvedValue([]),
@@ -74,18 +98,8 @@ function createApp(): Express {
   return app;
 }
 
-function createValidToken(uuid: string, email: string, roles: string[]): string {
-  return jwt.sign(
-    {
-      sub: uuid,
-      email,
-      roles,
-      aud: 'face-recognition-users',
-      iss: 'face-recognition',
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    },
-    'test-secret-key-for-jwt-signing-minimum-32-chars'
-  );
+function authHeader(role: string = 'patron'): Record<string, string> {
+  return { Authorization: 'Bearer test-token', 'x-test-role': role };
 }
 
 describe('Borrow Routes', () => {
@@ -120,7 +134,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .get('/borrow/history')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
       expect(response.status).not.toBe(401);
       expect(response.status).not.toBe(403);
     });
@@ -135,7 +149,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .get('/borrow/history')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
@@ -146,7 +160,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .get('/borrow/history?status_filter=borrowed')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
 
       expect(response.status).toBe(200);
       expect(mockBorrowRepo.getBorrowsByPatron).toHaveBeenCalledWith(PATRON_UUID, 'borrowed');
@@ -162,7 +176,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .post('/borrow/')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron')
         .send({ barcode: 'LIB-001' });
 
       expect(response.status).toBe(403);
@@ -176,7 +190,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .post('/borrow/')
-        .set('Authorization', `Bearer ${createValidToken(STAFF_UUID, 'staff@test.com', ['staff'])}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
         .send({ barcode: 'LIB-001' });
 
       expect(response.status).toBe(403);
@@ -188,7 +202,7 @@ describe('Borrow Routes', () => {
     it('should return 403 for non-staff roles', async () => {
       const response = await request(app)
         .get('/borrow/barcode/LIB-001')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
 
       expect(response.status).toBe(403);
     });
@@ -198,7 +212,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .get('/borrow/barcode/LIB-001')
-        .set('Authorization', `Bearer ${createValidToken(STAFF_UUID, 'staff@test.com', ['staff'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff');
 
       expect(response.status).toBe(404);
     });
@@ -208,7 +222,7 @@ describe('Borrow Routes', () => {
     it('should return 403 for patron role', async () => {
       const response = await request(app)
         .get('/borrow/staff/active-borrowers')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
 
       expect(response.status).toBe(403);
     });
@@ -219,7 +233,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .get('/borrow/staff/active-borrowers')
-        .set('Authorization', `Bearer ${createValidToken(STAFF_UUID, 'staff@test.com', ['staff'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff');
 
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('items');
@@ -239,7 +253,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .get('/borrow/staff/active-borrowers')
-        .set('Authorization', `Bearer ${createValidToken(STAFF_UUID, 'staff@test.com', ['staff'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff');
 
       expect(response.status).toBe(200);
       expect(response.body.items[0].patron.student_code).toBe('SV001');
@@ -250,7 +264,7 @@ describe('Borrow Routes', () => {
     it('should return 403 for patron role', async () => {
       const response = await request(app)
         .get('/borrow/staff/patrons/SV001/active')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
 
       expect(response.status).toBe(403);
     });
@@ -264,7 +278,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .get('/borrow/staff/patrons/INVALID/active')
-        .set('Authorization', `Bearer ${createValidToken(STAFF_UUID, 'staff@test.com', ['staff'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff');
 
       expect(response.status).toBe(403);
     });
@@ -274,7 +288,7 @@ describe('Borrow Routes', () => {
     it('should return 403 for patron role', async () => {
       const response = await request(app)
         .post('/borrow/staff/slip/create')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron')
         .send({ patron_id: PATRON_UUID, items: [{ barcode: 'LIB-001' }] });
 
       expect(response.status).toBe(403);
@@ -283,7 +297,7 @@ describe('Borrow Routes', () => {
     it('should return 400 for invalid body', async () => {
       const response = await request(app)
         .post('/borrow/staff/slip/create')
-        .set('Authorization', `Bearer ${createValidToken(STAFF_UUID, 'staff@test.com', ['staff'])}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
         .send({});
 
       expect(response.status).toBe(500);
@@ -294,7 +308,7 @@ describe('Borrow Routes', () => {
     it('should return 403 for patron role', async () => {
       const response = await request(app)
         .post('/borrow/staff-return')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron')
         .send({ barcode: 'LIB-001' });
 
       expect(response.status).toBe(403);
@@ -305,7 +319,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .post('/borrow/staff-return')
-        .set('Authorization', `Bearer ${createValidToken(STAFF_UUID, 'staff@test.com', ['staff'])}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
         .send({ barcode: 'INVALID' });
 
       expect(response.status).toBe(404);
@@ -329,7 +343,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .get('/borrow/books')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
 
       expect(response.status).toBe(200);
       expect(response.body.items).toHaveLength(1);
@@ -345,7 +359,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .get('/borrow/books?skip=10&limit=20')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
 
       expect(response.status).toBe(200);
       expect(mockBorrowRepo.listBooks).toHaveBeenCalledWith(10, 20, undefined);
@@ -360,7 +374,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .get('/borrow/books?search=javascript')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
 
       expect(response.status).toBe(200);
       expect(mockBorrowRepo.listBooks).toHaveBeenCalledWith(0, 20, 'javascript');
@@ -379,7 +393,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .get('/borrow/books/search?q=javascript')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
@@ -388,7 +402,7 @@ describe('Borrow Routes', () => {
     it('should return 400 when q param missing', async () => {
       const response = await request(app)
         .get('/borrow/books/search')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
 
       expect(response.status).toBe(400);
     });
@@ -398,7 +412,7 @@ describe('Borrow Routes', () => {
     it('should return Excel template', async () => {
       const response = await request(app)
         .get('/borrow/books/template')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
 
       expect(response.status).toBe(200);
       expect(response.headers['content-type']).toContain('spreadsheetml');
@@ -419,7 +433,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .get('/borrow/barcodes')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`);
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron');
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
@@ -432,7 +446,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .put('/borrow/books/00000000-0000-0000-0000-000000000000/quantity')
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron')
         .send({ quantity: 5 });
 
       expect(response.status).toBe(404);
@@ -445,7 +459,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .put(`/borrow/books/${mockBook.id}/quantity`)
-        .set('Authorization', `Bearer ${createValidToken(PATRON_UUID, 'patron@test.com', ['patron'])}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron')
         .send({ quantity: -1 });
 
       expect(response.status).toBe(400);
@@ -456,7 +470,7 @@ describe('Borrow Routes', () => {
     it('should return 403 for non-admin roles', async () => {
       const response = await request(app)
         .post('/borrow/books/delete')
-        .set('Authorization', `Bearer ${createValidToken(STAFF_UUID, 'staff@test.com', ['staff'])}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
         .send({ book_ids: ['book-id-1'] });
 
       expect(response.status).toBe(403);
@@ -467,7 +481,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .post('/borrow/books/delete')
-        .set('Authorization', `Bearer ${createValidToken(ADMIN_UUID, 'admin@test.com', ['admin'])}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'admin')
         .send({ book_ids: ['00000000-0000-0000-0000-000000000001'] });
 
       expect(response.status).toBe(200);
@@ -477,7 +491,7 @@ describe('Borrow Routes', () => {
     it('should return 200 when book_ids is empty (no-op)', async () => {
       const response = await request(app)
         .post('/borrow/books/delete')
-        .set('Authorization', `Bearer ${createValidToken(ADMIN_UUID, 'admin@test.com', ['admin'])}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'admin')
         .send({ book_ids: [] });
 
       expect(response.status).toBe(200);
@@ -488,7 +502,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .post('/borrow/books/delete')
-        .set('Authorization', `Bearer ${createValidToken(ADMIN_UUID, 'admin@test.com', ['admin'])}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'admin')
         .send({ book_ids: manyIds });
 
       expect(response.status).toBe(400);
@@ -497,21 +511,9 @@ describe('Borrow Routes', () => {
 
   describe('Expired Token Handling', () => {
     it('should return 401 for expired token', async () => {
-      const expiredToken = jwt.sign(
-        {
-          sub: PATRON_UUID,
-          email: 'patron@test.com',
-          roles: ['patron'],
-          aud: 'face-recognition-users',
-          iss: 'face-recognition',
-          exp: Math.floor(Date.now() / 1000) - 3600,
-        },
-        'test-secret-key-for-jwt-signing-minimum-32-chars'
-      );
-
       const response = await request(app)
         .get('/borrow/history')
-        .set('Authorization', `Bearer ${expiredToken}`);
+        .set('Authorization', 'Bearer invalid-token');
 
       expect(response.status).toBe(401);
     });

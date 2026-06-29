@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_db_session
 from core.schemas import KioskResult, PatronPublic
+from core.service_token import get_auth_headers
 from infra.config import settings
 from infra.milvus_client import MilvusClient as _MilvusClient
 from infra.minio_client import MinioStorage as _MinioStorage
@@ -20,17 +21,17 @@ from worker.celery_app import celery_app as _celery_app
 from worker.tasks import _upload_temp_frame
 
 USER_SERVICE = settings.user_service_url
-INTERNAL_KEY = settings.internal_api_key
+
+
+def _internal_headers() -> dict[str, str]:
+    return get_auth_headers(
+        service_name="face-recognition-service",
+        scopes=["patrons:read"],
+        secret=settings.service_jwt_secret,
+    )
 
 router = APIRouter(prefix="/kiosk", tags=["kiosk"])
 celery_app = _celery_app
-
-
-def _internal_headers() -> dict:
-    headers = {}
-    if INTERNAL_KEY:
-        headers["X-Internal-Api-Key"] = INTERNAL_KEY
-    return headers
 
 
 def _get_milvus_client() -> _MilvusClient:

@@ -58,8 +58,7 @@ class Settings(BaseSettings):
 
     user_service_url: str = "http://user-service:3001"
     access_service_url: str = "http://access-service:3003"
-    internal_api_key: str = ""
-    user_service_jwt_secret: str = ""
+    service_jwt_secret: str = ""
 
 
 settings = Settings()

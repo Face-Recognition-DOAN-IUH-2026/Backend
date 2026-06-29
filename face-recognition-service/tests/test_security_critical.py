@@ -95,7 +95,7 @@ def _mock_settings():
         s.jwt_refresh_secret = "test-refresh-secret"
         s.jwt_access_expires_minutes = 60
         s.jwt_refresh_expires_days = 7
-        s.internal_api_key = "test-internal-key"
+        s.service_jwt_secret = "test-service-jwt-secret"
         s.user_service_url = "http://user-service:3001"
         s.access_service_url = "http://access-service:3003"
         s.enable_person_detection = False

@@ -1,5 +1,6 @@
 import { userClient, notificationClient, emailClient } from '../clients/serviceClients';
 import { config as appConfig } from '../config';
+import { getServiceToken } from '../../../shared';
 
 export async function membershipExpiryCheck(taskConfig: Record<string, any>): Promise<any> {
   const daysBefore = taskConfig.days_before || 7;
@@ -9,7 +10,7 @@ export async function membershipExpiryCheck(taskConfig: Record<string, any>): Pr
       `${appConfig.services.userService}/internal/users/expiring-membership?days=${daysBefore}`,
       {
         headers: {
-          'x-internal-api-key': appConfig.internalApiKey,
+          'Authorization': `Bearer ${getServiceToken('automation-service', appConfig.jwtSecret)}`,
           'Content-Type': 'application/json',
         },
       }

@@ -1,8 +1,13 @@
 import { config } from '../config';
 import { HttpError } from '../middlewares/errorHandler';
-import { CircuitBreaker } from '../utils/circuitBreaker';
+import { CircuitBreaker } from '../../../shared/utils/circuitBreaker';
+import { getServiceToken } from '../../../shared';
 
 const circuit = new CircuitBreaker(5, 60_000);
+
+function getAuthHeaders() {
+  return { 'Authorization': `Bearer ${getServiceToken('borrow-service', config.jwtSecret)}` };
+}
 
 export interface PatronAccessStatus {
   inside: boolean;
@@ -20,7 +25,7 @@ async function setAccessStatus(patronId: string, status: 'inside' | 'outside'): 
   await fetch(`${config.accessServiceUrl}/internal/access/patrons/${patronId}/status`, {
     method: 'POST',
     headers: {
-      'x-internal-api-key': config.internalApiKey,
+      ...getAuthHeaders(),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ current_status: status }),
@@ -31,7 +36,7 @@ async function setAccessStatus(patronId: string, status: 'inside' | 'outside'): 
 async function getUserStatus(patronId: string): Promise<string | null> {
   try {
     const res = await fetch(`${config.userServiceUrl}/internal/users/${encodeURIComponent(patronId)}`, {
-      headers: { 'x-internal-api-key': config.internalApiKey },
+      headers: getAuthHeaders(),
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;
@@ -104,7 +109,7 @@ export async function getPatronAccessStatus(patronId: string): Promise<PatronAcc
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const res = await fetch(`${config.accessServiceUrl}/internal/access/patrons/${patronId}/status`, {
-        headers: { 'x-internal-api-key': config.internalApiKey },
+        headers: getAuthHeaders(),
         signal: AbortSignal.timeout(5000),
       });
 
@@ -143,7 +148,7 @@ export async function getPatronRawAccessStatus(patronId: string): Promise<Patron
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const res = await fetch(`${config.accessServiceUrl}/internal/access/patrons/${patronId}/status`, {
-        headers: { 'x-internal-api-key': config.internalApiKey },
+        headers: getAuthHeaders(),
         signal: AbortSignal.timeout(5000),
       });
 

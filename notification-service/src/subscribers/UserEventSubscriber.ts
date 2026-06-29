@@ -18,7 +18,7 @@ function signPayload(payload: object, secret: string): string {
 
 function verifySignature(msg: UserDeletedMessage): boolean {
   const { signature, ...rest } = msg;
-  const expected = signPayload(rest, config.internalApiKey);
+  const expected = signPayload(rest, config.serviceJwtSecret);
   try {
     return crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'));
   } catch {

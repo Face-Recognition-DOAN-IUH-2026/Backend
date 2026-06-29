@@ -8,6 +8,7 @@ import { UserPublicDto } from '../dto';
 import { NotFoundError, BadRequestError, UnauthorizedError } from '../errors';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { getServiceToken } from '../../../shared';
 import axios from 'axios';
 import { config } from '../config';
 import { accessServiceClient } from '../clients/AccessServiceClient';
@@ -183,7 +184,7 @@ export class UserService {
       await axios.post(
         `${config.notificationServiceUrl}/internal/send-email-change`,
         { toEmail: normalizedEmail, code },
-        { headers: { 'x-internal-api-key': config.internalApiKey } }
+        { headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` } }
       );
     } catch (e: any) {
       console.error('[UserService] Failed to send email change OTP:', e.response?.status, e.response?.data || e.message);

@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { getServiceToken } from '../../../shared';
 
 export interface UserSummary {
   id: string;
@@ -35,7 +36,7 @@ export class UserServiceClient {
     if (!this.canRequest()) return null;
     try {
       const res = await fetch(`${config.userServiceUrl}/internal/users/${id}`, {
-        headers: { 'x-internal-api-key': config.internalApiKey },
+        headers: { 'Authorization': `Bearer ${getServiceToken('access-service', config.jwtSecret)}` },
         signal: AbortSignal.timeout(3000),
       });
       if (res.status === 404) {

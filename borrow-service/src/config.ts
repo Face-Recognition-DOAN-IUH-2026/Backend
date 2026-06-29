@@ -26,7 +26,7 @@ export const config = {
   userServiceUrl: process.env.USER_SERVICE_URL || 'http://user-service:3001',
   accessServiceUrl: process.env.ACCESS_SERVICE_URL || 'http://access-service:3003',
   notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:3006',
-  internalApiKey: process.env.INTERNAL_API_KEY || '',
+  serviceJwtSecret: process.env.SERVICE_JWT_SECRET || '',
   jwtSecret: process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || '',
   jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',

@@ -3,10 +3,11 @@ import { AppDataSource } from '../data-source';
 import { AiInsight } from '../entities/AiInsight';
 import { AiRun } from '../entities/AiRun';
 import { config } from '../config';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared';
 import { OpenRouterClient } from '../clients/OpenRouterClient';
 import { DataCollector } from './DataCollector';
 import { AiInsightDto, BookRecommendation, BookRecommendationResponse, CommandCenterSummary, InsightExplanation, LibraryOperationsSnapshot } from './types';
+import { getServiceToken } from '../../../shared';
 
 const insightRepo = () => AppDataSource.getRepository(AiInsight);
 const runRepo = () => AppDataSource.getRepository(AiRun);
@@ -183,7 +184,7 @@ export class AiService {
   private async fetchInternal(url: string): Promise<any> {
     try {
       const res = await fetch(url, {
-        headers: { 'x-internal-api-key': config.internalApiKey },
+        headers: { 'Authorization': `Bearer ${getServiceToken('ai-service', config.jwtSecret)}` },
         signal: AbortSignal.timeout(10000),
       });
       if (!res.ok) return [];

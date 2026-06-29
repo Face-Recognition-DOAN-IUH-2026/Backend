@@ -39,7 +39,7 @@ jest.mock('./src/config', () => ({
     jwtSecret: 'test-secret',
     jwtIssuer: 'face-recognition',
     jwtAudience: 'face-recognition-users',
-    internalApiKey: 'test-internal-key',
+    serviceJwtSecret: 'test-service-jwt-secret',
     redisUrl: 'redis://localhost:6379/0',
     db: {
       host: 'localhost',

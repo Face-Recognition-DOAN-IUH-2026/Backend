@@ -4,11 +4,16 @@ import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowRepository } from '../repositories/BorrowRepository';
-import { internalAuth } from '../middlewares/internal-auth';
+import { createInternalAuth } from '../../shared';
 import { publishEvent } from '../utils/eventPublisher';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { calculateOverdueFine } from '../utils/fineCalculator';
 import { lookupPatronByStudentCode, lookupPatronById, PatronSummary } from '../clients/UserServiceClient';
+
+const internalAuth = createInternalAuth({
+  serviceName: 'borrow-service',
+  jwtSecret: config.serviceJwtSecret,
+});
 
 const router = Router();
 router.use(internalAuth);

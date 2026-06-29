@@ -14,7 +14,7 @@ import {
 } from '../contracts';
 import { UserServiceClient } from '../clients/UserServiceClient';
 import { realtimeHub } from '../realtime/RealtimeHub';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared';
 
 const logRepo = () => AppDataSource.getRepository(AccessLog);
 const stateRepo = () => AppDataSource.getRepository(PatronAccessState);

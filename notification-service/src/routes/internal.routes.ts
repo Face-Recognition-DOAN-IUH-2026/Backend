@@ -1,9 +1,15 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { internalAuth } from '../middlewares/internalAuth';
+import { createInternalAuth } from '../../../shared';
+import { config } from '../config';
 import { notificationService } from '../services/NotificationService';
 import { notificationHub } from '../realtime/NotificationHub';
 import { EmailService } from '../services/EmailService';
+
+const internalAuth = createInternalAuth({
+  serviceName: 'notification-service',
+  jwtSecret: config.serviceJwtSecret,
+});
 
 const router = Router();
 router.use(internalAuth);

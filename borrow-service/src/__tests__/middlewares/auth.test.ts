@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
 import { auth, AuthRequest, requireRole } from '../../middlewares/auth';
 import { HttpError } from '../../middlewares/errorHandler';
 
@@ -10,6 +9,14 @@ jest.mock('../../config', () => ({
     jwtAudience: 'face-recognition-users',
   },
 }));
+
+jest.mock('../../../shared/auth/decodeToken', () => ({
+  decodeToken: jest.fn(),
+}));
+
+import { decodeToken } from '../../../shared/auth/decodeToken';
+
+const mockDecodeToken = decodeToken as jest.MockedFunction<typeof decodeToken>;
 
 describe('Auth Middleware', () => {
   let mockReq: Partial<AuthRequest>;
@@ -25,6 +32,7 @@ describe('Auth Middleware', () => {
       json: jest.fn(),
     };
     mockNext = jest.fn();
+    mockDecodeToken.mockReset();
   });
 
   describe('auth middleware', () => {
@@ -47,6 +55,7 @@ describe('Auth Middleware', () => {
 
     it('should return 401 for invalid token', () => {
       mockReq.headers = { authorization: 'Bearer invalid-token' };
+      mockDecodeToken.mockImplementation(() => { throw new Error('jwt malformed'); });
 
       auth(mockReq as AuthRequest, mockRes as Response, mockNext);
 
@@ -55,16 +64,14 @@ describe('Auth Middleware', () => {
     });
 
     it('should call next and set user for valid token', () => {
-      const payload = {
-        sub: '11111111-1111-1111-1111-111111111111',
+      mockReq.headers = { authorization: 'Bearer valid-token' };
+      mockDecodeToken.mockReturnValue({
+        userId: '11111111-1111-1111-1111-111111111111',
+        id: '11111111-1111-1111-1111-111111111111',
         email: 'test@example.com',
-        roles: ['patron'],
-        aud: 'face-recognition-users',
-        iss: 'face-recognition',
-        exp: Math.floor(Date.now() / 1000) + 3600,
-      };
-      const token = jwt.sign(payload, 'test-secret-key-for-jwt-signing-minimum-32-chars');
-      mockReq.headers = { authorization: `Bearer ${token}` };
+        role: 'patron',
+        fullName: null,
+      });
 
       auth(mockReq as AuthRequest, mockRes as Response, mockNext);
 
@@ -76,16 +83,14 @@ describe('Auth Middleware', () => {
     });
 
     it('should handle token with role instead of roles array', () => {
-      const payload = {
-        sub: 'user-id-123',
+      mockReq.headers = { authorization: 'Bearer valid-token' };
+      mockDecodeToken.mockReturnValue({
+        userId: 'user-id-123',
+        id: 'user-id-123',
         email: 'user@example.com',
         role: 'staff',
-        aud: 'face-recognition-users',
-        iss: 'face-recognition',
-        exp: Math.floor(Date.now() / 1000) + 3600,
-      };
-      const token = jwt.sign(payload, 'test-secret-key-for-jwt-signing-minimum-32-chars');
-      mockReq.headers = { authorization: `Bearer ${token}` };
+        fullName: null,
+      });
 
       auth(mockReq as AuthRequest, mockRes as Response, mockNext);
 

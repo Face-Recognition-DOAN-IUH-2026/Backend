@@ -6,7 +6,7 @@ jest.mock('../../config', () => ({
     borrowServiceUrl: 'http://borrow-service:8000',
     userServiceUrl: 'http://user-service:3001',
     scheduleServiceUrl: 'http://schedule-service:3004',
-    internalApiKey: 'test-api-key',
+    serviceJwtSecret: 'test-service-jwt-secret',
   },
 }));
 
@@ -57,7 +57,7 @@ describe('AI Tools', () => {
         }),
         expect.objectContaining({
           headers: expect.objectContaining({
-            'X-Internal-Api-Key': 'test-api-key',
+            'Authorization': expect.stringContaining('Bearer '),
           }),
         })
       );

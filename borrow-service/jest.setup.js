@@ -60,7 +60,7 @@ jest.mock('./src/config', () => ({
     },
     userServiceUrl: 'http://user-service:3001',
     accessServiceUrl: 'http://access-service:3003',
-    internalApiKey: 'test-internal-key',
+    serviceJwtSecret: 'test-service-jwt-secret',
     jwtSecret: 'test-secret-key-for-jwt-signing-minimum-32-chars',
     jwtIssuer: 'face-recognition',
     jwtAudience: 'face-recognition-users',

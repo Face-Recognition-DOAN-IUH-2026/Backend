@@ -11,6 +11,7 @@ export interface UserPayload {
 
 export interface AuthRequest extends Request {
   user?: UserPayload;
+  service?: ServiceToken;
 }
 
 export interface ServiceToken {
@@ -20,9 +21,15 @@ export interface ServiceToken {
   exp: number;
 }
 
+export interface ServiceAuthConfig {
+  serviceName: string;
+  jwtSecret: string;
+  requiredScopes: string[];
+}
+
 export interface InternalAuthConfig {
   serviceName: string;
-  internalApiKey: string;
+  jwtSecret: string;
 }
 
 export interface AuthConfig {

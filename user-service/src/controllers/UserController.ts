@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middlewares';
+import { AuthRequest } from '../../shared';
 import { userService } from '../services';
 
 const AVATAR_MAX_SIZE = 2 * 1024 * 1024;

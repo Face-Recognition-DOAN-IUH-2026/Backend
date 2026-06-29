@@ -6,6 +6,7 @@ import { User, UserRole } from '../entities/User.entity';
 import { UserRepository } from '../repositories/UserRepository';
 import { RedisService } from './RedisService';
 import { config } from '../config';
+import { getServiceToken } from '../../../shared';
 import {
   RegisterDto,
   LoginDto,
@@ -175,7 +176,7 @@ export class AuthService {
       await axios.post(
         `${config.notificationServiceUrl}/internal/send-password-reset`,
         { toEmail: normalizedEmail, code },
-        { headers: { 'x-internal-api-key': config.internalApiKey } }
+        { headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` } }
       );
       console.log(`[ForgotPassword] Email sent successfully to ${normalizedEmail}`);
     } catch (e: any) {
@@ -220,7 +221,7 @@ export class AuthService {
       await axios.post(
         `${config.notificationServiceUrl}/internal/send-email-verification`,
         { toEmail: normalizedEmail, code },
-        { headers: { 'x-internal-api-key': config.internalApiKey } }
+        { headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` } }
       );
       console.log(`[Verification] Email sent successfully to ${normalizedEmail}`);
     } catch (e: any) {

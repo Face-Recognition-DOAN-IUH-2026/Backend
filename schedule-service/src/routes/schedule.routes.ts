@@ -1,8 +1,14 @@
 import { Router, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { scheduleService } from '../services/ScheduleService';
-import { AuthRequest, auth } from '../middlewares/auth';
-import { requireRole } from '../middlewares/requireRole';
+import { createAuth, AuthRequest, requireRole } from '../../../shared';
+import { config } from '../config';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
 
 const router = Router();
 
