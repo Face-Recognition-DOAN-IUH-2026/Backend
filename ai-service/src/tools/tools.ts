@@ -91,7 +91,7 @@ export async function getOverdueBorrows(): Promise<ToolResult> {
 }
 
 export async function getScheduleToday(): Promise<ToolResult> {
-  const url = `${config.scheduleServiceUrl}/schedules/today`;
+  const url = `${config.scheduleServiceUrl}/internal/today`;
   const result = await safeGet<any>(url);
 
   if (result.success && result.data && Array.isArray(result.data)) {

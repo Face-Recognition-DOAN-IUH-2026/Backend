@@ -312,4 +312,59 @@ router.post('/correct-email/request-otp', (req, res) => authController.requestEm
  */
 router.post('/correct-email/verify', (req, res) => authController.verifyEmailCorrection(req, res));
 
+/**
+ * @swagger
+ * /auth/pre-register-otp:
+ *   post:
+ *     summary: Send OTP for pre-registration email verification
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: OTP sent
+ *       400:
+ *         description: Email already registered or invalid
+ */
+router.post('/pre-register-otp', (req, res) => authController.preRegisterOtp(req, res));
+
+/**
+ * @swagger
+ * /auth/pre-register-verify:
+ *   post:
+ *     summary: Verify OTP and get verification token for registration
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - code
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: OTP verified, returns verification token
+ *       400:
+ *         description: Invalid or expired OTP
+ */
+router.post('/pre-register-verify', (req, res) => authController.preRegisterVerify(req, res));
+
 export default router;

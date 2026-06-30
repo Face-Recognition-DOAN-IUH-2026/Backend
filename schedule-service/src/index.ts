@@ -18,7 +18,7 @@ app.use(express.json());
 app.use(auditContextMiddleware);
 
 app.use('/schedules', scheduleRoutes);
-app.use('/schedules', scheduleInternalRoutes);
+app.use('/schedules/internal', scheduleInternalRoutes);
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'schedule-service' }));
 
 if (config.nodeEnv !== 'production') {

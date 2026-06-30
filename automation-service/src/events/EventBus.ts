@@ -36,7 +36,7 @@ export class EventBus {
       await amqpClient.connect();
       await amqpClient.consume(
         'automation_service_queue',
-        ['book.borrowed', 'book.returned'],
+        ['book.borrowed', 'book.returned', 'schedule.changed', 'fine.incurred'],
         async (envelope: any) => {
           console.log(`[AMQP] Automation EventBus received: ${envelope.eventType}`);
           const event: AutomationEvent = {

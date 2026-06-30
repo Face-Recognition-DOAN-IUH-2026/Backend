@@ -121,11 +121,11 @@ export const borrowClient = {
 
 export const scheduleClient = {
   async getTodayAssignments() {
-    return request(`${config.services.scheduleService}/schedules/today`);
+    return request(`${config.services.scheduleService}/internal/today`);
   },
 
   async getUpcomingAssignments(from: string, to: string) {
-    return request(`${config.services.scheduleService}/schedules/internal/upcoming?from=${from}&to=${to}`);
+    return request(`${config.services.scheduleService}/internal/upcoming?from=${from}&to=${to}`);
   },
 
   async getAttendance(scheduleId: string) {
