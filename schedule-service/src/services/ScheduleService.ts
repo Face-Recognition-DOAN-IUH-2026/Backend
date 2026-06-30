@@ -1,6 +1,7 @@
 import { Between, In, IsNull, LessThan, Not } from 'typeorm';
 import { getAuditContext } from '../middlewares/auditContext';
 import { AppDataSource } from '../data-source';
+import { config } from '../config';
 import {
   LibraryZone,
   ScheduleAuditLog,
@@ -637,7 +638,8 @@ export class ScheduleService {
       for (const zone of activeZones) {
         const cursor = new Date(`${today}T00:00:00`);
         const end = new Date(`${to}T00:00:00`);
-        while (cursor <= end) {
+
+    while (cursor <= end) {
           const workDate = localDate(cursor);
           const assigned = countMap.get(`${shift.id}:${zone.id}:${workDate}`) || 0;
           const maxSlots = shift.maxStaff || shift.minStaff;
@@ -1049,6 +1051,8 @@ export class ScheduleService {
       ...proposed.filter((p) => p.staffId === staffId && p.workDate === workDate),
     ];
 
+    const understaffed: Array<{ shiftId: string; zoneId: string; workDate: string; needed: number; shiftName?: string; zoneName?: string }> = [];
+
     while (cursor <= end) {
       const workDate = localDate(cursor);
       if (workDate < today) { cursor.setDate(cursor.getDate() + 1); continue; }
@@ -1101,16 +1105,6 @@ export class ScheduleService {
       }
 
       // ── PASS 2: Fill remaining gaps with scoring algorithm ──────────────────
-      const dayStaff = [...staff].sort((a, b) => {
-        // Template-matched staff come first (but for fill pass, templates already applied, so sort by pref then workload)
-        const aHasPref = preferences.some((p) => p.staffId === a.id);
-        const bHasPref = preferences.some((p) => p.staffId === b.id);
-        if (aHasPref && !bHasPref) return -1;
-        if (!aHasPref && bHasPref) return 1;
-        const aLoad = staffWorkload.get(a.id) || 0;
-        const bLoad = staffWorkload.get(b.id) || 0;
-        return aLoad - bLoad;
-      });
 
       for (const shift of activeShifts) {
         for (const zone of activeZones) {
@@ -1122,8 +1116,19 @@ export class ScheduleService {
           const prefKey = `${shift.id}:${zone.id}`;
           const prefMatchFirst = preferencesByShiftZone.get(prefKey) || [];
 
+          // Sort per shift/zone: preference for THIS shift+zone first, then workload ascending
+          const sortedStaff = [...staff].sort((a, b) => {
+            const aIsPref = prefMatchFirst.includes(a.id);
+            const bIsPref = prefMatchFirst.includes(b.id);
+            if (aIsPref && !bIsPref) return -1;
+            if (!aIsPref && bIsPref) return 1;
+            const aLoad = staffWorkload.get(a.id) || 0;
+            const bLoad = staffWorkload.get(b.id) || 0;
+            return aLoad - bLoad;
+          });
+
           let assigned = 0;
-          for (const s of dayStaff) {
+          for (const s of sortedStaff) {
             if (assigned >= needed) break;
             // Skip if already assigned via template in this pass
             if (proposed.some((p) => p.staffId === s.id && p.workDate === workDate && p.shiftId === shift.id && p.zoneId === zone.id)) continue;
@@ -1131,7 +1136,7 @@ export class ScheduleService {
             if (isOnLeave(s.id, workDate)) { skipped.push(`leave:${s.id}:${workDate}`); continue; }
 
             const proposedCount = proposed.filter((p) => p.staffId === s.id).length + (staffWorkload.get(s.id) || 0);
-            const maxShifts = 5;
+            const maxShifts = config.maxShiftsPerWeek;
             if (proposedCount >= maxShifts) { skipped.push(`max:${s.id}:${workDate}`); continue; }
 
             const sameDayAssignments = getStaffDayAssignments(s.id, workDate);
@@ -1155,19 +1160,28 @@ export class ScheduleService {
             }
             if (hasTimeOverlap) { skipped.push(`time_overlap:${s.id}:${workDate}`); continue; }
 
-            const isPref = prefMatchFirst.includes(s.id);
-            const note = isPref ? 'Auto-scheduled (preference)' : 'Auto-scheduled';
-
-            proposed.push({ staffId: s.id, shiftId: shift.id, zoneId: zone.id, workDate, note });
+            proposed.push({ staffId: s.id, shiftId: shift.id, zoneId: zone.id, workDate, note: 'Auto-scheduled' });
             staffWorkload.set(s.id, (staffWorkload.get(s.id) || 0) + 1);
             assigned++;
+          }
+
+          // Track understaffed zones
+          if (assigned < needed) {
+            understaffed.push({
+              shiftId: shift.id,
+              zoneId: zone.id,
+              workDate,
+              needed: needed - assigned,
+              shiftName: (shift as any).name,
+              zoneName: (zone as any).name,
+            });
           }
         }
       }
       cursor.setDate(cursor.getDate() + 1);
     }
     await this.log('auto_schedule.generated', 'staff_schedule', null, actorId, { from, to, proposed: proposed.length, skipped: skipped.length });
-    return { proposed, skipped: skipped.length, total: proposed.length, actualFrom, actualTo: to };
+    return { proposed, skipped: skipped.length, total: proposed.length, actualFrom, actualTo: to, understaffed };
   }
 
 

@@ -9,6 +9,7 @@ export const config = {
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
   serviceJwtSecret: process.env.SERVICE_JWT_SECRET || '',
   userServiceUrl: process.env.USER_SERVICE_URL || 'http://user-service:3001',
+  maxShiftsPerWeek: parseInt(process.env.MAX_SHIFTS_PER_WEEK || '5', 10),
   db: {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432', 10),
