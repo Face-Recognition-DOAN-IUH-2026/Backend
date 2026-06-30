@@ -1,6 +1,7 @@
 import { amqpClient } from '../clients/AmqpClient';
 import { AppDataSource } from '../data-source';
 import { User } from '../entities';
+import { EventEnvelope } from '../../shared';
 
 export async function startAmqpSubscriber(): Promise<void> {
   try {
@@ -10,7 +11,7 @@ export async function startAmqpSubscriber(): Promise<void> {
     await amqpClient.consume(
       'user_service_access_queue',
       ['user.access.status_changed'],
-      async (envelope) => {
+      async (envelope: EventEnvelope) => {
         const { patronId, currentStatus, lastEntryAt, lastEntryCamera } = envelope.payload;
         if (!patronId || !currentStatus) {
           console.warn('[AMQP] Invalid payload in status changed event:', envelope);

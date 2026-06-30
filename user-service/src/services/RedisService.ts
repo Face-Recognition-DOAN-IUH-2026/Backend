@@ -95,7 +95,7 @@ export class RedisService {
 
   async setEmailVerificationCode(email: string, code: string): Promise<void> {
     const key = `verify_code:${email.toLowerCase()}`;
-    await this.client.set(key, code, 'EX', 24 * 60 * 60); // 24 hours
+    await this.client.set(key, code, 'EX', 5 * 60); // 5 minutes
   }
 
   async getEmailVerificationCode(email: string): Promise<string | null> {

@@ -72,7 +72,7 @@ def _get_user_via_api(user_id: str) -> dict | None:
             return json.loads(cached)
     except Exception:
         pass
-    result = _call_user_service("GET", f"/users/{user_id}")
+    result = _call_user_service("GET", f"/internal/users/{user_id}")
     if result:
         try:
             from infra.redis_cache import redis_client as _rc

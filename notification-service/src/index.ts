@@ -35,9 +35,7 @@ app.use(errorHandler);
 async function start() {
   try {
     await AppDataSource.initialize();
-    console.log('Database connected, running migrations...');
-    await AppDataSource.runMigrations();
-    console.log('Migrations completed');
+    console.log('Database connected');
     await notificationHub.connectBroker();
     await startUserEventSubscriber();
     
@@ -60,7 +58,11 @@ async function start() {
         return;
       }
       try {
-        const user = decodeToken(token);
+        const user = decodeToken(token, {
+          jwtSecret: config.jwtSecret,
+          jwtIssuer: config.jwtIssuer,
+          jwtAudience: config.jwtAudience,
+        });
         wss.handleUpgrade(request, socket, head, (ws) => {
           notificationHub.addWsClient(user.userId, ws);
         });

@@ -32,9 +32,7 @@ app.use(errorHandler);
 async function start() {
   try {
     await AppDataSource.initialize();
-    console.log('Database connected, running migrations...');
-    await AppDataSource.runMigrations();
-    console.log('Migrations completed');
+    console.log('Database connected');
 
     // Connect event bus
     await eventBus.connect();

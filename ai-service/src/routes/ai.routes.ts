@@ -33,7 +33,7 @@ router.use(auth);
  *         description: Successfully retrieved AI summary
  */
 router.get('/command-center/summary', requireRole(['admin', 'staff']), asyncHandler(async (req, res) => {
-  res.json(await aiService.getSummary(req.user!.token, false));
+  res.json(await aiService.getSummary(req.user!.token || '', false));
 }));
 
 /**
@@ -49,7 +49,7 @@ router.get('/command-center/summary', requireRole(['admin', 'staff']), asyncHand
  *         description: Successfully refreshed AI summary
  */
 router.post('/command-center/refresh', requireRole(['admin', 'staff']), asyncHandler(async (req, res) => {
-  res.json(await aiService.getSummary(req.user!.token, true));
+  res.json(await aiService.getSummary(req.user!.token || '', true));
 }));
 
 /**
@@ -158,7 +158,7 @@ router.get('/insights/:id/explain', requireRole(['admin', 'staff']), asyncHandle
  *         description: Successfully received AI chat response
  */
 router.post('/command-center/chat', requireRole(['admin', 'staff']), asyncHandler(async (req, res) => {
-  res.json(await aiService.chat(req.user!.token, req.body));
+  res.json(await aiService.chat(req.user!.token || '', req.body));
 }));
 
 /**
@@ -181,7 +181,7 @@ router.post('/command-center/chat', requireRole(['admin', 'staff']), asyncHandle
  *         description: Successfully retrieved book recommendations
  */
 router.get('/recommendations/patron/:studentCode', asyncHandler(async (req, res) => {
-  res.json(await aiService.recommendBooks(req.user!.token, req.params.studentCode));
+  res.json(await aiService.recommendBooks(req.user!.token || '', req.params.studentCode));
 }));
 
 export default router;

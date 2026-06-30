@@ -223,4 +223,93 @@ router.post('/reset-password', (req, res) => authController.resetPassword(req, r
  */
 router.post('/verify-email', (req, res) => authController.verifyEmail(req, res));
 
+/**
+ * @swagger
+ * /auth/resend-verification:
+ *   post:
+ *     summary: Resend email verification code
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: Verification code sent
+ *       400:
+ *         description: Account already verified or email not found
+ */
+router.post('/resend-verification', (req, res) => authController.resendVerification(req, res));
+
+/**
+ * @swagger
+ * /auth/correct-email/request-otp:
+ *   post:
+ *     summary: Request OTP to change email for unverified account
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - current_email
+ *               - new_email
+ *             properties:
+ *               current_email:
+ *                 type: string
+ *                 format: email
+ *               new_email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: OTP sent to new email
+ *       400:
+ *         description: Invalid request
+ */
+router.post('/correct-email/request-otp', (req, res) => authController.requestEmailCorrection(req, res));
+
+/**
+ * @swagger
+ * /auth/correct-email/verify:
+ *   post:
+ *     summary: Verify OTP and change email for unverified account
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - current_email
+ *               - new_email
+ *               - code
+ *             properties:
+ *               current_email:
+ *                 type: string
+ *                 format: email
+ *               new_email:
+ *                 type: string
+ *                 format: email
+ *               code:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Email changed and account verified
+ *       400:
+ *         description: Invalid OTP or email
+ */
+router.post('/correct-email/verify', (req, res) => authController.verifyEmailCorrection(req, res));
+
 export default router;
