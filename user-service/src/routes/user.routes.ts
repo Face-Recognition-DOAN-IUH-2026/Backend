@@ -126,6 +126,68 @@ router.put('/:id/access-status', requireRole('admin'), (req, res) => userControl
 
 /**
  * @swagger
+ * /users/{id}:
+ *   put:
+ *     summary: Admin update user info (admin only)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               full_name:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               student_code:
+ *                 type: string
+ *               class_name:
+ *                 type: string
+ *               identity_number:
+ *                 type: string
+ *               course:
+ *                 type: string
+ *               permanent_address:
+ *                 type: string
+ *               card_number:
+ *                 type: string
+ *               issue_date:
+ *                 type: string
+ *                 format: date
+ *               membership_expiry:
+ *                 type: string
+ *                 format: date
+ *               role:
+ *                 type: string
+ *                 enum: [patron, staff, admin]
+ *               status:
+ *                 type: string
+ *                 enum: [active, suspended, inactive]
+ *               suspended_reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: User updated
+ *       400:
+ *         description: Validation error
+ *       404:
+ *         description: User not found
+ */
+router.put('/:id', requireRole('admin'), (req, res) => userController.adminUpdateUser(req, res));
+
+/**
+ * @swagger
  * /users/{id}/restore:
  *   put:
  *     summary: Restore a soft-deleted user (admin only)

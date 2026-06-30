@@ -23,6 +23,9 @@ export class GeofenceConfig {
   @Column({ type: 'text', nullable: true, name: 'address_hint' })
   addressHint: string | null;
 
+  @Column({ type: 'text', array: true, nullable: true, name: 'allowed_wifi_ssids' })
+  allowedWifiSsids: string[] | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

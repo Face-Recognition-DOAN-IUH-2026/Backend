@@ -50,6 +50,23 @@ export async function bookAvailabilityNotify(
 
     await notificationClient.createBulkNotifications(notifications);
 
+    const entryIds = waitlist.map((entry: any) => entry.id).filter(Boolean);
+    if (entryIds.length > 0) {
+      try {
+        await fetch(
+          `${config.services.borrowService}/borrow/internal/waitlist/batch-notify`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${getServiceToken('automation-service', config.jwtSecret)}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ ids: entryIds }),
+          }
+        );
+      } catch {}
+    }
+
     return { notified: notifications.length };
   } catch {
     return { notified: 0, message: 'Waitlist feature not available' };

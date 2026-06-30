@@ -7,6 +7,7 @@ import { AppDataSource } from '../data-source';
 import { auth, AuthRequest, requireRole } from '../middlewares/auth';
 import { HttpError } from '../middlewares/errorHandler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
+import { WaitlistRepository } from '../repositories/WaitlistRepository';
 import { isPatronInside, getPatronAccessStatus, getPatronRawAccessStatus } from '../clients/AccessServiceClient';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { lookupPatronById, lookupPatronByStudentCode, lookupPatronsByIds, PatronSummary } from '../clients/UserServiceClient';
@@ -2138,6 +2139,75 @@ router.post('/renew', auth, async (req: AuthRequest, res, next) => {
       status: 'success',
       message: `Gia han thanh cong. Han tra moi: ${newDueAt.toLocaleDateString('vi-VN')}`,
       record: serializeBorrowRecord(record),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/waitlist', requireRole(['patron', 'admin', 'staff'], 'Chi doc gia moi co the vao danh sach cho'), async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({ book_id: z.string().uuid() }).parse(req.body);
+    const userId = patronIdFrom(req.user);
+    const repo = new WaitlistRepository();
+    const entry = await repo.joinWaitlist(body.book_id, userId);
+    res.status(201).json({
+      id: entry.id,
+      book_id: entry.bookId,
+      patron_id: entry.patronId,
+      status: entry.status,
+      created_at: entry.createdAt,
+    });
+  } catch (error: any) {
+    if (error.statusCode === 409) {
+      res.status(409).json({ detail: error.message });
+      return;
+    }
+    if (error.statusCode === 404) {
+      res.status(404).json({ detail: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+router.delete('/waitlist/:id', requireRole(['patron', 'admin', 'staff'], 'Chi doc gia moi co the huy danh sach cho'), async (req: AuthRequest, res, next) => {
+  try {
+    const userId = patronIdFrom(req.user);
+    const repo = new WaitlistRepository();
+    await repo.cancelWaitlist(req.params.id, userId);
+    res.status(204).end();
+  } catch (error: any) {
+    if (error.statusCode === 403) {
+      res.status(403).json({ detail: error.message });
+      return;
+    }
+    if (error.statusCode === 404) {
+      res.status(404).json({ detail: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+router.get('/waitlist', async (req: AuthRequest, res, next) => {
+  try {
+    const userId = patronIdFrom(req.user);
+    const waitlistRepo = AppDataSource.getRepository('Waitlist');
+    const entries = await waitlistRepo.find({
+      where: { patronId: userId, status: 'waiting' as any },
+      relations: { book: true },
+      order: { createdAt: 'ASC' },
+    });
+    res.json({
+      items: entries.map((e: any) => ({
+        id: e.id,
+        book_id: e.bookId,
+        status: e.status,
+        created_at: e.createdAt,
+        book: e.book ? serializeBook(e.book) : null,
+      })),
+      total: entries.length,
     });
   } catch (error) {
     next(error);

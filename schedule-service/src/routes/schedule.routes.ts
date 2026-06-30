@@ -643,10 +643,12 @@ router.get('/assignments', requireRole('admin', 'staff'), asyncHandler(async (re
  *         description: Assignment created
  */
 router.post('/assignments', requireRole('admin'), asyncHandler(async (req, res) => {
-  res.status(201).json(await scheduleService.createAssignment(req.user!.userId, assignmentSchema.parse(req.body)));
+  const force = req.query.force === 'true';
+  res.status(201).json(await scheduleService.createAssignment(req.user!.userId, assignmentSchema.parse(req.body), force));
 }));
 router.post('/assignments/bulk', requireRole('admin'), asyncHandler(async (req, res) => {
-  res.status(201).json(await scheduleService.createAssignmentsBulk(req.user!.userId, z.array(assignmentSchema).parse(req.body)));
+  const force = req.query.force === 'true';
+  res.status(201).json(await scheduleService.createAssignmentsBulk(req.user!.userId, z.array(assignmentSchema).parse(req.body), force));
 }));
 
 /**
@@ -730,7 +732,8 @@ router.delete('/assignments/week', requireRole('admin'), asyncHandler(async (req
  */
 router.put('/assignments/:id', requireRole('admin'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
-  res.json(await scheduleService.updateAssignment(req.user!.userId, id, assignmentPatchSchema.parse(req.body)));
+  const force = req.query.force === 'true';
+  res.json(await scheduleService.updateAssignment(req.user!.userId, id, assignmentPatchSchema.parse(req.body), force));
 }));
 /**
  * @swagger
@@ -1092,7 +1095,7 @@ router.post('/bids/:id/reject', requireRole('admin'), asyncHandler(async (req, r
 }));
 
 const swapSchema = z.object({
-  targetStaffId: z.string().uuid(),
+  targetStaffId: z.string().uuid().nullable().optional(),
   requesterAssignmentId: z.string().uuid(),
   targetAssignmentId: z.string().uuid().nullable().optional(),
   reason: z.string().nullable().optional(),
@@ -1115,6 +1118,8 @@ const swapSchema = z.object({
  *               targetStaffId:
  *                 type: string
  *                 format: uuid
+ *                 nullable: true
+ *                 description: Target staff UUID, or null/omit for open swap
  *               requesterAssignmentId:
  *                 type: string
  *                 format: uuid
@@ -1128,7 +1133,8 @@ const swapSchema = z.object({
  *         description: Swap request created
  */
 router.post('/swaps', auth, asyncHandler(async (req, res) => {
-  res.status(201).json(await scheduleService.createSwap(req.user!.userId, swapSchema.parse(req.body)));
+  const parsed = swapSchema.parse(req.body);
+  res.status(201).json(await scheduleService.createSwap(req.user!.userId, { ...parsed, targetStaffId: parsed.targetStaffId ?? null }));
 }));
 /**
  * @swagger
@@ -1240,6 +1246,8 @@ router.post('/assignments/:id/confirm', auth, asyncHandler(async (req, res) => {
  *                 type: number
  *               lng:
  *                 type: number
+ *               wifiSsid:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Checked in
@@ -1248,7 +1256,8 @@ router.post('/assignments/:id/check-in', auth, asyncHandler(async (req, res) => 
   const { id } = idParam.parse(req.params);
   const lat = req.body?.lat != null ? Number(req.body.lat) : undefined;
   const lng = req.body?.lng != null ? Number(req.body.lng) : undefined;
-  res.json(await scheduleService.checkIn(req.user!.userId, id, req.body?.method || 'web', lat, lng));
+  const wifiSsid: string | undefined = req.body?.wifiSsid;
+  res.json(await scheduleService.checkIn(req.user!.userId, id, req.body?.method || 'web', lat, lng, wifiSsid));
 }));
 /**
  * @swagger
@@ -1314,6 +1323,7 @@ const geofenceSchema = z.object({
   longitude: z.number().min(-180).max(180),
   radiusMeters: z.number().int().min(10).max(10000).optional(),
   addressHint: z.string().nullable().optional(),
+  allowedWifiSsids: z.array(z.string()).nullable().optional(),
 });
 /**
  * @swagger
@@ -1356,6 +1366,11 @@ router.get('/geofence', requireRole('admin'), asyncHandler(async (_req, res) => 
  *                 type: integer
  *               addressHint:
  *                 type: string
+ *               allowedWifiSsids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 nullable: true
  *     responses:
  *       200:
  *         description: Geofence set
@@ -1490,6 +1505,38 @@ const adminAttendanceSchema = z.object({
 router.put('/assignments/:id/attendance', requireRole(['admin']), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.adminFixAttendance(req.user!.userId, id, adminAttendanceSchema.parse(req.body)));
+}));
+
+const manualCheckInSchema = z.object({
+  assignmentId: z.string().uuid(),
+  note: z.string().min(1),
+});
+
+router.post('/attendance/manual-checkin', auth, asyncHandler(async (req, res) => {
+  const { assignmentId, note } = manualCheckInSchema.parse(req.body);
+  res.status(201).json(await scheduleService.requestManualCheckIn(assignmentId, req.user!.userId, note));
+}));
+
+router.put('/attendance/:id/approve-manual', requireRole(['admin']), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  const checkInAt = req.body?.checkInAt ? new Date(req.body.checkInAt) : undefined;
+  res.json(await scheduleService.approveManualCheckIn(req.user!.userId, id, checkInAt));
+}));
+
+router.put('/attendance/:id/reject-manual', requireRole(['admin']), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  const { reason } = z.object({ reason: z.string().min(1) }).parse(req.body);
+  res.json(await scheduleService.rejectManualCheckIn(req.user!.userId, id, reason));
+}));
+
+router.get('/attendance/manual-checkin-requests', requireRole(['admin']), asyncHandler(async (req, res) => {
+  const status = req.query.status as string | undefined;
+  res.json(await scheduleService.listManualCheckInRequests(status));
+}));
+
+router.post('/swaps/:id/claim', auth, asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.claimOpenSwap(req.user!.userId, id));
 }));
 
 /**
