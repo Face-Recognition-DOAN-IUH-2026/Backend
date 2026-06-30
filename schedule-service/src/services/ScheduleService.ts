@@ -1014,8 +1014,12 @@ export class ScheduleService {
     const proposed: Array<{ staffId: string; shiftId: string; zoneId: string; workDate: string; note: string }> = [];
     const skipped: string[] = [];
     const today = localDate(new Date());
-    const cursor = new Date(`${from}T00:00:00`);
+    const todayDate = new Date(`${today}T00:00:00`);
+    const fromDate = new Date(`${from}T00:00:00`);
+    if (fromDate < todayDate) fromDate.setTime(todayDate.getTime());
+    const cursor = fromDate;
     const end = new Date(`${to}T00:00:00`);
+    const actualFrom = localDate(cursor);
 
     const staffWorkload = new Map<string, number>();
     for (const s of staff) {
@@ -1163,7 +1167,7 @@ export class ScheduleService {
       cursor.setDate(cursor.getDate() + 1);
     }
     await this.log('auto_schedule.generated', 'staff_schedule', null, actorId, { from, to, proposed: proposed.length, skipped: skipped.length });
-    return { proposed, skipped: skipped.length, total: proposed.length };
+    return { proposed, skipped: skipped.length, total: proposed.length, actualFrom, actualTo: to };
   }
 
 
