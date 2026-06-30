@@ -1866,6 +1866,85 @@ router.put('/books/:book_id/quantity', async (req, res, next) => {
 
 /**
  * @swagger
+ * /borrow/books/{book_id}:
+ *   put:
+ *     summary: Update book metadata
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: book_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title: { type: string }
+ *               subtitle: { type: string }
+ *               author: { type: string }
+ *               publisher: { type: string }
+ *               published_date: { type: string }
+ *               description: { type: string }
+ *               page_count: { type: integer }
+ *               categories: { type: string }
+ *               average_rating: { type: number }
+ *               language: { type: string }
+ *               shelf_location: { type: string }
+ *               cover_url: { type: string }
+ *     responses:
+ *       200:
+ *         description: Updated book
+ */
+router.put('/books/:book_id', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the sua sach'), async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({
+      title: z.string().min(1).optional(),
+      subtitle: z.string().nullable().optional(),
+      author: z.string().nullable().optional(),
+      publisher: z.string().nullable().optional(),
+      published_date: z.string().nullable().optional(),
+      description: z.string().nullable().optional(),
+      page_count: z.coerce.number().int().nullable().optional(),
+      categories: z.string().nullable().optional(),
+      average_rating: z.coerce.number().min(0).max(5).nullable().optional(),
+      language: z.string().nullable().optional(),
+      shelf_location: z.string().nullable().optional(),
+      cover_url: z.string().nullable().optional(),
+    }).parse(req.body);
+    const repo = new BorrowRepository();
+    const book = await repo.getBookById(req.params.book_id);
+    if (!book) throw new HttpError(404, 'Khong tim thay sach');
+    const fields: Record<string, any> = {};
+    if (body.title !== undefined) fields.title = body.title;
+    if (body.subtitle !== undefined) fields.subtitle = body.subtitle;
+    if (body.author !== undefined) fields.author = body.author;
+    if (body.publisher !== undefined) fields.publisher = body.publisher;
+    if (body.published_date !== undefined) fields.publishedDate = body.published_date;
+    if (body.description !== undefined) fields.description = body.description;
+    if (body.page_count !== undefined) fields.pageCount = body.page_count;
+    if (body.categories !== undefined) fields.categories = body.categories;
+    if (body.average_rating !== undefined) fields.averageRating = body.average_rating;
+    if (body.language !== undefined) fields.language = body.language;
+    if (body.shelf_location !== undefined) fields.shelfLocation = body.shelf_location;
+    if (body.cover_url !== undefined) fields.coverUrl = body.cover_url;
+    const updated = await repo.updateBook(book.id, fields);
+    if (!updated) throw new HttpError(500, 'Cap nhat sach that bai');
+    const total = await repo.countCopies(book.id);
+    const available = await repo.countCopies(book.id, true);
+    res.json(serializeBookWithStats(updated, total, available));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
  * /borrow/reserve:
  *   post:
  *     summary: Reserve a book
