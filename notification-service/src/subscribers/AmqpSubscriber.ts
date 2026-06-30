@@ -52,10 +52,27 @@ export async function startAmqpSubscriber(): Promise<void> {
         } 
         
         else if (eventType === 'notification.send') {
-          const { emailType, toEmail, code, bookTitle, daysOverdue, fineAmount, expiryDate } = payload;
-          
-          if (!emailType || !toEmail) {
-            console.warn('[AMQP] Invalid notification.send payload:', payload);
+          const { emailType, userId, type: notifType, title, body, data, toEmail, code, bookTitle, daysOverdue, fineAmount, expiryDate } = payload;
+
+          if (emailType === 'push') {
+            if (!userId || !notifType || !title || !body) {
+              console.warn('[AMQP] Invalid push notification payload:', payload);
+              return;
+            }
+            const notification = await notificationService.create({
+              userId,
+              type: notifType,
+              title,
+              body,
+              data: data || {},
+            });
+            await notificationHub.publish(userId, notification);
+            console.log(`[AMQP] Created push notification for user ${userId}: ${title}`);
+            return;
+          }
+
+          if (!toEmail) {
+            console.warn('[AMQP] Invalid notification.send payload (missing toEmail):', payload);
             return;
           }
 

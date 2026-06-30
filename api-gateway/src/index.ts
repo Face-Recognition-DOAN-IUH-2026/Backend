@@ -52,19 +52,19 @@ const globalLimiter = rateLimit({
   message: { error: 'Too many requests', detail: 'Vượt quá giới hạn request, vui lòng thử lại sau' },
 });
 
-// Auth rate limiter — stricter, always active even in dev mode
+// Auth rate limiter — relaxed during development
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
+  windowMs: config.nodeEnv === 'production' ? 15 * 60 * 1000 : 60 * 1000,
+  max: config.nodeEnv === 'production' ? 20 : 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many login attempts', detail: 'Quá nhiều lần đăng nhập, vui lòng thử lại sau 15 phút' },
+  message: { error: 'Too many login attempts', detail: 'Quá nhiều lần đăng nhập, vui lòng thử lại sau' },
 });
 
-// Face rate limiter — stricter than global, always active in production
+// Face rate limiter — active only in production
 const faceLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30,                    // 30 attempts per window
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   skip: (req) => config.nodeEnv !== 'production',
   standardHeaders: true,
   legacyHeaders: false,
@@ -280,6 +280,20 @@ app.use('/api/ai', createProxyMiddleware({
 
 // Patron stats from user-service (must be before catch-all /api/patrons)
 app.use('/api/patrons/stats', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,
+}));
+
+// Check student code + email existence from user-service
+app.use('/api/patrons/check-exists', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,
+}));
+
+// Check student code existence from user-service (legacy)
+app.use('/api/patrons/check-code', createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,

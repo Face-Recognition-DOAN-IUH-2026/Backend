@@ -177,6 +177,34 @@ export class AuthController {
     }
   }
 
+  async preRegisterOtp(req: Request, res: Response) {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        res.status(400).json({ error: 'Email la bat buoc' });
+        return;
+      }
+      await authService.sendPreRegisterOtp(email);
+      res.json({ message: 'Da gui ma OTP qua email' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async preRegisterVerify(req: Request, res: Response) {
+    try {
+      const { email, code } = req.body;
+      if (!email || !code) {
+        res.status(400).json({ error: 'Email va ma OTP la bat buoc' });
+        return;
+      }
+      const token = await authService.verifyPreRegisterOtp(email, code);
+      res.json({ verification_token: token });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
 }
 
 export const authController = new AuthController();

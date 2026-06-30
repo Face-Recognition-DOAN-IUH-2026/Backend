@@ -1493,17 +1493,17 @@ router.post('/books/import', upload.single('file'), async (req, res, next) => {
 
 const ImportFilteredRowSchema = z.object({
   isbn: z.string(),
-  quantity: z.number().int().positive(),
+  quantity: z.coerce.number().int().positive(),
   title: z.string().nullable().optional(),
   subtitle: z.string().nullable().optional(),
   author: z.string().nullable().optional(),
   publisher: z.string().nullable().optional(),
   published_date: z.string().nullable().optional(),
-  page_count: z.number().int().nullable().optional(),
+  page_count: z.coerce.number().int().nullable().optional(),
   categories: z.string().nullable().optional(),
   cover_url: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
-  average_rating: z.number().nullable().optional(),
+  average_rating: z.coerce.number().nullable().optional(),
   language: z.string().nullable().optional(),
   isbn10: z.string().nullable().optional(),
   isbn13: z.string().nullable().optional(),
@@ -1548,18 +1548,44 @@ router.post('/books/import/filtered', requireRole(['admin', 'staff'], 'Chi quan 
     if (!rows.length) throw new HttpError(400, 'Khong co du lieu de import');
     const repo = new BorrowRepository();
     const isbns = rows.map((r) => r.isbn);
-    const existing = await repo.getBooksByIsbns(isbns);
-    const offsets = await repo.getBarcodeOffsetsByBooks(isbns);
+    const existingRaw = await repo.getBooksByIsbns(isbns);
+
+    // Key by normalized ISBN for reliable lookup
+    const existing = new Map<string, Book>();
+    for (const [isbn, book] of existingRaw) {
+      existing.set(isbn.replace(/[-\s]/g, ''), book);
+    }
+
+    // Use DB ISBN keys (normalized) for offset query — same pattern as /import
+    const offsetsRaw = await repo.getBarcodeOffsetsByBooks([...existingRaw.keys()]);
+    const offsets = new Map<string, number>();
+    for (const [isbn, offset] of offsetsRaw) {
+      offsets.set(isbn.replace(/[-\s]/g, ''), offset);
+    }
+
+    // Aggregate duplicate ISBNs: sum quantities, merge metadata (first non-null wins)
+    type AggregatedRow = typeof rows[0] & { totalQuantity: number };
+    const aggregated = new Map<string, AggregatedRow>();
+    for (const row of rows) {
+      const key = row.isbn.replace(/[-\s]/g, '');
+      const existingAgg = aggregated.get(key);
+      if (existingAgg) {
+        existingAgg.totalQuantity += row.quantity;
+      } else {
+        aggregated.set(key, { ...row, totalQuantity: row.quantity });
+      }
+    }
+
     const results = [];
     let imported = 0;
     let skipped = 0;
     let errors = 0;
-    for (const row of rows) {
+    for (const [isbnKey, row] of aggregated) {
       try {
-        let book = existing.get(row.isbn);
+        let book = existing.get(isbnKey);
         let created = false;
         if (!book) {
-          const title = row.title || `ISBN: ${row.isbn}`;
+          const title = row.title || `ISBN: ${isbnKey}`;
           const author = row.author || null;
           const coverUrl = row.cover_url || null;
           const upserted = await repo.upsertBook(row.isbn, title, author, coverUrl, {
@@ -1576,19 +1602,19 @@ router.post('/books/import/filtered', requireRole(['admin', 'staff'], 'Chi quan 
           });
           book = upserted.book;
           created = upserted.created;
-          existing.set(row.isbn, book);
-          offsets.set(row.isbn, 0);
+          existing.set(isbnKey, book);
+          offsets.set(isbnKey, 0);
         }
-        const offset = offsets.get(row.isbn) || 0;
-        const barcodes = Array.from({ length: row.quantity }, (_, i) => `LIB-${row.isbn}-${String(offset + i + 1).padStart(3, '0')}`);
-        offsets.set(row.isbn, offset + row.quantity);
+        const offset = offsets.get(isbnKey) || 0;
+        const barcodes = Array.from({ length: row.totalQuantity }, (_, i) => `LIB-${isbnKey}-${String(offset + i + 1).padStart(3, '0')}`);
+        offsets.set(isbnKey, offset + row.totalQuantity);
         const copies = await repo.createCopiesBatchWithSkip(book.id, barcodes, book.shelfLocation);
         const status = created ? 'imported' : copies.length ? 'updated' : 'skipped';
         if (status === 'skipped') skipped += 1; else imported += 1;
-        results.push({ isbn: row.isbn, title: book.title, quantity: row.quantity, barcodes, status, message: `Them ${copies.length} ban sao` });
+        results.push({ isbn: row.isbn, title: book.title, quantity: row.totalQuantity, barcodes, status, message: `Them ${copies.length} ban sao` });
       } catch (error) {
         errors += 1;
-        results.push({ isbn: row.isbn, title: '', quantity: row.quantity, barcodes: [], status: 'error', message: error instanceof Error ? error.message : 'Loi import' });
+        results.push({ isbn: row.isbn, title: '', quantity: row.totalQuantity, barcodes: [], status: 'error', message: error instanceof Error ? error.message : 'Loi import' });
       }
     }
     res.json({ success: errors === 0, total_rows: rows.length, imported, skipped, errors, results });
@@ -1833,6 +1859,85 @@ router.put('/books/:book_id/quantity', async (req, res, next) => {
     const nextTotal = await repo.countCopies(book.id);
     const nextAvailable = await repo.countCopies(book.id, true);
     res.json(serializeBookWithStats(book, nextTotal, nextAvailable));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /borrow/books/{book_id}:
+ *   put:
+ *     summary: Update book metadata
+ *     tags: [Borrow]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: book_id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title: { type: string }
+ *               subtitle: { type: string }
+ *               author: { type: string }
+ *               publisher: { type: string }
+ *               published_date: { type: string }
+ *               description: { type: string }
+ *               page_count: { type: integer }
+ *               categories: { type: string }
+ *               average_rating: { type: number }
+ *               language: { type: string }
+ *               shelf_location: { type: string }
+ *               cover_url: { type: string }
+ *     responses:
+ *       200:
+ *         description: Updated book
+ */
+router.put('/books/:book_id', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the sua sach'), async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({
+      title: z.string().min(1).optional(),
+      subtitle: z.string().nullable().optional(),
+      author: z.string().nullable().optional(),
+      publisher: z.string().nullable().optional(),
+      published_date: z.string().nullable().optional(),
+      description: z.string().nullable().optional(),
+      page_count: z.coerce.number().int().nullable().optional(),
+      categories: z.string().nullable().optional(),
+      average_rating: z.coerce.number().min(0).max(5).nullable().optional(),
+      language: z.string().nullable().optional(),
+      shelf_location: z.string().nullable().optional(),
+      cover_url: z.string().nullable().optional(),
+    }).parse(req.body);
+    const repo = new BorrowRepository();
+    const book = await repo.getBookById(req.params.book_id);
+    if (!book) throw new HttpError(404, 'Khong tim thay sach');
+    const fields: Record<string, any> = {};
+    if (body.title !== undefined) fields.title = body.title;
+    if (body.subtitle !== undefined) fields.subtitle = body.subtitle;
+    if (body.author !== undefined) fields.author = body.author;
+    if (body.publisher !== undefined) fields.publisher = body.publisher;
+    if (body.published_date !== undefined) fields.publishedDate = body.published_date;
+    if (body.description !== undefined) fields.description = body.description;
+    if (body.page_count !== undefined) fields.pageCount = body.page_count;
+    if (body.categories !== undefined) fields.categories = body.categories;
+    if (body.average_rating !== undefined) fields.averageRating = body.average_rating;
+    if (body.language !== undefined) fields.language = body.language;
+    if (body.shelf_location !== undefined) fields.shelfLocation = body.shelf_location;
+    if (body.cover_url !== undefined) fields.coverUrl = body.cover_url;
+    const updated = await repo.updateBook(book.id, fields);
+    if (!updated) throw new HttpError(500, 'Cap nhat sach that bai');
+    const total = await repo.countCopies(book.id);
+    const available = await repo.countCopies(book.id, true);
+    res.json(serializeBookWithStats(updated, total, available));
   } catch (error) {
     next(error);
   }

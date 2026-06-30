@@ -5,7 +5,7 @@ import { patronService } from '../services';
 export class PatronController {
   async register(req: Request, res: Response) {
     try {
-      const { student_code, password, full_name, class_name, course, permanent_address, email } = req.body;
+      const { student_code, password, full_name, class_name, course, permanent_address, email, verification_token } = req.body;
       if (!student_code || !password || !full_name) {
         res.status(400).json({ error: 'student_code, password, and full_name are required' });
         return;
@@ -20,6 +20,7 @@ export class PatronController {
         className: class_name,
         course,
         permanentAddress: permanent_address,
+        verificationToken: verification_token,
       });
       res.status(201).json(result);
     } catch (error: any) {
@@ -52,6 +53,34 @@ export class PatronController {
       res.json(result);
     } catch (error: any) {
       res.status(error.statusCode || 401).json({ error: error.message || 'Login failed' });
+    }
+  }
+
+  async checkExists(req: Request, res: Response) {
+    try {
+      const { student_code, email } = req.body;
+      if (!student_code && !email) {
+        res.status(400).json({ error: 'student_code or email is required' });
+        return;
+      }
+      const result = await patronService.checkExists(student_code, email);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to check existence' });
+    }
+  }
+
+  async checkStudentCode(req: AuthRequest, res: Response) {
+    try {
+      const code = req.params.code || req.query.code as string;
+      if (!code) {
+        res.status(400).json({ error: 'Student code is required' });
+        return;
+      }
+      const exists = await patronService.checkStudentCode(code);
+      res.json({ exists });
+    } catch (error: any) {
+      res.status(500).json({ error: 'Failed to check student code' });
     }
   }
 
@@ -205,8 +234,8 @@ export class PatronController {
         return;
       }
       const { current_password, new_password } = req.body;
-      if (!new_password || new_password.length < 8) {
-        res.status(400).json({ error: 'New password must be at least 8 characters' });
+      if (!new_password || new_password.length < 6) {
+        res.status(400).json({ error: 'New password must be at least 6 characters' });
         return;
       }
       await patronService.changePassword(

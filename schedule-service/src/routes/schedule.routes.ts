@@ -1301,6 +1301,10 @@ router.post('/assignments/:id/check-out', auth, asyncHandler(async (req, res) =>
  */
 router.post('/auto-schedule', requireRole('admin'), asyncHandler(async (req, res) => {
   const { from, to } = rangeSchema.parse(req.body);
+  if (from > to) {
+    res.status(400).json({ error: 'Ngay bat dau phai nho hon hoac bang ngay ket thuc' });
+    return;
+  }
   res.json(await scheduleService.autoSchedule(req.user!.userId, from, to));
 }));
 

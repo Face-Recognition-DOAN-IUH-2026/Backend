@@ -124,6 +124,36 @@ export class RedisService {
     const key = `face_status:${userId}`;
     await this.client.del(key);
   }
+
+  async setPreRegisterOtp(email: string, code: string): Promise<void> {
+    const key = `pre_register_otp:${email.toLowerCase()}`;
+    await this.client.set(key, code, 'EX', 5 * 60);
+  }
+
+  async getPreRegisterOtp(email: string): Promise<string | null> {
+    const key = `pre_register_otp:${email.toLowerCase()}`;
+    return await this.client.get(key);
+  }
+
+  async deletePreRegisterOtp(email: string): Promise<void> {
+    const key = `pre_register_otp:${email.toLowerCase()}`;
+    await this.client.del(key);
+  }
+
+  async setPreRegisterToken(email: string, token: string): Promise<void> {
+    const key = `pre_register_token:${email.toLowerCase()}`;
+    await this.client.set(key, token, 'EX', 10 * 60);
+  }
+
+  async getPreRegisterToken(email: string): Promise<string | null> {
+    const key = `pre_register_token:${email.toLowerCase()}`;
+    return await this.client.get(key);
+  }
+
+  async deletePreRegisterToken(email: string): Promise<void> {
+    const key = `pre_register_token:${email.toLowerCase()}`;
+    await this.client.del(key);
+  }
 }
 
 export function verifyUserDeletedEvent(
