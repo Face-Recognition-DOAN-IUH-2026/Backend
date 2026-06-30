@@ -56,7 +56,11 @@ async function start() {
         return;
       }
       try {
-        decodeToken(token);
+        decodeToken(token, {
+          jwtSecret: config.jwtSecret,
+          jwtIssuer: config.jwtIssuer,
+          jwtAudience: config.jwtAudience,
+        });
         wss.handleUpgrade(request, socket, head, (ws) => realtimeHub.addWsClient(ws));
       } catch {
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');

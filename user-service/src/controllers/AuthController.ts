@@ -4,7 +4,7 @@ import { authService } from '../services';
 export class AuthController {
   async register(req: Request, res: Response) {
     try {
-      const { email, password, full_name, role, student_code } = req.body;
+      const { email, password, full_name, role, student_code, skip_verification } = req.body;
       if (!email || !password) {
         res.status(400).json({ error: 'Email and password are required' });
         return;
@@ -15,6 +15,7 @@ export class AuthController {
         fullName: full_name,
         role: role || 'user',
         studentCode: student_code,
+        skipVerification: skip_verification,
       });
       res.status(201).json(result);
     } catch (error: any) {
@@ -129,6 +130,48 @@ export class AuthController {
       }
       await authService.verifyEmail(email, code);
       res.json({ message: 'Xac thuc email thanh cong' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async resendVerification(req: Request, res: Response) {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        res.status(400).json({ error: 'Email la bat buoc' });
+        return;
+      }
+      await authService.resendVerificationEmail(email);
+      res.json({ message: 'Da gui ma xac thuc moi' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async requestEmailCorrection(req: Request, res: Response) {
+    try {
+      const { current_email, new_email } = req.body;
+      if (!current_email || !new_email) {
+        res.status(400).json({ error: 'current_email va new_email la bat buoc' });
+        return;
+      }
+      await authService.requestEmailCorrection(current_email, new_email);
+      res.json({ message: 'Da gui ma OTP den email moi' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async verifyEmailCorrection(req: Request, res: Response) {
+    try {
+      const { current_email, new_email, code } = req.body;
+      if (!current_email || !new_email || !code) {
+        res.status(400).json({ error: 'current_email, new_email, va code la bat buoc' });
+        return;
+      }
+      await authService.verifyEmailAndCorrect(current_email, new_email, code);
+      res.json({ message: 'Doi email va xac thuc thanh cong' });
     } catch (error: any) {
       res.status(error.statusCode || 400).json({ error: error.message });
     }

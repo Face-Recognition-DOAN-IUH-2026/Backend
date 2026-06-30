@@ -17,8 +17,8 @@ app.use(cors({ origin: config.corsOrigins.includes('*') ? true : config.corsOrig
 app.use(express.json());
 app.use(auditContextMiddleware);
 
-app.use('/schedules', scheduleInternalRoutes);
 app.use('/schedules', scheduleRoutes);
+app.use('/schedules', scheduleInternalRoutes);
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'schedule-service' }));
 
 if (config.nodeEnv !== 'production') {

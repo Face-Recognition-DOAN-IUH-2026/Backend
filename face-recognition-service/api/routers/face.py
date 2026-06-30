@@ -75,6 +75,7 @@ async def enroll_batch(
             _store_temp_frame(raw_down),
         )
     except Exception as exc:
+        print(f"ERROR: enroll-batch _store_temp_frame failed: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to store temp frames: {exc}")
     task = batch_enroll_task.delay(user_id=current_user["id"], object_keys=keys)
     return EnrollmentResult(job_id=task.id)

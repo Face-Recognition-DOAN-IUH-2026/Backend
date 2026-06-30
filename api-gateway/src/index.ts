@@ -11,7 +11,7 @@ import { swaggerSpec, fetchAndMergeSpecs } from './config/swagger';
 import xss from 'xss';
 
 let unifiedSpec: Record<string, any> = swaggerSpec;
-import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
+import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 import {
   createJiraBug,
   getJiraIssue,
@@ -19,7 +19,7 @@ import {
   getIssueTransitions,
   transitionIssue,
   addComment,
-} from '../shared/jira-client';
+} from '../../shared/jira-client';
 const app = express();
 const corsOrigin = config.corsOrigins.length > 0 ? config.corsOrigins : false;
 
@@ -315,6 +315,11 @@ app.use('/api/users/me', createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,  // /api/users/me → /users/me
+}));
+app.use('/api/users/:id', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,  // /api/users/:id → /users/:id
 }));
 app.use('/api/users', createProxyMiddleware({
   target: config.services.faceRecognitionApi,

@@ -11,6 +11,7 @@ const auth = createAuth({
 });
 
 const router = Router();
+router.use(auth);
 
 const asyncHandler = (
   fn: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>,
@@ -1418,7 +1419,7 @@ router.post('/swaps/:id/cancel', auth, asyncHandler(async (req, res) => {
  *       200:
  *         description: Auto-checkout completed
  */
-router.post('/auto-checkout', requireRole('admin'), asyncHandler(async (_req, res) => {
+router.post('/auto-checkout', requireRole(['admin']), asyncHandler(async (_req, res) => {
   res.json(await scheduleService.autoCheckoutStaleAssignments());
 }));
 
@@ -1441,7 +1442,7 @@ router.post('/auto-checkout', requireRole('admin'), asyncHandler(async (_req, re
  *       200:
  *         description: Assignment confirmed
  */
-router.post('/assignments/:id/admin-confirm', requireRole('admin'), asyncHandler(async (req, res) => {
+router.post('/assignments/:id/admin-confirm', requireRole(['admin']), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.adminConfirmAssignment(req.user!.userId, id));
 }));
@@ -1482,7 +1483,7 @@ const adminAttendanceSchema = z.object({
  *       200:
  *         description: Attendance fixed
  */
-router.put('/assignments/:id/attendance', requireRole('admin'), asyncHandler(async (req, res) => {
+router.put('/assignments/:id/attendance', requireRole(['admin']), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.adminFixAttendance(req.user!.userId, id, adminAttendanceSchema.parse(req.body)));
 }));
@@ -1499,7 +1500,7 @@ router.put('/assignments/:id/attendance', requireRole('admin'), asyncHandler(asy
  *       200:
  *         description: Audit logs retrieved
  */
-router.get('/audit-logs', requireRole('admin'), asyncHandler(async (req, res) => {
+router.get('/audit-logs', requireRole(['admin']), asyncHandler(async (req, res) => {
   res.json(await scheduleService.auditLogs({
     page: req.query.page ? parseInt(req.query.page as string, 10) : undefined,
     limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
@@ -1513,7 +1514,7 @@ router.get('/audit-logs', requireRole('admin'), asyncHandler(async (req, res) =>
   }));
 }));
 
-router.get('/audit-logs/stats', requireRole('admin'), asyncHandler(async (req, res) => {
+router.get('/audit-logs/stats', requireRole(['admin']), asyncHandler(async (req, res) => {
   res.json(await scheduleService.auditStats({
     fromDate: req.query.fromDate as string | undefined,
     toDate: req.query.toDate as string | undefined,
