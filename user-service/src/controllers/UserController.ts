@@ -155,6 +155,36 @@ export class UserController {
     }
   }
 
+  async adminUpdateUser(req: AuthRequest, res: Response) {
+    try {
+      const id = req.params.id;
+      if (!id || id === 'undefined') {
+        res.status(400).json({ error: 'Invalid user ID' });
+        return;
+      }
+      const result = await userService.adminUpdateUser(id, {
+        fullName: req.body.full_name,
+        phone: req.body.phone,
+        studentCode: req.body.student_code,
+        className: req.body.class_name,
+        identityNumber: req.body.identity_number,
+        course: req.body.course,
+        permanentAddress: req.body.permanent_address,
+        cardNumber: req.body.card_number,
+        issueDate: req.body.issue_date,
+        membershipExpiry: req.body.membership_expiry,
+        role: req.body.role,
+        status: req.body.status,
+        suspendedReason: req.body.suspended_reason,
+        avatarUrl: req.body.avatar_url,
+      });
+      res.json(result);
+    } catch (error: any) {
+      console.error('AdminUpdateUser Error:', error);
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
   async updateAccessStatus(req: AuthRequest, res: Response) {
     try {
       const id = req.params.id;

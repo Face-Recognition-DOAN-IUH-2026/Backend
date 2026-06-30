@@ -38,14 +38,19 @@ export class UserService {
       role: user.role,
       student_code: user.studentCode,
       class_name: user.className,
+      course: user.course,
+      identity_number: user.identityNumber,
       phone: user.phone,
+      permanent_address: user.permanentAddress,
       card_number: user.cardNumber,
+      issue_date: user.issueDate,
+      membership_expiry: user.membershipExpiry,
       status: user.status,
       current_status: user.currentStatus,
       last_entry_at: user.lastEntryAt,
       last_entry_camera: user.lastEntryCamera,
-      membership_expiry: user.membershipExpiry,
       avatar_url: user.avatarUrl,
+      suspended_reason: user.suspendedReason,
       created_at: user.createdAt,
     };
   }
@@ -132,6 +137,76 @@ export class UserService {
     }
 
     await this.userRepo.update(id, { status: 'active' });
+    this.redis.publishUserUpdated(id, user.email);
+
+    return this.getUserById(id);
+  }
+
+  async adminUpdateUser(id: string, updates: {
+    fullName?: string;
+    phone?: string;
+    studentCode?: string | null;
+    className?: string | null;
+    identityNumber?: string | null;
+    course?: string | null;
+    permanentAddress?: string | null;
+    cardNumber?: string | null;
+    issueDate?: string | null;
+    membershipExpiry?: string | null;
+    role?: string;
+    status?: string;
+    suspendedReason?: string | null;
+    avatarUrl?: string | null;
+  }): Promise<UserPublicDto> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    const updateData: any = {};
+
+    if (updates.fullName !== undefined) updateData.fullName = updates.fullName || null;
+    if (updates.phone !== undefined) updateData.phone = updates.phone || null;
+    if (updates.studentCode !== undefined) updateData.studentCode = updates.studentCode || null;
+    if (updates.className !== undefined) updateData.className = updates.className || null;
+    if (updates.identityNumber !== undefined) updateData.identityNumber = updates.identityNumber || null;
+    if (updates.course !== undefined) updateData.course = updates.course || null;
+    if (updates.permanentAddress !== undefined) updateData.permanentAddress = updates.permanentAddress || null;
+    if (updates.cardNumber !== undefined) updateData.cardNumber = updates.cardNumber || null;
+    if (updates.issueDate !== undefined) updateData.issueDate = updates.issueDate || null;
+    if (updates.membershipExpiry !== undefined) updateData.membershipExpiry = updates.membershipExpiry || null;
+    if (updates.role !== undefined) {
+      if (!['patron', 'staff', 'admin', 'user'].includes(updates.role)) {
+        throw new BadRequestError('Vai trò không hợp lệ');
+      }
+      updateData.role = updates.role;
+    }
+    if (updates.status !== undefined) {
+      if (!['active', 'suspended', 'inactive'].includes(updates.status)) {
+        throw new BadRequestError('Trạng thái không hợp lệ');
+      }
+      updateData.status = updates.status;
+      if (updates.status === 'suspended' && updates.suspendedReason) {
+        updateData.suspendedReason = updates.suspendedReason;
+      } else if (updates.status === 'active') {
+        updateData.suspendedReason = null;
+      }
+    }
+    if (updates.avatarUrl !== undefined) updateData.avatarUrl = updates.avatarUrl || null;
+
+    if (updateData.studentCode !== undefined && updateData.studentCode !== null) {
+      const existing = await this.userRepo.findByStudentCode(updateData.studentCode);
+      if (existing && existing.id !== id) {
+        throw new BadRequestError('Mã sinh viên đã được sử dụng');
+      }
+    }
+
+    if (updateData.cardNumber !== undefined && updateData.cardNumber !== null) {
+      const existing = await this.userRepo.findByCardNumber(updateData.cardNumber);
+      if (existing && existing.id !== id) {
+        throw new BadRequestError('Số thẻ đã được sử dụng');
+      }
+    }
+
+    await this.userRepo.update(id, updateData);
     this.redis.publishUserUpdated(id, user.email);
 
     return this.getUserById(id);
