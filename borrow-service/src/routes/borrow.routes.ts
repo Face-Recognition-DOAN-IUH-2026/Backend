@@ -1548,18 +1548,44 @@ router.post('/books/import/filtered', requireRole(['admin', 'staff'], 'Chi quan 
     if (!rows.length) throw new HttpError(400, 'Khong co du lieu de import');
     const repo = new BorrowRepository();
     const isbns = rows.map((r) => r.isbn);
-    const existing = await repo.getBooksByIsbns(isbns);
-    const offsets = await repo.getBarcodeOffsetsByBooks(isbns);
+    const existingRaw = await repo.getBooksByIsbns(isbns);
+
+    // Key by normalized ISBN for reliable lookup
+    const existing = new Map<string, Book>();
+    for (const [isbn, book] of existingRaw) {
+      existing.set(isbn.replace(/[-\s]/g, ''), book);
+    }
+
+    // Use DB ISBN keys (normalized) for offset query — same pattern as /import
+    const offsetsRaw = await repo.getBarcodeOffsetsByBooks([...existingRaw.keys()]);
+    const offsets = new Map<string, number>();
+    for (const [isbn, offset] of offsetsRaw) {
+      offsets.set(isbn.replace(/[-\s]/g, ''), offset);
+    }
+
+    // Aggregate duplicate ISBNs: sum quantities, merge metadata (first non-null wins)
+    type AggregatedRow = typeof rows[0] & { totalQuantity: number };
+    const aggregated = new Map<string, AggregatedRow>();
+    for (const row of rows) {
+      const key = row.isbn.replace(/[-\s]/g, '');
+      const existingAgg = aggregated.get(key);
+      if (existingAgg) {
+        existingAgg.totalQuantity += row.quantity;
+      } else {
+        aggregated.set(key, { ...row, totalQuantity: row.quantity });
+      }
+    }
+
     const results = [];
     let imported = 0;
     let skipped = 0;
     let errors = 0;
-    for (const row of rows) {
+    for (const [isbnKey, row] of aggregated) {
       try {
-        let book = existing.get(row.isbn);
+        let book = existing.get(isbnKey);
         let created = false;
         if (!book) {
-          const title = row.title || `ISBN: ${row.isbn}`;
+          const title = row.title || `ISBN: ${isbnKey}`;
           const author = row.author || null;
           const coverUrl = row.cover_url || null;
           const upserted = await repo.upsertBook(row.isbn, title, author, coverUrl, {
@@ -1576,19 +1602,19 @@ router.post('/books/import/filtered', requireRole(['admin', 'staff'], 'Chi quan 
           });
           book = upserted.book;
           created = upserted.created;
-          existing.set(row.isbn, book);
-          offsets.set(row.isbn, 0);
+          existing.set(isbnKey, book);
+          offsets.set(isbnKey, 0);
         }
-        const offset = offsets.get(row.isbn) || 0;
-        const barcodes = Array.from({ length: row.quantity }, (_, i) => `LIB-${row.isbn}-${String(offset + i + 1).padStart(3, '0')}`);
-        offsets.set(row.isbn, offset + row.quantity);
+        const offset = offsets.get(isbnKey) || 0;
+        const barcodes = Array.from({ length: row.totalQuantity }, (_, i) => `LIB-${isbnKey}-${String(offset + i + 1).padStart(3, '0')}`);
+        offsets.set(isbnKey, offset + row.totalQuantity);
         const copies = await repo.createCopiesBatchWithSkip(book.id, barcodes, book.shelfLocation);
         const status = created ? 'imported' : copies.length ? 'updated' : 'skipped';
         if (status === 'skipped') skipped += 1; else imported += 1;
-        results.push({ isbn: row.isbn, title: book.title, quantity: row.quantity, barcodes, status, message: `Them ${copies.length} ban sao` });
+        results.push({ isbn: row.isbn, title: book.title, quantity: row.totalQuantity, barcodes, status, message: `Them ${copies.length} ban sao` });
       } catch (error) {
         errors += 1;
-        results.push({ isbn: row.isbn, title: '', quantity: row.quantity, barcodes: [], status: 'error', message: error instanceof Error ? error.message : 'Loi import' });
+        results.push({ isbn: row.isbn, title: '', quantity: row.totalQuantity, barcodes: [], status: 'error', message: error instanceof Error ? error.message : 'Loi import' });
       }
     }
     res.json({ success: errors === 0, total_rows: rows.length, imported, skipped, errors, results });
