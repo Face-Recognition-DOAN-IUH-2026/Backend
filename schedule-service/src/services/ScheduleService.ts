@@ -1135,9 +1135,10 @@ export class ScheduleService {
             if (existing.some((e) => e.staffId === s.id)) continue;
             if (isOnLeave(s.id, workDate)) { skipped.push(`leave:${s.id}:${workDate}`); continue; }
 
-            const proposedCount = proposed.filter((p) => p.staffId === s.id).length + (staffWorkload.get(s.id) || 0);
+            const existingCount = existingAssignments.filter((a) => a.staffId === s.id).length;
+            const proposedCount = staffWorkload.get(s.id) || 0;
             const maxShifts = config.maxShiftsPerWeek;
-            if (proposedCount >= maxShifts) { skipped.push(`max:${s.id}:${workDate}`); continue; }
+            if (existingCount + proposedCount >= maxShifts) { skipped.push(`max:${s.id}:${workDate}`); continue; }
 
             const sameDayAssignments = getStaffDayAssignments(s.id, workDate);
 
