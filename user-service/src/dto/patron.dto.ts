@@ -30,6 +30,7 @@ export interface CreatePatronDto {
   identityNumber?: string;
   email?: string;
   phone?: string;
+  password?: string;
 }
 
 export interface UpdatePatronDto {
