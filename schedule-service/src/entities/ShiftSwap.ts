@@ -8,8 +8,8 @@ export class ShiftSwap {
   @Column({ type: 'uuid', name: 'requester_staff_id' })
   requesterStaffId: string;
 
-  @Column({ type: 'uuid', name: 'target_staff_id' })
-  targetStaffId: string;
+  @Column({ type: 'uuid', nullable: true, name: 'target_staff_id' })
+  targetStaffId: string | null;
 
   @Column({ type: 'uuid', name: 'requester_assignment_id' })
   requesterAssignmentId: string;
@@ -31,6 +31,9 @@ export class ShiftSwap {
 
   @Column({ type: 'timestamp', nullable: true, name: 'reviewed_at' })
   reviewedAt: Date | null;
+
+  @Column({ type: 'boolean', default: false, name: 'notified_expiring' })
+  notifiedExpiring: boolean;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

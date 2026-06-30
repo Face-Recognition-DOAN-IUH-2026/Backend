@@ -4,6 +4,7 @@ import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowRepository } from '../repositories/BorrowRepository';
+import { WaitlistRepository } from '../repositories/WaitlistRepository';
 import { createInternalAuth } from '../../shared';
 import { publishEvent } from '../utils/eventPublisher';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
@@ -1043,6 +1044,39 @@ router.post('/create', async (req: Request, res: Response) => {
     } else {
       res.status(500).json({ success: false, detail: 'Internal server error' });
     }
+  }
+});
+
+router.get('/book/:bookId/waitlist', async (req: Request, res: Response) => {
+  try {
+    const { bookId } = req.params;
+    const entries = await new WaitlistRepository().getWaitlistByBook(bookId);
+    res.json(entries.map(e => ({
+      id: e.id,
+      book_id: e.bookId,
+      patron_id: e.patronId,
+      status: e.status,
+      notified_at: e.notifiedAt,
+      created_at: e.createdAt,
+    })));
+  } catch (error) {
+    console.error('Error fetching waitlist:', error);
+    res.status(500).json({ detail: 'Internal server error' });
+  }
+});
+
+router.patch('/waitlist/batch-notify', async (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ detail: 'ids array is required' });
+      return;
+    }
+    await new WaitlistRepository().markNotified(ids);
+    res.json({ success: true, notified: ids.length });
+  } catch (error) {
+    console.error('Error marking waitlist notified:', error);
+    res.status(500).json({ detail: 'Internal server error' });
   }
 });
 

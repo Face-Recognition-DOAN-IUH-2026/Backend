@@ -18,6 +18,7 @@ import {
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../errors';
 import { UserServiceClient } from '../clients/UserServiceClient';
 import { publishEvent } from '../utils/eventPublisher';
+import { haversineDistanceMeters } from '../utils/geofence';
 
 function localDate(value: Date) {
   const year = value.getFullYear();
@@ -262,14 +263,25 @@ export class ScheduleService {
     return { items: enriched.items, total, page, limit };
   }
 
-  async createAssignment(actorId: string, body: Partial<StaffSchedule>) {
+  async createAssignment(actorId: string, body: Partial<StaffSchedule>, force?: boolean) {
     await this.ensureScheduleTargets(body.staffId!, body.shiftId!, body.zoneId!);
-    await this.ensureNoDuplicateAssignment(body.staffId!, body.shiftId!, body.zoneId!, body.workDate!);
+    const warnings: string[] = [];
+
+    const dupWarning = await this.ensureNoDuplicateAssignment(body.staffId!, body.shiftId!, body.zoneId!, body.workDate!, undefined, force);
+    if (dupWarning) warnings.push(dupWarning);
+
     await this.ensureNoApprovedLeave(body.staffId!, body.workDate!);
     await this.ensureFutureDate(body.workDate!);
-    await this.ensureNoZoneConflictOnSameDay(body.staffId!, body.zoneId!, body.workDate!);
-    await this.ensureNoShiftTimeOverlap(body.staffId!, body.shiftId!, body.workDate!);
-    await this.ensureNoOverstaffing(body.shiftId!, body.zoneId!, body.workDate!);
+
+    const zoneWarning = await this.ensureNoZoneConflictOnSameDay(body.staffId!, body.zoneId!, body.workDate!, undefined, force);
+    if (zoneWarning) warnings.push(zoneWarning);
+
+    const overlapWarning = await this.ensureNoShiftTimeOverlap(body.staffId!, body.shiftId!, body.workDate!, undefined, force);
+    if (overlapWarning) warnings.push(overlapWarning);
+
+    const overstaffWarning = await this.ensureNoOverstaffing(body.shiftId!, body.zoneId!, body.workDate!, force);
+    if (overstaffWarning) warnings.push(overstaffWarning);
+
     const schedule = await this.schedules.save(this.schedules.create({
       staffId: body.staffId!,
       shiftId: body.shiftId!,
@@ -279,9 +291,8 @@ export class ScheduleService {
       note: body.note ?? null,
       status: body.status ?? 'scheduled',
     }));
-    await this.log('assignment.created', 'staff_schedule', schedule.id, actorId, body);
+    await this.log(force ? 'assignment.force_created' : 'assignment.created', 'staff_schedule', schedule.id, actorId, { ...body, force, warnings });
 
-    // Publish schedule.changed event for automation-service
     const shift = await this.shifts.findOneBy({ id: body.shiftId! });
     publishEvent('schedule.changed', {
       staffId: body.staffId,
@@ -291,24 +302,34 @@ export class ScheduleService {
       changeType: 'assigned',
     });
 
-    return schedule;
+    return warnings.length ? { ...schedule, warnings } : schedule;
   }
 
-  async updateAssignment(actorId: string, id: string, body: Partial<StaffSchedule>) {
+  async updateAssignment(actorId: string, id: string, body: Partial<StaffSchedule>, force?: boolean) {
     const schedule = await this.schedules.findOneBy({ id });
     if (!schedule) throw new NotFoundError('Assignment not found');
     const next = { ...schedule, ...body };
     await this.ensureScheduleTargets(next.staffId, next.shiftId, next.zoneId);
-    await this.ensureNoDuplicateAssignment(next.staffId, next.shiftId, next.zoneId, next.workDate, id);
+    const warnings: string[] = [];
+
+    const dupWarning = await this.ensureNoDuplicateAssignment(next.staffId, next.shiftId, next.zoneId, next.workDate, id, force);
+    if (dupWarning) warnings.push(dupWarning);
+
     await this.ensureNoApprovedLeave(next.staffId, next.workDate);
-    await this.ensureNoZoneConflictOnSameDay(next.staffId, next.zoneId, next.workDate, id);
-    await this.ensureNoShiftTimeOverlap(next.staffId, next.shiftId, next.workDate, id);
-    await this.ensureNoOverstaffing(next.shiftId, next.zoneId, next.workDate);
+
+    const zoneWarning = await this.ensureNoZoneConflictOnSameDay(next.staffId, next.zoneId, next.workDate, id, force);
+    if (zoneWarning) warnings.push(zoneWarning);
+
+    const overlapWarning = await this.ensureNoShiftTimeOverlap(next.staffId, next.shiftId, next.workDate, id, force);
+    if (overlapWarning) warnings.push(overlapWarning);
+
+    const overstaffWarning = await this.ensureNoOverstaffing(next.shiftId, next.zoneId, next.workDate, force);
+    if (overstaffWarning) warnings.push(overstaffWarning);
+
     Object.assign(schedule, body);
     const saved = await this.schedules.save(schedule);
-    await this.log('assignment.updated', 'staff_schedule', id, actorId, body);
+    await this.log(force ? 'assignment.force_updated' : 'assignment.updated', 'staff_schedule', id, actorId, { ...body, force, warnings });
 
-    // Publish schedule.changed event for automation-service
     const updatedShift = await this.shifts.findOneBy({ id: next.shiftId! });
     publishEvent('schedule.changed', {
       staffId: next.staffId,
@@ -318,7 +339,7 @@ export class ScheduleService {
       changeType: 'updated',
     });
 
-    return saved;
+    return warnings.length ? { ...saved, warnings } : saved;
   }
 
   async moveAssignment(actorId: string, id: string, body: Partial<StaffSchedule>) {
@@ -487,10 +508,12 @@ export class ScheduleService {
       for (const asg of affected) {
         const att = await this.attendance.findOneBy({ scheduleId: asg.id });
         if (att) {
-          await this.attendance.remove(att);
-          await this.log('attendance.removed_orphaned', 'staff_attendance', att.id, actorId, {
+          att.invalidatedReason = 'leave.approved';
+          await this.attendance.save(att);
+          await this.attendance.softRemove(att);
+          await this.log('attendance.invalidated', 'staff_attendance', att.id, actorId, {
             scheduleId: asg.id,
-            reason: 'leave.approved',
+            invalidatedReason: 'leave.approved',
           });
         }
       }
@@ -663,31 +686,50 @@ export class ScheduleService {
     if (existing) throw new ConflictError('You already have a pending bid for this assignment');
 
     const shift = await this.requireShift(assignment.shiftId);
-    if (shift.maxStaff) {
-      const count = await this.schedules.count({
-        where: {
-          shiftId: assignment.shiftId,
-          zoneId: assignment.zoneId,
-          workDate: assignment.workDate,
-          status: Not(In(['cancelled', 'completed'])),
-        },
-      });
-      if (count >= shift.maxStaff) {
-        throw new ConflictError('Shift is at maximum capacity');
-      }
+
+    const currentCount = await this.schedules.count({
+      where: {
+        shiftId: assignment.shiftId,
+        zoneId: assignment.zoneId,
+        workDate: assignment.workDate,
+        status: Not(In(['cancelled', 'completed'])),
+      },
+    });
+
+    if (shift.maxStaff && currentCount >= shift.maxStaff) {
+      throw new ConflictError('Shift is at maximum capacity');
     }
 
     await this.ensureNoApprovedLeave(staffId, assignment.workDate);
     await this.ensureNoShiftTimeOverlap(staffId, assignment.shiftId, assignment.workDate);
 
-    const bid = await this.bids.save(this.bids.create({ staffId, assignmentId, note: note ?? null, status: 'pending' }));
-    await this.log('bid.created', 'shift_bid', bid.id, staffId, { assignmentId });
+    const shouldAutoApprove = !!shift.minStaff && currentCount < shift.minStaff;
+
+    const bid = this.bids.create({
+      staffId,
+      assignmentId,
+      note: note ?? null,
+      status: shouldAutoApprove ? 'approved' : 'pending',
+      ...(shouldAutoApprove ? { reviewedBy: 'system', reviewedAt: new Date() } : {}),
+    });
+    await this.bids.save(bid);
+
+    if (shouldAutoApprove) {
+      assignment.staffId = staffId;
+      assignment.assignedBy = 'system';
+      assignment.note = assignment.note ? `${assignment.note}\nAssigned via auto-approved bid` : 'Assigned via auto-approved bid';
+      await this.schedules.save(assignment);
+
+      await this.log('bid.auto_approved', 'shift_bid', bid.id, 'system', { staffId, assignmentId, shiftId: assignment.shiftId, currentCount, minStaff: shift.minStaff });
+      await publishEvent('bid.auto_approved', { bidId: bid.id, assignmentId, staffId, shiftId: assignment.shiftId, autoApproved: true });
+    } else {
+      await this.log('bid.created', 'shift_bid', bid.id, staffId, { assignmentId });
+    }
+
     return bid;
   }
 
   async listBids(staffId?: string, status?: string) {
-    await this.expireStaleBids();
-    await this.cleanBidsOnPastAssignments();
     const where: any = {};
     if (staffId) where.staffId = staffId;
     if (status) where.status = status;
@@ -714,8 +756,6 @@ export class ScheduleService {
   }
 
   async reviewBid(actorId: string, id: string, action: 'approved' | 'rejected') {
-    await this.expireStaleBids();
-    await this.cleanBidsOnPastAssignments();
     const bid = await this.bids.findOneBy({ id });
     if (!bid) throw new NotFoundError('Bid not found');
     if (bid.status !== 'pending') throw new ConflictError('Bid is no longer pending');
@@ -751,8 +791,8 @@ export class ScheduleService {
     return bid;
   }
 
-  async createSwap(requesterStaffId: string, body: { targetStaffId: string; requesterAssignmentId: string; targetAssignmentId?: string | null; reason?: string | null }) {
-    if (requesterStaffId === body.targetStaffId) {
+  async createSwap(requesterStaffId: string, body: { targetStaffId: string | null; requesterAssignmentId: string; targetAssignmentId?: string | null; reason?: string | null }) {
+    if (body.targetStaffId && requesterStaffId === body.targetStaffId) {
       throw new ConflictError('Cannot swap with yourself');
     }
 
@@ -761,7 +801,7 @@ export class ScheduleService {
       throw new ConflictError('Can only swap scheduled assignments');
     }
 
-    if (body.targetAssignmentId) {
+    if (body.targetAssignmentId && body.targetStaffId) {
       const target = await this.schedules.findOneBy({ id: body.targetAssignmentId });
       if (!target) throw new NotFoundError('Target assignment not found');
       if (target.staffId !== body.targetStaffId) throw new ForbiddenError('Target assignment does not belong to target staff');
@@ -769,7 +809,7 @@ export class ScheduleService {
 
       await this.ensureNoApprovedLeave(body.targetStaffId, assignment.workDate);
       await this.ensureNoApprovedLeave(requesterStaffId, target.workDate);
-    } else {
+    } else if (body.targetStaffId) {
       await this.ensureNoApprovedLeave(body.targetStaffId, assignment.workDate);
     }
 
@@ -777,7 +817,7 @@ export class ScheduleService {
     if (existing) throw new ConflictError('You already have a pending swap for this assignment');
     const swap = await this.swaps.save(this.swaps.create({
       requesterStaffId,
-      targetStaffId: body.targetStaffId,
+      targetStaffId: body.targetStaffId ?? null,
       requesterAssignmentId: body.requesterAssignmentId,
       targetAssignmentId: body.targetAssignmentId ?? null,
       reason: body.reason ?? null,
@@ -801,7 +841,6 @@ export class ScheduleService {
   }
 
   async listSwaps(staffId?: string, status?: string) {
-    await this.expireStaleSwaps();
     const where: any[] = [];
     if (staffId) {
       where.push({ requesterStaffId: staffId });
@@ -809,7 +848,7 @@ export class ScheduleService {
     }
     const finalWhere = where.length ? where : {};
     const items = await this.swaps.find({ where: finalWhere, order: { createdAt: 'DESC' } });
-    const staffIds = [...new Set(items.flatMap((s) => [s.requesterStaffId, s.targetStaffId]))];
+    const staffIds = [...new Set(items.flatMap((s) => [s.requesterStaffId, s.targetStaffId]).filter(Boolean))] as string[];
     const staff = staffIds.length ? await this.users.listStaff(staffIds) : [];
     const assignmentIds = [...new Set(items.flatMap((s) => [s.requesterAssignmentId, ...(s.targetAssignmentId ? [s.targetAssignmentId] : [])]))];
     const assignments = assignmentIds.length ? await this.enrichAssignments(await this.schedules.findBy({ id: In(assignmentIds) })) : { items: [], total: 0 };
@@ -823,47 +862,56 @@ export class ScheduleService {
   }
 
   async respondSwap(staffId: string, id: string, action: 'accepted' | 'rejected', responseNote?: string | null) {
-    await this.expireStaleSwaps();
     const swap = await this.swaps.findOneBy({ id });
     if (!swap) throw new NotFoundError('Swap request not found');
-    if (swap.targetStaffId !== staffId) throw new ForbiddenError('Cannot respond to swap request not addressed to you');
+    if (!swap.targetStaffId || swap.targetStaffId !== staffId) throw new ForbiddenError('Cannot respond to swap request not addressed to you');
     if (swap.status !== 'pending') throw new ConflictError('Swap request is no longer pending');
 
     if (action === 'accepted') {
-      const reqAsg = await this.schedules.findOneBy({ id: swap.requesterAssignmentId });
-      if (!reqAsg) throw new NotFoundError('Requester assignment not found');
+      await AppDataSource.transaction(async (manager) => {
+        const reqAsg = await manager.findOne(StaffSchedule, {
+          where: { id: swap.requesterAssignmentId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!reqAsg) throw new NotFoundError('Requester assignment not found');
 
-      if (swap.targetAssignmentId) {
-        const tgtAsg = await this.schedules.findOneBy({ id: swap.targetAssignmentId });
-        if (!tgtAsg) throw new NotFoundError('Target assignment not found');
+        if (swap.targetAssignmentId) {
+          const tgtAsg = await manager.findOne(StaffSchedule, {
+            where: { id: swap.targetAssignmentId },
+            lock: { mode: 'pessimistic_write' },
+          });
+          if (!tgtAsg) throw new NotFoundError('Target assignment not found');
 
-        await this.ensureNoDuplicateAssignment(tgtAsg.staffId, reqAsg.shiftId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
-        await this.ensureNoApprovedLeave(tgtAsg.staffId, reqAsg.workDate);
-        await this.ensureNoZoneConflictOnSameDay(tgtAsg.staffId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
-        await this.ensureNoShiftTimeOverlap(tgtAsg.staffId, reqAsg.shiftId, reqAsg.workDate, reqAsg.id);
+          await this.ensureNoDuplicateAssignment(tgtAsg.staffId, reqAsg.shiftId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
+          await this.ensureNoApprovedLeave(tgtAsg.staffId, reqAsg.workDate);
+          await this.ensureNoZoneConflictOnSameDay(tgtAsg.staffId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
+          await this.ensureNoShiftTimeOverlap(tgtAsg.staffId, reqAsg.shiftId, reqAsg.workDate, reqAsg.id);
 
-        await this.ensureNoDuplicateAssignment(reqAsg.staffId, tgtAsg.shiftId, tgtAsg.zoneId, tgtAsg.workDate, tgtAsg.id);
-        await this.ensureNoApprovedLeave(reqAsg.staffId, tgtAsg.workDate);
-        await this.ensureNoZoneConflictOnSameDay(reqAsg.staffId, tgtAsg.zoneId, tgtAsg.workDate, tgtAsg.id);
-        await this.ensureNoShiftTimeOverlap(reqAsg.staffId, tgtAsg.shiftId, tgtAsg.workDate, tgtAsg.id);
+          await this.ensureNoDuplicateAssignment(reqAsg.staffId, tgtAsg.shiftId, tgtAsg.zoneId, tgtAsg.workDate, tgtAsg.id);
+          await this.ensureNoApprovedLeave(reqAsg.staffId, tgtAsg.workDate);
+          await this.ensureNoZoneConflictOnSameDay(reqAsg.staffId, tgtAsg.zoneId, tgtAsg.workDate, tgtAsg.id);
+          await this.ensureNoShiftTimeOverlap(reqAsg.staffId, tgtAsg.shiftId, tgtAsg.workDate, tgtAsg.id);
 
-        const reqStaffId = reqAsg.staffId;
-        reqAsg.staffId = tgtAsg.staffId;
-        tgtAsg.staffId = reqStaffId;
-        await this.schedules.save([reqAsg, tgtAsg]);
+          const reqStaffId = reqAsg.staffId;
+          reqAsg.staffId = tgtAsg.staffId;
+          tgtAsg.staffId = reqStaffId;
+          await manager.save([reqAsg, tgtAsg]);
+        } else {
+          const targetId = swap.targetStaffId!;
+          await this.ensureNoDuplicateAssignment(targetId, reqAsg.shiftId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
+          await this.ensureNoApprovedLeave(targetId, reqAsg.workDate);
+          await this.ensureNoZoneConflictOnSameDay(targetId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
+          await this.ensureNoShiftTimeOverlap(targetId, reqAsg.shiftId, reqAsg.workDate, reqAsg.id);
 
-        await this.cancelPendingBidsAndSwapsForAssignments([reqAsg.id, tgtAsg.id], staffId);
-      } else {
-        await this.ensureNoDuplicateAssignment(swap.targetStaffId, reqAsg.shiftId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
-        await this.ensureNoApprovedLeave(swap.targetStaffId, reqAsg.workDate);
-        await this.ensureNoZoneConflictOnSameDay(swap.targetStaffId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
-        await this.ensureNoShiftTimeOverlap(swap.targetStaffId, reqAsg.shiftId, reqAsg.workDate, reqAsg.id);
+          reqAsg.staffId = targetId;
+          await manager.save(reqAsg);
+        }
+      });
 
-        reqAsg.staffId = swap.targetStaffId;
-        await this.schedules.save(reqAsg);
-
-        await this.cancelPendingBidsAndSwapsForAssignments([reqAsg.id], staffId);
-      }
+      const assignmentIds = swap.targetAssignmentId
+        ? [swap.requesterAssignmentId, swap.targetAssignmentId]
+        : [swap.requesterAssignmentId];
+      await this.cancelPendingBidsAndSwapsForAssignments(assignmentIds, staffId);
     }
 
     swap.status = action;
@@ -874,7 +922,42 @@ export class ScheduleService {
     return swap;
   }
 
-  async createAssignmentsBulk(actorId: string, items: Array<{ staffId: string; shiftId: string; zoneId: string; workDate: string; note?: string | null; status?: string }>) {
+  async claimOpenSwap(claimingStaffId: string, swapId: string) {
+    const swap = await this.swaps.findOneBy({ id: swapId });
+    if (!swap) throw new NotFoundError('Swap request not found');
+    if (swap.status !== 'pending') throw new ConflictError('Swap request is no longer pending');
+    if (swap.targetStaffId) throw new BadRequestError('This is not an open swap — it already has a target staff');
+    if (swap.requesterStaffId === claimingStaffId) throw new BadRequestError('Cannot claim your own swap');
+
+    await this.ensureNoApprovedLeave(claimingStaffId, swap.requesterAssignmentId);
+
+    await AppDataSource.transaction(async (manager) => {
+      const reqAsg = await manager.findOne(StaffSchedule, {
+        where: { id: swap.requesterAssignmentId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!reqAsg) throw new NotFoundError('Requester assignment not found');
+
+      await this.ensureNoApprovedLeave(claimingStaffId, reqAsg.workDate);
+      await this.ensureNoZoneConflictOnSameDay(claimingStaffId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
+      await this.ensureNoShiftTimeOverlap(claimingStaffId, reqAsg.shiftId, reqAsg.workDate, reqAsg.id);
+
+      reqAsg.staffId = claimingStaffId;
+      await manager.save(reqAsg);
+    });
+
+    swap.targetStaffId = claimingStaffId;
+    swap.status = 'accepted';
+    swap.reviewedAt = new Date();
+    await this.swaps.save(swap);
+
+    await this.cancelPendingBidsAndSwapsForAssignments([swap.requesterAssignmentId], claimingStaffId);
+    await this.log('swap.claimed', 'shift_swap', swapId, claimingStaffId, { requesterStaffId: swap.requesterStaffId });
+    await publishEvent('swap.claimed', { swapId, claimingStaffId, requesterStaffId: swap.requesterStaffId, requesterAssignmentId: swap.requesterAssignmentId });
+    return swap;
+  }
+
+  async createAssignmentsBulk(actorId: string, items: Array<{ staffId: string; shiftId: string; zoneId: string; workDate: string; note?: string | null; status?: string }>, force?: boolean) {
     for (const item of items) {
       await this.ensureScheduleTargets(item.staffId, item.shiftId, item.zoneId);
       await this.ensureFutureDate(item.workDate);
@@ -917,7 +1000,7 @@ export class ScheduleService {
 
         if (shiftDef.maxStaff) {
           const currentCount = capacityCounts.get(key) || 0;
-          if (currentCount >= shiftDef.maxStaff) {
+          if (currentCount >= shiftDef.maxStaff && !force) {
             throw new ConflictError(`Shift is already at maximum capacity (${shiftDef.maxStaff} staff)`);
           }
           capacityCounts.set(key, currentCount + 1);
@@ -930,11 +1013,11 @@ export class ScheduleService {
                a.workDate === item.workDate &&
                a.status !== 'completed'
         );
-        if (hasDuplicate) throw new ConflictError('Staff is already assigned to this shift and zone');
+        if (hasDuplicate && !force) throw new ConflictError('Staff is already assigned to this shift and zone');
 
         const dayAssignments = currentAssignments.filter(a => a.staffId === item.staffId && a.workDate === item.workDate);
         const hasZoneConflict = dayAssignments.some(a => a.zoneId !== item.zoneId);
-        if (hasZoneConflict) throw new ConflictError('Staff is already assigned to a different zone on this day');
+        if (hasZoneConflict && !force) throw new ConflictError('Staff is already assigned to a different zone on this day');
 
         const newStart = shiftDef.startTime.slice(0, 5);
         const newEnd = shiftDef.endTime.slice(0, 5);
@@ -1110,7 +1193,10 @@ export class ScheduleService {
         for (const zone of activeZones) {
           const existing = existingAssignments.filter((a) => a.workDate === workDate && a.shiftId === shift.id && a.zoneId === zone.id);
           const alreadyProposed = proposed.filter((p) => p.workDate === workDate && p.shiftId === shift.id && p.zoneId === zone.id);
-          const needed = (shift.minStaff || 1) - existing.length - alreadyProposed.length;
+          const currentTotal = existing.length + alreadyProposed.length;
+          const neededByMin = Math.max(0, (shift.minStaff || 1) - currentTotal);
+          const neededByMax = shift.maxStaff ? Math.max(0, shift.maxStaff - currentTotal) : Infinity;
+          const needed = Math.min(neededByMin, neededByMax);
           if (needed <= 0) continue;
 
           const prefKey = `${shift.id}:${zone.id}`;
@@ -1186,7 +1272,7 @@ export class ScheduleService {
   }
 
 
-  async setGeofence(actorId: string, body: { zoneId: string; latitude: number; longitude: number; radiusMeters?: number; addressHint?: string | null }) {
+  async setGeofence(actorId: string, body: { zoneId: string; latitude: number; longitude: number; radiusMeters?: number; addressHint?: string | null; allowedWifiSsids?: string[] | null }) {
     const zone = await this.zones.findOneBy({ id: body.zoneId, isActive: true });
     if (!zone) throw new NotFoundError('Zone not found');
     const existing = await this.geofence.findOneBy({ zoneId: body.zoneId });
@@ -1195,6 +1281,7 @@ export class ScheduleService {
       existing.longitude = body.longitude;
       existing.radiusMeters = body.radiusMeters ?? existing.radiusMeters;
       existing.addressHint = body.addressHint ?? existing.addressHint;
+      existing.allowedWifiSsids = body.allowedWifiSsids !== undefined ? body.allowedWifiSsids : existing.allowedWifiSsids;
       await this.geofence.save(existing);
       await this.log('geofence.updated', 'geofence_config', existing.id, actorId, body);
       return existing;
@@ -1220,13 +1307,17 @@ export class ScheduleService {
     return { deleted: true, zoneId };
   }
 
-  async checkIn(staffId: string, id: string, method = 'web', lat?: number, lng?: number) {
+  async checkIn(staffId: string, id: string, method = 'web', lat?: number, lng?: number, wifiSsid?: string) {
     const schedule = await this.requireOwnedSchedule(staffId, id);
     if (schedule.status === 'cancelled' || schedule.status === 'completed') {
       throw new ConflictError('Assignment is not active');
     }
     if (schedule.status === 'in_progress') {
       throw new ConflictError('Already checked in');
+    }
+    const existing = await this.attendance.findOneBy({ scheduleId: id });
+    if (existing?.status === 'pending_manual') {
+      throw new ConflictError('A manual check-in request is already pending for this assignment');
     }
     const shift = await this.requireShift(schedule.shiftId);
     const now = new Date();
@@ -1235,39 +1326,124 @@ export class ScheduleService {
     if (now < thirtyMinBefore) {
       throw new ConflictError(`Chưa đến giờ check-in (shift starts at ${shift.startTime}, check-in opens 30 min before)`);
     }
+
+    let checkedViaWifi = false;
     if (lat != null && lng != null && schedule.zoneId) {
       const gf = await this.geofence.findOneBy({ zoneId: schedule.zoneId, isActive: true });
       if (gf) {
-        const R = 6371e3;
-        const φ1 = (lat * Math.PI) / 180;
-        const φ2 = (gf.latitude * Math.PI) / 180;
-        const Δφ = ((gf.latitude - lat) * Math.PI) / 180;
-        const Δλ = ((gf.longitude - lng) * Math.PI) / 180;
-        const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-        const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const distance = haversineDistanceMeters(lat, lng, gf.latitude, gf.longitude);
         if (distance > gf.radiusMeters) {
-          await this.log('attendance.check_in_failed_geofence', 'staff_schedule', id, staffId, {
-            latitude: lat,
-            longitude: lng,
-            distance: Math.round(distance),
-            allowedRadius: gf.radiusMeters,
-          });
-          throw new BadRequestError(`Bạn đang ở ngoài khu vực làm việc (${Math.round(distance)}m > ${gf.radiusMeters}m cho phép)`);
+          if (wifiSsid && gf.allowedWifiSsids?.length && gf.allowedWifiSsids.includes(wifiSsid)) {
+            checkedViaWifi = true;
+          } else {
+            await this.log('attendance.check_in_failed_geofence', 'staff_schedule', id, staffId, {
+              latitude: lat,
+              longitude: lng,
+              distance: Math.round(distance),
+              allowedRadius: gf.radiusMeters,
+              wifiSsid: wifiSsid ?? null,
+            });
+            const suggestion = wifiSsid
+              ? `Bạn đang ở ngoài khu vực làm việc (${Math.round(distance)}m > ${gf.radiusMeters}m cho phép). WiFi không khớp. Bạn có thể yêu cầu check-in thủ công.`
+              : `Bạn đang ở ngoài khu vực làm việc (${Math.round(distance)}m > ${gf.radiusMeters}m cho phép). Kết nối WiFi thư viện hoặc yêu cầu check-in thủ công.`;
+            throw new BadRequestError(suggestion);
+          }
         }
       }
     }
-    const existing = await this.attendance.findOneBy({ scheduleId: id });
+
     if (existing?.checkInAt) throw new ConflictError('Already checked in');
     const status = now > new Date(`${schedule.workDate}T${shift.startTime}`) ? 'late' : 'on_time';
     const item = existing ?? this.attendance.create({ scheduleId: id, staffId, status, method });
     item.checkInAt = now;
     item.status = status;
-    item.method = method;
+    item.method = checkedViaWifi ? 'wifi' : method;
     await this.attendance.save(item);
     schedule.status = 'in_progress';
     await this.schedules.save(schedule);
-    await this.log('attendance.checked_in', 'staff_attendance', item.id, staffId, { scheduleId: id, status });
+    await this.log('attendance.checked_in', 'staff_attendance', item.id, staffId, { scheduleId: id, status, method: item.method });
     return { schedule, attendance: item };
+  }
+
+  async requestManualCheckIn(assignmentId: string, staffId: string, note: string) {
+    const schedule = await this.requireOwnedSchedule(staffId, assignmentId);
+    if (schedule.status === 'cancelled' || schedule.status === 'completed') {
+      throw new ConflictError('Assignment is not active');
+    }
+    if (schedule.status === 'in_progress') {
+      throw new ConflictError('Already checked in');
+    }
+
+    const existing = await this.attendance.findOneBy({ scheduleId: assignmentId });
+    if (existing?.status === 'pending_manual') {
+      throw new ConflictError('A manual check-in request is already pending for this assignment');
+    }
+    if (existing?.checkInAt) {
+      throw new ConflictError('Already checked in');
+    }
+
+    const item = existing ?? this.attendance.create({ scheduleId: assignmentId, staffId, status: 'pending_manual', method: 'manual' });
+    item.status = 'pending_manual';
+    item.invalidatedReason = `manual_checkin_request: ${note}`;
+    await this.attendance.save(item);
+    await this.log('attendance.manual_checkin_requested', 'staff_attendance', item.id, staffId, { scheduleId: assignmentId, note });
+    await publishEvent('attendance.manual_checkin_requested', { attendanceId: item.id, scheduleId: assignmentId, staffId, note });
+    return item;
+  }
+
+  async approveManualCheckIn(adminId: string, attendanceId: string, checkInAt?: Date) {
+    const att = await this.attendance.findOneBy({ id: attendanceId });
+    if (!att) throw new NotFoundError('Attendance record not found');
+    if (att.status !== 'pending_manual') throw new ConflictError('Attendance is not a pending manual check-in request');
+
+    const schedule = await this.schedules.findOneBy({ id: att.scheduleId });
+    att.status = 'completed';
+    att.checkInAt = checkInAt ?? new Date();
+    att.invalidatedReason = null;
+    await this.attendance.save(att);
+
+    if (schedule && schedule.status !== 'in_progress') {
+      schedule.status = 'in_progress';
+      await this.schedules.save(schedule);
+    }
+
+    await this.log('attendance.manual_checkin_approved', 'staff_attendance', attendanceId, adminId, { scheduleId: att.scheduleId, checkInAt: att.checkInAt });
+    await publishEvent('attendance.manual_checkin_approved', { attendanceId, scheduleId: att.scheduleId, adminId, checkInAt: att.checkInAt });
+    return att;
+  }
+
+  async rejectManualCheckIn(adminId: string, attendanceId: string, reason: string) {
+    const att = await this.attendance.findOneBy({ id: attendanceId });
+    if (!att) throw new NotFoundError('Attendance record not found');
+    if (att.status !== 'pending_manual') throw new ConflictError('Attendance is not a pending manual check-in request');
+
+    att.status = 'rejected_manual';
+    att.invalidatedReason = `manual_checkin_rejected: ${reason}`;
+    await this.attendance.save(att);
+    await this.log('attendance.manual_checkin_rejected', 'staff_attendance', attendanceId, adminId, { reason });
+    return att;
+  }
+
+  async listManualCheckInRequests(status?: string) {
+    const where: any = {};
+    if (status) {
+      where.status = status;
+    } else {
+      where.status = 'pending_manual';
+    }
+    const items = await this.attendance.find({
+      where,
+      order: { createdAt: 'DESC' },
+    });
+    const staffIds = [...new Set(items.map((i) => i.staffId))];
+    const scheduleIds = [...new Set(items.map((i) => i.scheduleId))];
+    const staff = staffIds.length ? await this.users.listStaff(staffIds) : [];
+    const schedules = scheduleIds.length ? await this.schedules.findBy({ id: In(scheduleIds) }) : [];
+    return items.map((att) => ({
+      ...att,
+      staff: staff.find((s) => s.id === att.staffId) ?? null,
+      assignment: schedules.find((s) => s.id === att.scheduleId) ?? null,
+    }));
   }
 
   async auditLogs(filters: {
@@ -1444,7 +1620,7 @@ export class ScheduleService {
     return items.filter((item) => activeShiftIds.has(item.shiftId) && activeZoneIds.has(item.zoneId));
   }
 
-  private async ensureNoDuplicateAssignment(staffId: string, shiftId: string, zoneId: string, workDate: string, exceptId?: string) {
+  private async ensureNoDuplicateAssignment(staffId: string, shiftId: string, zoneId: string, workDate: string, exceptId?: string, force?: boolean) {
     const where: any = {
       staffId,
       shiftId,
@@ -1455,8 +1631,10 @@ export class ScheduleService {
     if (exceptId) where.id = Not(exceptId);
     const existing = await this.schedules.findOne({ where });
     if (existing) {
+      if (force) return 'Staff is already assigned to this shift and zone';
       throw new ConflictError('Staff is already assigned to this shift and zone');
     }
+    return undefined;
   }
 
   private async ensureNoApprovedLeave(staffId: string, workDate: string) {
@@ -1478,7 +1656,7 @@ export class ScheduleService {
     }
   }
 
-  private async ensureNoZoneConflictOnSameDay(staffId: string, zoneId: string, workDate: string, exceptId?: string) {
+  private async ensureNoZoneConflictOnSameDay(staffId: string, zoneId: string, workDate: string, exceptId?: string, force?: boolean) {
     const where: any = {
       staffId,
       workDate,
@@ -1487,11 +1665,13 @@ export class ScheduleService {
     if (exceptId) where.id = Not(exceptId);
     const existing = await this.schedules.findOne({ where });
     if (existing && existing.zoneId !== zoneId) {
+      if (force) return 'Staff is already assigned to a different zone on this day';
       throw new ConflictError('Staff is already assigned to a different zone on this day');
     }
+    return undefined;
   }
 
-  private async ensureNoShiftTimeOverlap(staffId: string, shiftId: string, workDate: string, exceptId?: string) {
+  private async ensureNoShiftTimeOverlap(staffId: string, shiftId: string, workDate: string, exceptId?: string, force?: boolean) {
     const newShift = await this.requireShift(shiftId);
     const newStart = newShift.startTime.slice(0, 5);
     const newEnd = newShift.endTime.slice(0, 5);
@@ -1505,9 +1685,8 @@ export class ScheduleService {
 
     const existingAssignments = await this.schedules.find({ where });
 
-    // Batch load all shifts at once instead of per iteration
     const shiftIds = [...new Set(existingAssignments.map(a => a.shiftId))];
-    if (shiftIds.length === 0) return;
+    if (shiftIds.length === 0) return undefined;
 
     const existingShifts = await this.shifts.find({
       where: { id: In(shiftIds), isActive: true }
@@ -1521,22 +1700,26 @@ export class ScheduleService {
       const existStart = existingShift.startTime.slice(0, 5);
       const existEnd = existingShift.endTime.slice(0, 5);
       if (newStart < existEnd && newEnd > existStart) {
-        throw new ConflictError(
-          `New shift time (${newStart}-${newEnd}) overlaps with existing shift "${existingShift.name}" (${existStart}-${existEnd}) on ${workDate}`,
-        );
+        const msg = `New shift time (${newStart}-${newEnd}) overlaps with existing shift "${existingShift.name}" (${existStart}-${existEnd}) on ${workDate}`;
+        if (force) return msg;
+        throw new ConflictError(msg);
       }
     }
+    return undefined;
   }
 
-  private async ensureNoOverstaffing(shiftId: string, zoneId: string, workDate: string) {
+  private async ensureNoOverstaffing(shiftId: string, zoneId: string, workDate: string, force?: boolean) {
     const shift = await this.requireShift(shiftId);
-    if (!shift.maxStaff) return;
+    if (!shift.maxStaff) return undefined;
     const count = await this.schedules.count({
       where: { shiftId, zoneId, workDate, status: Not(In(['cancelled', 'completed'])) },
     });
     if (count >= shift.maxStaff) {
-      throw new ConflictError(`Shift is already at maximum capacity (${shift.maxStaff} staff)`);
+      const msg = `Shift is already at maximum capacity (${shift.maxStaff} staff)`;
+      if (force) return msg;
+      throw new ConflictError(msg);
     }
+    return undefined;
   }
 
   private async requireOwnedSchedule(staffId: string, id: string) {
@@ -1598,51 +1781,83 @@ export class ScheduleService {
     for (const asgId of assignmentIds) {
       const att = await this.attendance.findOneBy({ scheduleId: asgId });
       if (att) {
-        await this.attendance.remove(att);
-        await this.log('attendance.removed_orphaned', 'staff_attendance', att.id, actorId, {
+        att.invalidatedReason = 'assignment.cancelled';
+        await this.attendance.save(att);
+        await this.attendance.softRemove(att);
+        await this.log('attendance.invalidated', 'staff_attendance', att.id, actorId, {
           scheduleId: asgId,
-          reason: 'assignment.cancelled',
+          invalidatedReason: 'assignment.cancelled',
         });
       }
     }
   }
 
-  private async expireStaleSwaps() {
-    const cutoff = new Date();
-    cutoff.setHours(cutoff.getHours() - 72);
-    const stale = await this.swaps.find({
-      where: { status: 'pending', createdAt: LessThan(cutoff) },
-    });
-    if (stale.length) {
-      for (const swap of stale) {
-        swap.status = 'expired';
-        swap.reviewedAt = new Date();
-        swap.responseNote = 'Auto-expired after 72 hours';
-      }
-      await this.swaps.save(stale);
-      for (const swap of stale) {
-        await this.log('swap.expired', 'shift_swap', swap.id, null, { reason: '72h expiry' });
-      }
-    }
-  }
+  async expireStaleBidsInternal() {
+    const now = new Date();
+    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    const seventyTwoHoursAgo = new Date(now.getTime() - 72 * 60 * 60 * 1000);
 
-  private async expireStaleBids() {
-    const cutoff = new Date();
-    cutoff.setHours(cutoff.getHours() - 72);
-    const stale = await this.bids.find({
-      where: { status: 'pending', createdAt: LessThan(cutoff) },
+    const toWarn = await this.bids.find({
+      where: { status: 'pending', createdAt: LessThan(fortyEightHoursAgo), notifiedExpiring: false },
     });
-    if (stale.length) {
-      for (const bid of stale) {
-        bid.status = 'expired';
-        bid.reviewedAt = new Date();
-        bid.note = bid.note ? `${bid.note}\nAuto-expired after 72 hours` : 'Auto-expired after 72 hours';
-      }
-      await this.bids.save(stale);
-      for (const bid of stale) {
+    for (const bid of toWarn) {
+      publishEvent('bid.expiring_soon', { bidId: bid.id, staffId: bid.staffId, assignmentId: bid.assignmentId });
+      bid.notifiedExpiring = true;
+      await this.bids.save(bid);
+      await this.log('bid.expiry_warning_sent', 'shift_bid', bid.id, null, { hoursUntilExpiry: 24 });
+    }
+
+    const toExpire = await this.bids.find({
+      where: { status: 'pending', createdAt: LessThan(seventyTwoHoursAgo) },
+    });
+    for (const bid of toExpire) {
+      bid.status = 'expired';
+      bid.reviewedAt = new Date();
+      bid.note = bid.note ? `${bid.note}\nAuto-expired after 72 hours` : 'Auto-expired after 72 hours';
+    }
+    if (toExpire.length) {
+      await this.bids.save(toExpire);
+      for (const bid of toExpire) {
         await this.log('bid.expired', 'shift_bid', bid.id, null, { reason: '72h expiry' });
       }
     }
+
+    await this.cleanBidsOnPastAssignments();
+
+    return { warned: toWarn.length, expired: toExpire.length };
+  }
+
+  async expireStaleSwapsInternal() {
+    const now = new Date();
+    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    const seventyTwoHoursAgo = new Date(now.getTime() - 72 * 60 * 60 * 1000);
+
+    const toWarn = await this.swaps.find({
+      where: { status: 'pending', createdAt: LessThan(fortyEightHoursAgo), notifiedExpiring: false },
+    });
+    for (const swap of toWarn) {
+      publishEvent('swap.expiring_soon', { swapId: swap.id, requesterStaffId: swap.requesterStaffId, targetStaffId: swap.targetStaffId });
+      swap.notifiedExpiring = true;
+      await this.swaps.save(swap);
+      await this.log('swap.expiry_warning_sent', 'shift_swap', swap.id, null, { hoursUntilExpiry: 24 });
+    }
+
+    const toExpire = await this.swaps.find({
+      where: { status: 'pending', createdAt: LessThan(seventyTwoHoursAgo) },
+    });
+    for (const swap of toExpire) {
+      swap.status = 'expired';
+      swap.reviewedAt = new Date();
+      swap.responseNote = 'Auto-expired after 72 hours';
+    }
+    if (toExpire.length) {
+      await this.swaps.save(toExpire);
+      for (const swap of toExpire) {
+        await this.log('swap.expired', 'shift_swap', swap.id, null, { reason: '72h expiry' });
+      }
+    }
+
+    return { warned: toWarn.length, expired: toExpire.length };
   }
 
   private async cleanBidsOnPastAssignments() {

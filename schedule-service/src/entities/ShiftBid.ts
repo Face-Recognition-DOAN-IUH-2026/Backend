@@ -23,6 +23,9 @@ export class ShiftBid {
   @Column({ type: 'timestamp', nullable: true, name: 'reviewed_at' })
   reviewedAt: Date | null;
 
+  @Column({ type: 'boolean', default: false, name: 'notified_expiring' })
+  notifiedExpiring: boolean;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
