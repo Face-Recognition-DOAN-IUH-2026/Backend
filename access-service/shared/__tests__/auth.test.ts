@@ -1,7 +1,8 @@
 import * as jwt from 'jsonwebtoken';
 import { decodeToken } from '../auth/decodeToken';
+import { createAuth } from '../auth/auth';
 import { createInternalAuth } from '../auth/internalAuth';
-import { AuthConfig, InternalAuthConfig } from '../auth/types';
+import { AuthConfig, InternalAuthConfig, AuthRequest } from '../auth/types';
 import { generateServiceToken } from '../auth/serviceToken';
 
 const TEST_SECRET = 'test-secret';
@@ -113,5 +114,85 @@ describe('createInternalAuth', () => {
 
     expect(mockNext).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
+  });
+});
+
+describe('createAuth (cookie fallback)', () => {
+  const mockReq = (opts: { authHeader?: string; cookies?: Record<string, string> } = {}) => ({
+    headers: opts.authHeader ? { authorization: opts.authHeader } : {},
+    cookies: opts.cookies || {},
+  } as any as AuthRequest);
+
+  const mockRes = () => {
+    const res: any = {};
+    res.status = jest.fn().mockReturnValue(res);
+    res.json = jest.fn().mockReturnValue(res);
+    return res;
+  };
+
+  const mockNext = jest.fn();
+
+  beforeEach(() => {
+    mockNext.mockClear();
+  });
+
+  const middleware = createAuth(TEST_CONFIG);
+
+  it('should accept Bearer header token', () => {
+    const token = jwt.sign({ sub: 'user-1', roles: ['admin'] }, TEST_SECRET, {
+      audience: 'test-audience',
+      issuer: 'test-issuer',
+    });
+    const req = mockReq({ authHeader: `Bearer ${token}` });
+    const res = mockRes();
+
+    middleware(req, res, mockNext);
+
+    expect(mockNext).toHaveBeenCalled();
+    expect(req.user).toBeDefined();
+    expect(req.user!.token).toBe(token);
+  });
+
+  it('should fall back to cookie when no Bearer header', () => {
+    const token = jwt.sign({ sub: 'user-2', roles: ['staff'] }, TEST_SECRET, {
+      audience: 'test-audience',
+      issuer: 'test-issuer',
+    });
+    const req = mockReq({ cookies: { access_token: token } });
+    const res = mockRes();
+
+    middleware(req, res, mockNext);
+
+    expect(mockNext).toHaveBeenCalled();
+    expect(req.user).toBeDefined();
+    expect(req.user!.token).toBe(token);
+  });
+
+  it('should return 401 when neither header nor cookie has token', () => {
+    const req = mockReq({});
+    const res = mockRes();
+
+    middleware(req, res, mockNext);
+
+    expect(mockNext).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('should prefer Bearer header over cookie', () => {
+    const headerToken = jwt.sign({ sub: 'from-header' }, TEST_SECRET, {
+      audience: 'test-audience',
+      issuer: 'test-issuer',
+    });
+    const cookieToken = jwt.sign({ sub: 'from-cookie' }, TEST_SECRET, {
+      audience: 'test-audience',
+      issuer: 'test-issuer',
+    });
+    const req = mockReq({ authHeader: `Bearer ${headerToken}`, cookies: { access_token: cookieToken } });
+    const res = mockRes();
+
+    middleware(req, res, mockNext);
+
+    expect(mockNext).toHaveBeenCalled();
+    expect(req.user!.token).toBe(headerToken);
   });
 });

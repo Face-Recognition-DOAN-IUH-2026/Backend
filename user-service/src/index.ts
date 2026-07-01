@@ -1,17 +1,20 @@
 import 'reflect-metadata';
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { config } from './config';
 import { AppDataSource } from './data-source';
 import { authRoutes, userRoutes, patronRoutes, internalRoutes } from './routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler } from './middlewares/errorHandler';
+import { setupProcessErrorHandlers } from '../../shared/error-handler';
 
 
 const app = express();
 
 app.use(cors({ origin: config.corsOrigins, credentials: true }));
+app.use(cookieParser());
 app.use(express.json());
 
 app.get('/health', (_req, res) => {
@@ -34,6 +37,7 @@ app.use(errorHandler);
 
 async function start() {
   try {
+    setupProcessErrorHandlers();
     await AppDataSource.initialize();
     console.log('Database initialized via TypeORM');
     

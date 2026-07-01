@@ -58,9 +58,9 @@ NGƯỜI DÙNG HIỆN TẠI:
 - Email: ${userContext.email}
 
 QUY TẮC CHO NHÂN VIÊN:
-- Có thể tra cứu thông tin bất kỳ thẻ độc giả nào (yêu cầu mã thẻ hoặc mã số sinh viên)
-- Có thể sử dụng tất cả các tool kể cả write operations
-- Khi tra cứu thẻ, hỏi mã thẻ hoặc MSSV nếu người dùng chưa cung cấp`;
+- CHỈ được tra cứu CỦA CHÍNH MÌNH hoặc theo yêu cầu của độc giả (yêu cầu mã thẻ hoặc mã số sinh viên)
+- CHỈ sử dụng các tool READ-ONLY (tra cứu, tìm kiếm, xem lịch sử)
+- KHÔNG thực hiện bất kỳ thao tác ghi/xóa/sửa nào qua AI`;
     }
   }
 
@@ -71,14 +71,13 @@ Nhiệm vụ chính:
 - Hỗ trợ tìm kiếm sách và thông tin tài liệu
 - Tư vấn lịch trực và báo cáo
 - Hướng dẫn sử dụng thư viện
-- Thêm sách mới vào hệ thống
 
 Nguyên tắc quan trọng:
 1. LUÔN trả lời bằng tiếng Việt, thân thiện và chuyên nghiệp
 2. Sử dụng ngữ cảnh từ Knowledge Base khi có sẵn
 3. Nếu cần thông tin từ hệ thống, chỉ sử dụng các công cụ được cung cấp (KHÔNG tự invent thông tin)
-4. KHÔNG BAO GIỜ thực hiện các thao tác ghi/xóa/sửa (write/delete/update) mà không có xác nhận từ người dùng
-5. Nếu câu hỏi yêu cầu thao tác ghi (thêm, sửa, xóa dữ liệu), gọi tool tương ứng — hệ thống sẽ hỏi xác nhận tự động
+4. KHÔNG BAO GIỜ thực hiện các thao tác ghi/xóa/sửa (write/delete/update) — AI chỉ hỗ trợ tra cứu (read-only)
+5. Nếu người dùng yêu cầu thêm/xóa/sửa dữ liệu, từ chối và hướng dẫn họ thực hiện trực tiếp trên giao diện thư viện
 
 CÁCH GỌI TOOL (QUAN TRỌNG - PHẢI TUÂN THỦ ĐÚNG FORMAT):
 Khi cần gọi tool, bạn PHẢI trả về đúng format JSON sau:
@@ -87,19 +86,11 @@ Khi cần gọi tool, bạn PHẢI trả về đúng format JSON sau:
 Ví dụ:
 - Để tìm sách: {"tool": "search_books", "arguments": {"query": "Clean Code"}}
 - Để tra cứu sách: {"tool": "lookup_book", "arguments": {"isbn_or_query": "9780132350884"}}
-- Để thêm sách: {"tool": "add_book", "arguments": {"isbn": "9780132350884", "title": "Clean Code", "author": "Robert C. Martin"}}
 
 KHÔNG BAO GIỜ trả về JSON mà không có key "tool". Nếu không gọi tool, hãy trả lời bằng tiếng Việt bình thường.
 
-Các công cụ có sẵn:
+Các công cụ có sẵn (tất cả đều là READ-ONLY):
 ${buildToolsDescription()}
-
-HƯỚNG DẪN THÊM SÁCH MỚI:
-Khi người dùng muốn thêm sách mới:
-1. Hỏi ISBN hoặc tên sách
-2. Gọi lookup_book để tra cứu
-3. Hiển thị thông tin sách bằng format card đặc biệt (xem bên dưới)
-4. Hỏi xác nhận trước khi thêm
 
 FORMAT CARD SÁCH (QUAN TRỌNG - phải đúng format để frontend hiển thị đẹp):
 Khi hiển thị thông tin sách, PHẢI dùng đúng format sau:
@@ -117,7 +108,7 @@ KHÔNG BAO GIỜ hiển thị thông tin sách bằng text thuần. Luôn dùng 
 Hướng dẫn sử dụng tool:
 - Đọc kết quả tool và quyết định: trả lời trực tiếp HOẶC gọi thêm tool
 - Khi đã có đủ thông tin, trả lời tổng hợp cho người dùng
-- Với thao tác ghi (add_book, update_book_quantity...), gọi tool — hệ thống sẽ hỏi xác nhận
+- NHỚ: AI KHÔNG có quyền ghi/xóa/sửa — chỉ tra cứu
 ${userContextPrompt}
 ${kbContext}`;
 }
@@ -189,43 +180,6 @@ function parseToolCalls(assistantMessage: string): Array<{ name: string; args: R
   return toolCalls;
 }
 
-function shouldConfirmWriteOperation(toolName: string | undefined): boolean {
-  const readonlyTools = [
-    'search_books',
-    'get_shelf_location',
-    'get_patron_info',
-    'get_patron_borrows',
-    'get_patron_history',
-    'get_overdue_borrows',
-    'get_schedule_today',
-    'get_library_hours',
-    'lookup_book',
-  ];
-  return !toolName || !readonlyTools.includes(toolName);
-}
-
-function buildToolDescription(toolName: string, args: Record<string, any>): string {
-  switch (toolName) {
-    case 'return_book':
-      return `Trả sách barcode: ${args.barcode || '(chưa có barcode)'}`;
-    case 'create_borrow_slip':
-      return `Tạo phiếu mượn: patron=${args.patronId || '?'}, books=${JSON.stringify(args.bookCopies || [])}`;
-    case 'renew_borrow':
-      return `Gia hạn mượn: record_id=${args.recordId || '?'}`;
-    case 'batch_return':
-      return `Trả nhiều sách: ${JSON.stringify(args.barcodes || [])}`;
-    case 'add_book':
-      return `Thêm sách mới:
-- ISBN: ${args.isbn || '?'}
-- Tên sách: ${args.title || '?'}
-- Tác giả: ${args.author || '(chưa có)'}
-- Số lượng: ${args.quantity || 1}
-- Vị trí kệ: ${args.shelf_location || '(chưa xác định)'}
-- Thể loại: ${args.categories || '(chưa có)'}`;
-    default:
-      return `Thao tác ${toolName}: ${JSON.stringify(args)}`;
-  }
-}
 
 export async function processMessage(
   message: string,
@@ -313,17 +267,6 @@ export async function processMessage(
           content: `[Hệ thống] Tool "${call.name}" không tồn tại. Chỉ sử dụng các tool có sẵn: ${tools.map(t => t.name).join(', ')}`,
         });
         continue;
-      }
-
-      if (shouldConfirmWriteOperation(call.name)) {
-        const description = buildToolDescription(call.name, call.args);
-        return {
-          response: `⚠️ **Thao tác này cần xác nhận**\n\n${description}\n\nBạn có muốn tiếp tục thực hiện không?`,
-          requiresConfirmation: true,
-          pendingTool: { name: call.name, args: call.args, description },
-          toolResults,
-          sessionId,
-        };
       }
 
       try {

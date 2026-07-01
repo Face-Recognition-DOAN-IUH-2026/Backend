@@ -181,10 +181,9 @@ const router = Router();
  */
 router.post('/', async (req: AuthRequest, res: Response) => {
   try {
-    const { message, sessionId, patronId: clientPatronId } = req.body as {
+    const { message, sessionId } = req.body as {
       message: string;
       sessionId?: string;
-      patronId?: string;
     };
 
     if (!message || typeof message !== 'string') {
@@ -223,16 +222,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const isStaff = user.role === 'admin' || user.role === 'staff';
-
-    // Security: patron can only query own data, staff can query any patron
-    let effectivePatronId: string;
-    if (isStaff) {
-      effectivePatronId = clientPatronId || user.userId;
-    } else {
-      // Patron: ignore client patronId, always use JWT identity
-      effectivePatronId = user.userId;
-    }
+    const effectivePatronId = user.userId;
 
     let session = sessionId ? sessionStore.getOwned(sessionId, effectivePatronId) : undefined;
 
@@ -333,7 +323,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
  *         required: true
  *         schema:
  *           type: string
- *         description: The session ID returned by a previous chat call
+ *         description: "The session ID from the chat response that had a pending confirmation"
  *         example: "sess_abc123xyz"
  *     responses:
  *       200:

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authController } from '../controllers';
 import { requireRole } from '../middlewares/requireRole';
+import { createAuth } from '../../../shared/auth';
 
 const router = Router();
 
@@ -105,6 +106,18 @@ router.post('/login', (req, res) => authController.login(req, res));
  *         description: Invalid or expired refresh token
  */
 router.post('/refresh', (req, res) => authController.refresh(req, res));
+
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     summary: Logout and clear auth cookie
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ */
+router.post('/logout', (req, res) => authController.logout(req, res));
 
 /**
  * @swagger

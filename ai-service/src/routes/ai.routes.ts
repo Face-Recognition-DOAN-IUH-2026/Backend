@@ -152,7 +152,7 @@ router.get('/insights/:id/explain', requireRole(['admin', 'staff']), asyncHandle
  *         application/json:
  *           schema:
  *             type: object
- *             description: Chat message payload
+ *             description: "Chat message payload"
  *     responses:
  *       200:
  *         description: Successfully received AI chat response

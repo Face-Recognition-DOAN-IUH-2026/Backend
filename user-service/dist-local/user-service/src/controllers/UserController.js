@@ -225,7 +225,7 @@ class UserController {
                 return;
             }
             const avatarUrl = await services_1.userService.updateAvatar(req.user.userId, file.buffer, file.mimetype);
-            res.json({ avatarUrl });
+            res.json({ avatarUrl, avatar_url: avatarUrl });
         }
         catch (error) {
             console.error('Delete User Error:', error);

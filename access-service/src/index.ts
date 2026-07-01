@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import http from 'http';
 import { WebSocketServer } from 'ws';
 import { config } from './config';
@@ -18,6 +19,7 @@ import { amqpClient } from './clients/AmqpClient';
 const app = express();
 
 app.use(cors({ origin: config.corsOrigins.includes('*') ? true : config.corsOrigins, credentials: true }));
+app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 
 app.use('/access', accessRoutes);
@@ -49,7 +51,8 @@ async function start() {
         socket.destroy();
         return;
       }
-      const token = url.searchParams.get('token') || request.headers.authorization?.replace(/^Bearer\s+/i, '');
+      const cookieToken = (request.headers.cookie || '').split(';').map(c => c.trim()).find(c => c.startsWith('access_token='))?.split('=')[1];
+      const token = cookieToken || url.searchParams.get('token') || request.headers.authorization?.replace(/^Bearer\s+/i, '');
       if (!token) {
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();

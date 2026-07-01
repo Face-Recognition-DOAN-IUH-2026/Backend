@@ -11,14 +11,14 @@ const router = Router();
  *     summary: Confirm or reject a pending AI action
  *     description: |
  *       When the AI assistant proposes a destructive or important action (e.g. extending a borrow period),
- *       it sets `requiresConfirmation: true` in the chat response. The frontend should show a confirmation
- *       dialog and then call this endpoint with either `approve` or `reject`.
+ *       it sets requiresConfirmation true in the chat response. The frontend should show a confirmation
+ *       dialog and then call this endpoint with either approve or reject.
  *
- *       **Workflow:**
- *       1. User sends a message to `POST /api/ai/chat`
- *       2. Response has `requiresConfirmation: true` and `pendingAction` with action details
+ *       Workflow:
+ *       1. User sends a message to POST /api/ai/chat
+ *       2. Response has requiresConfirmation true and pendingAction with action details
  *       3. Frontend shows confirmation dialog
- *       4. User approves or rejects → call `POST /api/ai/confirm`
+ *       4. User approves or rejects - call POST /api/ai/confirm
  *     tags: [AI Assistant]
  *     security:
  *       - bearerAuth: []
@@ -34,24 +34,13 @@ const router = Router();
  *             properties:
  *               sessionId:
  *                 type: string
- *                 description: The session ID from the chat response that had `requiresConfirmation: true`
+ *                 description: "The session ID from the chat response that had requiresConfirmation true"
  *                 example: "sess_abc123xyz"
  *               action:
  *                 type: string
  *                 enum: [approve, reject]
- *                 description: Whether to approve or reject the pending action
+ *                 description: "Whether to approve or reject the pending action"
  *                 example: "approve"
- *           examples:
- *             approve:
- *               summary: Approve the pending action
- *               value:
- *                 sessionId: "sess_abc123xyz"
- *                 action: "approve"
- *             reject:
- *               summary: Reject the pending action
- *               value:
- *                 sessionId: "sess_abc123xyz"
- *                 action: "reject"
  *     responses:
  *       200:
  *         description: Action approved and executed, or rejected
@@ -64,23 +53,11 @@ const router = Router();
  *                   type: boolean
  *                 message:
  *                   type: string
- *                   example: "Hành động đã được thực hiện thành công."
+ *                   example: "Hanh dong da duoc thuc hien thanh cong."
  *                 result:
  *                   type: object
  *                   nullable: true
- *                   description: Result data from executing the approved action
- *             examples:
- *               approved:
- *                 summary: Action approved
- *                 value:
- *                   success: true
- *                   message: "Hành động đã được thực hiện thành công."
- *                   result: { extended: true, newDueDate: "2025-07-10" }
- *               rejected:
- *                 summary: Action rejected
- *                 value:
- *                   success: true
- *                   message: "Hành động đã bị từ chối."
+ *                   description: "Result data from executing the approved action"
  *       400:
  *         description: Missing fields, invalid action value, or no pending confirmation
  *         content:
@@ -95,12 +72,6 @@ const router = Router();
  *               $ref: '#/components/schemas/Error'
  *       404:
  *         description: Session not found or confirmation expired
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       500:
- *         description: Tool execution failed
  *         content:
  *           application/json:
  *             schema:

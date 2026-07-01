@@ -23,7 +23,7 @@ const router = Router();
  *       200:
  *         description: Event stream (text/event-stream)
  */
-router.get('/events', (_req, res) => {
+router.get('/events', auth, (_req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');

@@ -30,7 +30,6 @@ export const SERVICE_SCOPES: Record<string, string[]> = {
   ],
   'ai-service': [
     'borrows:read',
-    'borrows:write',
     'users:read',
     'schedules:read',
     'access:read',

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { authService } from '../services';
+import { setAuthCookie, clearAuthCookie } from '../../shared';
 
 export class AuthController {
   async register(req: Request, res: Response) {
@@ -17,6 +18,7 @@ export class AuthController {
         studentCode: student_code,
         skipVerification: skip_verification,
       });
+      if (result.access_token) setAuthCookie(res, result.access_token);
       res.status(201).json(result);
     } catch (error: any) {
       res.status(error.statusCode || 400).json({ error: error.message || 'Registration failed' });
@@ -35,6 +37,7 @@ export class AuthController {
         studentCode: student_code,
         password,
       });
+      if (result.access_token) setAuthCookie(res, result.access_token);
       res.json(result);
     } catch (error: any) {
       res.status(error.statusCode || 401).json({ error: error.message || 'Login failed' });
@@ -65,10 +68,16 @@ export class AuthController {
         return;
       }
       const result = await authService.refreshToken(refresh_token);
+      if (result.access_token) setAuthCookie(res, result.access_token);
       res.json(result);
     } catch (error: any) {
       res.status(401).json({ error: 'Invalid refresh token' });
     }
+  }
+
+  async logout(_req: Request, res: Response) {
+    clearAuthCookie(res);
+    res.json({ message: 'Logged out' });
   }
 
   async forgotPassword(req: Request, res: Response) {

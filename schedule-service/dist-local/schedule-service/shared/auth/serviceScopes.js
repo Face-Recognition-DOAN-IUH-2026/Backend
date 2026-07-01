@@ -35,7 +35,6 @@ exports.SERVICE_SCOPES = {
     ],
     'ai-service': [
         'borrows:read',
-        'borrows:write',
         'users:read',
         'schedules:read',
         'access:read',
