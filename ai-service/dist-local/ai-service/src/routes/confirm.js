@@ -38,7 +38,9 @@ const router = (0, express_1.Router)();
  *                 example: "sess_abc123xyz"
  *               action:
  *                 type: string
- *                 enum: [approve, reject]
+ *                 enum:
+ *                   - approve
+ *                   - reject
  *                 description: "Whether to approve or reject the pending action"
  *                 example: "approve"
  *     responses:

@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { getServiceToken } from '../../../shared';
 import { LibraryOperationsSnapshot } from './types';
 
 type FetchResult = { ok: true; data: any } | { ok: false; error: string };
@@ -7,12 +8,23 @@ function todayStr() {
   return new Date().toISOString().split('T')[0];
 }
 
-async function getJson(baseUrl: string, path: string, token: string): Promise<FetchResult> {
+function internalHeaders() {
+  return {
+    Authorization: `Bearer ${getServiceToken('ai-service', config.serviceJwtSecret)}`,
+    Accept: 'application/json',
+  };
+}
+
+async function getJson(baseUrl: string, path: string, token?: string): Promise<FetchResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4500);
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
   try {
     const res = await fetch(`${baseUrl}${path}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      headers,
       signal: controller.signal,
     });
     if (!res.ok) return { ok: false, error: `${path} returned ${res.status}` };
@@ -59,7 +71,7 @@ export class DataCollector {
       getJson(config.accessServiceUrl, `/access/logs?dateFrom=${today}&limit=200`, token),
       getJson(config.borrowServiceUrl, '/borrow/staff/active-borrowers', token),
       getJson(config.borrowServiceUrl, '/borrow/books?skip=0&limit=100', token),
-      getJson(config.scheduleServiceUrl, `/schedules/assignments?from=${today}&to=${today}`, token),
+      getJson(config.scheduleServiceUrl, `/schedules/internal/upcoming?from=${today}&to=${today}`),
     ]);
 
     const warnings = [statsRes, activeRes, logsRes, activeBorrowersRes, booksRes, assignmentsRes]

@@ -826,7 +826,7 @@ router.delete('/assignments/:id', requireRole('admin'), asyncHandler(async (req,
  *       200:
  *         description: Availability records retrieved
  */
-router.get('/availability', requireRole('admin'), asyncHandler(async (req, res) => {
+router.get('/availability', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
   res.json(await scheduleService.listAvailability({
     staffId: req.query.staff_id as string | undefined,
     status: req.query.status as string | undefined,

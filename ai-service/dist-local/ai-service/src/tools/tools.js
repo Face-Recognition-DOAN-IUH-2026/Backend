@@ -62,7 +62,7 @@ async function getOverdueBorrows() {
     return safeGet(url);
 }
 async function getScheduleToday() {
-    const url = `${config_1.config.scheduleServiceUrl}/internal/today`;
+    const url = `${config_1.config.scheduleServiceUrl}/schedules/internal/today`;
     const result = await safeGet(url);
     if (result.success && result.data && Array.isArray(result.data)) {
         result.data.sort((a, b) => {
