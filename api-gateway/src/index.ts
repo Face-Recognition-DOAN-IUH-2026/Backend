@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from './config';
 import swaggerUi from 'swagger-ui-express';
@@ -25,9 +26,11 @@ const corsOrigin = config.corsOrigins.length > 0 ? config.corsOrigins : false;
 
 // Security headers
 app.use(helmet());
+app.use(cookieParser());
 
 app.use(cors({
   origin: corsOrigin,
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
 }));
@@ -90,14 +93,20 @@ export function sanitizeInput(input: string): string {
 }
 
 export function verifyToken(req: express.Request, res: express.Response, next: express.NextFunction) {
+  let token: string | null = null;
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
+  if (authHeader?.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  } else if (req.cookies?.access_token) {
+    token = req.cookies.access_token;
+  }
+
+  if (!token) {
     res.status(401).json({ error: 'No token provided' });
     return;
   }
 
   try {
-    const token = authHeader.split(' ')[1];
     const secret = process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET;
     if (!secret) {
       res.status(500).json({ error: 'JWT secret not configured' });

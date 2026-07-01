@@ -592,19 +592,18 @@ class ScheduleService {
         const activeZones = await this.zones.findBy({ isActive: true });
         if (!activeShifts.length || !activeZones.length)
             return [];
-        // SQL aggregation: count existing assignments per shift+zone+date
-        const counts = await this.schedules
+        const existingAssignments = await this.schedules
             .createQueryBuilder('s')
-            .select(['s.shift_id', 's.zone_id', 's.work_date', 'COUNT(*) as assigned'])
+            .select(['s.id', 's.shift_id', 's.zone_id', 's.work_date', 's.staff_id', 's.status'])
             .where('s.work_date BETWEEN :from AND :to', { from: today, to })
             .andWhere('s.status NOT IN (:...statuses)', { statuses: ['cancelled', 'completed'] })
-            .groupBy('s.shift_id')
-            .addGroupBy('s.zone_id')
-            .addGroupBy('s.work_date')
             .getRawMany();
-        const countMap = new Map();
-        for (const row of counts) {
-            countMap.set(`${row.shift_id}:${row.zone_id}:${row.work_date}`, parseInt(row.assigned, 10));
+        const assignmentMap = new Map();
+        for (const row of existingAssignments) {
+            const key = `${row.shift_id}:${row.zone_id}:${row.work_date}`;
+            if (!assignmentMap.has(key))
+                assignmentMap.set(key, []);
+            assignmentMap.get(key).push(row.id);
         }
         const open = [];
         for (const shift of activeShifts) {
@@ -613,10 +612,12 @@ class ScheduleService {
                 const end = new Date(`${to}T00:00:00`);
                 while (cursor <= end) {
                     const workDate = localDate(cursor);
-                    const assigned = countMap.get(`${shift.id}:${zone.id}:${workDate}`) || 0;
+                    const key = `${shift.id}:${zone.id}:${workDate}`;
+                    const assigned = assignmentMap.get(key)?.length || 0;
                     const maxSlots = shift.maxStaff || shift.minStaff;
+                    const firstAssignmentId = assignmentMap.get(key)?.[0];
                     for (let i = assigned; i < maxSlots; i++) {
-                        open.push({ shift, zone, workDate });
+                        open.push({ shift, zone, workDate, assignmentId: firstAssignmentId });
                     }
                     cursor.setDate(cursor.getDate() + 1);
                 }

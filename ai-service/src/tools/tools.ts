@@ -30,35 +30,6 @@ async function safeGet<T>(url: string): Promise<ToolResult> {
   }
 }
 
-async function safePost<T>(url: string, body: any): Promise<ToolResult> {
-  try {
-    const response = await axios.post<T>(url, body, {
-      headers: getInternalHeaders(),
-      timeout: 10000,
-    });
-    return { success: true, data: response.data };
-  } catch (error) {
-    const message = axios.isAxiosError(error)
-      ? error.response?.data?.message || error.message
-      : 'Unknown error';
-    return { success: false, error: message };
-  }
-}
-
-async function safePut<T>(url: string, body: any): Promise<ToolResult> {
-  try {
-    const response = await axios.put<T>(url, body, {
-      headers: getInternalHeaders(),
-      timeout: 10000,
-    });
-    return { success: true, data: response.data };
-  } catch (error) {
-    const message = axios.isAxiosError(error)
-      ? error.response?.data?.message || error.message
-      : 'Unknown error';
-    return { success: false, error: message };
-  }
-}
 
 export async function searchBooks(query: string): Promise<ToolResult> {
   const url = `${config.borrowServiceUrl}/borrow/internal/books/search?query=${encodeURIComponent(query)}`;
@@ -118,51 +89,6 @@ export function getLibraryHours(): ToolResult {
   };
 }
 
-export async function returnBook(barcode: string): Promise<ToolResult> {
-  const url = `${config.borrowServiceUrl}/borrow/internal/return`;
-  return safePost<any>(url, { barcode });
-}
-
-export async function renewBorrow(recordId: string): Promise<ToolResult> {
-  const url = `${config.borrowServiceUrl}/borrow/internal/renew`;
-  return safePost<any>(url, { recordId });
-}
-
-export async function batchReturn(barcodes: string[]): Promise<ToolResult> {
-  const url = `${config.borrowServiceUrl}/borrow/internal/batch-return`;
-  return safePost<any>(url, { barcodes });
-}
-
-export async function addBook(
-  isbn: string,
-  title: string,
-  author?: string,
-  quantity?: number,
-  shelf_location?: string,
-  categories?: string,
-  description?: string,
-  cover_url?: string
-): Promise<ToolResult> {
-  const url = `${config.borrowServiceUrl}/borrow/internal/books`;
-  return safePost<any>(url, {
-    isbn,
-    title,
-    author,
-    quantity: quantity || 1,
-    shelf_location,
-    categories,
-    description,
-    cover_url,
-  });
-}
-
-export async function updateBookQuantity(
-  bookId: string,
-  quantity: number
-): Promise<ToolResult> {
-  const url = `${config.borrowServiceUrl}/borrow/internal/books/${bookId}/quantity`;
-  return safePut<any>(url, { quantity });
-}
 
 export async function lookupBook(
   isbnOrQuery: string
@@ -171,16 +97,6 @@ export async function lookupBook(
   return safeGet<any>(url);
 }
 
-export async function createBorrowSlip(
-  patronId: string,
-  bookCopies: Array<{ bookCopyId: string; dueDate: string }>
-): Promise<ToolResult> {
-  const url = `${config.borrowServiceUrl}/borrow/internal/create`;
-  return safePost<any>(url, {
-    patronId,
-    bookCopies,
-  });
-}
 
 export const tools = [
   {
@@ -224,39 +140,9 @@ export const tools = [
     func: getLibraryHours,
   },
   {
-    name: 'return_book',
-    description: 'Return a book to the library by scanning its barcode. Use this when a patron wants to return a book. Input: book barcode string.',
-    func: returnBook,
-  },
-  {
-    name: 'renew_borrow',
-    description: 'Extend the due date for a borrowed book by 14 more days. Use this when a patron wants to renew their borrowed book. Input: borrow record ID.',
-    func: renewBorrow,
-  },
-  {
-    name: 'batch_return',
-    description: 'Return multiple books at once by scanning their barcodes. Use this when a patron wants to return multiple books. Input: array of barcode strings.',
-    func: batchReturn,
-  },
-  {
-    name: 'add_book',
-    description: 'Add a new book to the library catalog with optional copies. Use this when staff wants to add a new book to the system. Inputs: isbn (required), title (required), author (optional), quantity (optional, default 1), shelf_location (optional), categories (optional), description (optional), cover_url (optional).',
-    func: addBook,
-  },
-  {
-    name: 'update_book_quantity',
-    description: 'Update the quantity of copies for an existing book. Creates or removes copies as needed. Inputs: bookId (required), quantity (required, must be >= 1).',
-    func: updateBookQuantity,
-  },
-  {
     name: 'lookup_book',
-    description: 'Look up a book by ISBN or title. First checks the local database, then falls back to Google Books API. Returns book details including title, author, description, cover image, categories. Use this when user wants to add a new book and you need to check if it exists or get its metadata. Input: ISBN number or book title string.',
+    description: 'Look up a book by ISBN or title. First checks the local database, then falls back to Google Books API. Returns book details including title, author, description, cover image, categories. Use this when user wants to check if a book exists or get its metadata. Input: ISBN number or book title string.',
     func: lookupBook,
-  },
-  {
-    name: 'create_borrow_slip',
-    description: 'Create a new borrow slip for a patron to borrow books. Use this when a patron wants to borrow books. Inputs: patronId (required, the patron student code), bookCopies (required, array of objects with bookCopyId and dueDate).',
-    func: createBorrowSlip,
   },
 ];
 
