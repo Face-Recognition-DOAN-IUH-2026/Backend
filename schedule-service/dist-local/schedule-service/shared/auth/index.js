@@ -14,7 +14,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.requireRole = exports.hasScope = exports.getScopesForService = exports.SERVICE_SCOPES = exports.createServiceAuthMiddleware = exports.getServiceToken = exports.verifyServiceToken = exports.generateServiceToken = exports.createAuth = exports.createInternalAuth = exports.decodeToken = void 0;
+exports.clearAuthCookie = exports.setAuthCookie = exports.requireRole = exports.hasScope = exports.getScopesForService = exports.SERVICE_SCOPES = exports.createServiceAuthMiddleware = exports.getServiceToken = exports.verifyServiceToken = exports.generateServiceToken = exports.createAuth = exports.createInternalAuth = exports.decodeToken = void 0;
 var decodeToken_1 = require("./decodeToken");
 Object.defineProperty(exports, "decodeToken", { enumerable: true, get: function () { return decodeToken_1.decodeToken; } });
 var internalAuth_1 = require("./internalAuth");
@@ -32,4 +32,7 @@ Object.defineProperty(exports, "getScopesForService", { enumerable: true, get: f
 Object.defineProperty(exports, "hasScope", { enumerable: true, get: function () { return serviceScopes_1.hasScope; } });
 var requireRole_1 = require("./requireRole");
 Object.defineProperty(exports, "requireRole", { enumerable: true, get: function () { return requireRole_1.requireRole; } });
+var cookie_helper_1 = require("./cookie-helper");
+Object.defineProperty(exports, "setAuthCookie", { enumerable: true, get: function () { return cookie_helper_1.setAuthCookie; } });
+Object.defineProperty(exports, "clearAuthCookie", { enumerable: true, get: function () { return cookie_helper_1.clearAuthCookie; } });
 __exportStar(require("./types"), exports);

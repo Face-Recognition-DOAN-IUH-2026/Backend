@@ -80,7 +80,7 @@ function setupProcessErrorHandlers() {
             service: serviceName,
             stacktrace: error.stack,
             timestamp: new Date().toISOString(),
-        }).catch(() => { });
+        }).catch(() => { }).finally(() => process.exit(1));
     });
     process.on('unhandledRejection', (reason) => {
         const message = reason instanceof Error ? reason.message : String(reason);
@@ -94,6 +94,6 @@ function setupProcessErrorHandlers() {
             service: serviceName,
             stacktrace: stack,
             timestamp: new Date().toISOString(),
-        }).catch(() => { });
+        }).catch(() => { }).finally(() => process.exit(1));
     });
 }

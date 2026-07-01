@@ -94,7 +94,10 @@ const router = Router();
  *                   example: "sess_abc123xyz"
  *                 userRole:
  *                   type: string
- *                   enum: [patron, staff, admin]
+ *                   enum:
+ *                     - patron
+ *                     - staff
+ *                     - admin
  *                   description: Role of the authenticated user
  *                 requiresConfirmation:
  *                   type: boolean
@@ -121,7 +124,12 @@ const router = Router();
  *                       tool:
  *                         type: string
  *                         description: Tool identifier
- *                         enum: [search_books, get_book_details, get_patron_borrows, get_overdue_books, get_library_schedule]
+ *                         enum:
+ *                           - search_books
+ *                           - get_book_details
+ *                           - get_patron_borrows
+ *                           - get_overdue_books
+ *                           - get_library_schedule
  *                       result:
  *                         type: object
  *                         properties:
@@ -298,8 +306,8 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         ? 'Dịch vụ AI tạm thời không khả dụng, vui lòng thử lại sau.'
         : 'Đã xảy ra lỗi, vui lòng thử lại.';
 
-    res.status(isRateLimit ? 429 : 500).json({
-      error: isRateLimit ? 'Rate limit exceeded' : 'Internal server error',
+    res.status(isRateLimit ? 429 : isBothFailed ? 503 : 500).json({
+      error: isRateLimit ? 'Rate limit exceeded' : isBothFailed ? 'Service unavailable' : 'Internal server error',
       message: userMessage,
       details: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
     });
@@ -346,7 +354,9 @@ router.post('/', async (req: AuthRequest, res: Response) => {
  *                     properties:
  *                       role:
  *                         type: string
- *                         enum: [user, assistant]
+ *                         enum:
+ *                           - user
+ *                           - assistant
  *                       content:
  *                         type: string
  *                       timestamp:

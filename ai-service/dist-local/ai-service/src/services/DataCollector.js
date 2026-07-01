@@ -2,15 +2,26 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DataCollector = void 0;
 const config_1 = require("../config");
+const shared_1 = require("../../../shared");
 function todayStr() {
     return new Date().toISOString().split('T')[0];
+}
+function internalHeaders() {
+    return {
+        Authorization: `Bearer ${(0, shared_1.getServiceToken)('ai-service', config_1.config.serviceJwtSecret)}`,
+        Accept: 'application/json',
+    };
 }
 async function getJson(baseUrl, path, token) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 4500);
+    const headers = { Accept: 'application/json' };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
     try {
         const res = await fetch(`${baseUrl}${path}`, {
-            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            headers,
             signal: controller.signal,
         });
         if (!res.ok)
@@ -48,7 +59,7 @@ class DataCollector {
             getJson(config_1.config.accessServiceUrl, `/access/logs?dateFrom=${today}&limit=200`, token),
             getJson(config_1.config.borrowServiceUrl, '/borrow/staff/active-borrowers', token),
             getJson(config_1.config.borrowServiceUrl, '/borrow/books?skip=0&limit=100', token),
-            getJson(config_1.config.scheduleServiceUrl, `/schedules/assignments?from=${today}&to=${today}`, token),
+            getJson(config_1.config.scheduleServiceUrl, `/schedules/internal/upcoming?from=${today}&to=${today}`),
         ]);
         const warnings = [statsRes, activeRes, logsRes, activeBorrowersRes, booksRes, assignmentsRes]
             .filter((item) => !item.ok)

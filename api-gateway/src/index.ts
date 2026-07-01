@@ -107,7 +107,7 @@ export function verifyToken(req: express.Request, res: express.Response, next: e
   }
 
   try {
-    const secret = process.env.JWT_SECRET || process.env.JWT_ACCESS_SECRET;
+    const secret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
     if (!secret) {
       res.status(500).json({ error: 'JWT secret not configured' });
       return;
