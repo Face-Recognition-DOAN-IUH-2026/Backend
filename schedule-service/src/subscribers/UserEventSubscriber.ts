@@ -26,9 +26,6 @@ function verifySignature(msg: UserDeletedMessage): boolean {
 }
 
 const CLEANUP_QUERIES = [
-  `DELETE FROM shift_swaps WHERE requester_staff_id = :uid OR target_staff_id = :uid OR reviewed_by = :uid`,
-  `DELETE FROM shift_bids WHERE staff_id = :uid OR reviewed_by = :uid`,
-  `DELETE FROM staff_availability_requests WHERE staff_id = :uid OR reviewed_by = :uid`,
   `DELETE FROM staff_attendance WHERE staff_id = :uid`,
   `DELETE FROM staff_schedules WHERE staff_id = :uid OR assigned_by = :uid`,
   `DELETE FROM staff_schedule_templates WHERE staff_id = :uid`,

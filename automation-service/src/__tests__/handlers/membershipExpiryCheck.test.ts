@@ -1,6 +1,7 @@
 import { membershipExpiryCheck } from '../../handlers/membershipExpiryCheck';
-import { notificationClient, emailClient } from '../../clients/serviceClients';
+import { userClient, notificationClient, emailClient } from '../../clients/serviceClients';
 
+const mockUserClient = userClient as jest.Mocked<typeof userClient>;
 const mockNotificationClient = notificationClient as jest.Mocked<typeof notificationClient>;
 const mockEmailClient = emailClient as jest.Mocked<typeof emailClient>;
 
@@ -10,7 +11,7 @@ describe('membershipExpiryCheck', () => {
   });
 
   it('should return 0 when no expiring memberships', async () => {
-    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => [] }) as any;
+    mockUserClient.getExpiringMemberships = jest.fn().mockResolvedValue([]);
 
     const result = await membershipExpiryCheck({ days_before: 7 });
 
@@ -24,7 +25,7 @@ describe('membershipExpiryCheck', () => {
       { id: 'u1', email: 'user1@test.com', membershipExpiry: expiryDate },
       { id: 'u2', email: 'user2@test.com', membershipExpiry: expiryDate },
     ];
-    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => mockUsers }) as any;
+    mockUserClient.getExpiringMemberships = jest.fn().mockResolvedValue(mockUsers);
 
     const result = await membershipExpiryCheck({ days_before: 7 });
 
@@ -41,7 +42,7 @@ describe('membershipExpiryCheck', () => {
     const mockUsers = [
       { id: 'u1', email: 'user@test.com', membershipExpiry: expiryDate },
     ];
-    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => mockUsers }) as any;
+    mockUserClient.getExpiringMemberships = jest.fn().mockResolvedValue(mockUsers);
 
     await membershipExpiryCheck({ days_before: 7 });
 
@@ -53,7 +54,7 @@ describe('membershipExpiryCheck', () => {
     const mockUsers = [
       { id: 'u1', membershipExpiry: expiryDate },
     ];
-    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => mockUsers }) as any;
+    mockUserClient.getExpiringMemberships = jest.fn().mockResolvedValue(mockUsers);
 
     await membershipExpiryCheck({ days_before: 7 });
 
@@ -65,7 +66,7 @@ describe('membershipExpiryCheck', () => {
     const mockUsers = [
       { id: 'u1', email: 'user@test.com', membershipExpiry: expiryDate },
     ];
-    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => mockUsers }) as any;
+    mockUserClient.getExpiringMemberships = jest.fn().mockResolvedValue(mockUsers);
     mockEmailClient.sendMembershipExpiryEmail = jest.fn().mockRejectedValue(new Error('SMTP error'));
 
     const result = await membershipExpiryCheck({ days_before: 7 });
@@ -74,11 +75,11 @@ describe('membershipExpiryCheck', () => {
   });
 
   it('should return error when fetch fails', async () => {
-    global.fetch = jest.fn().mockResolvedValue({ ok: false }) as any;
+    mockUserClient.getExpiringMemberships = jest.fn().mockRejectedValue(new Error('Failed to fetch expiring memberships'));
 
     const result = await membershipExpiryCheck({ days_before: 7 });
 
     expect(result.checked).toBe(0);
-    expect(result.message).toContain('Failed');
+    expect(result.message).toContain('Error checking membership expiry');
   });
 });

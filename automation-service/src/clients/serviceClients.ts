@@ -1,6 +1,6 @@
 import { config } from '../config';
 import { amqpClient } from './AmqpClient';
-import { getServiceToken } from '../../../shared';
+import { getServiceToken, CircuitBreaker, retryWithBackoff } from '../../../shared';
 
 interface RequestOptions {
   method?: string;
@@ -8,8 +8,15 @@ interface RequestOptions {
   timeout?: number;
 }
 
+const circuit = new CircuitBreaker(5, 60_000);
+
 async function request(url: string, options: RequestOptions = {}): Promise<any> {
   const { method = 'GET', body, timeout = 5000 } = options;
+
+  if (!circuit.canRequest()) {
+    throw new Error(`Circuit breaker open for ${url.split('//')[1]?.split('/')[0] || 'downstream service'}`);
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
 
@@ -24,13 +31,21 @@ async function request(url: string, options: RequestOptions = {}): Promise<any> 
       signal: controller.signal,
     });
     clearTimeout(timer);
+    if (res.status >= 500) {
+      circuit.recordFailure();
+      throw new Error(`HTTP ${res.status}: downstream service error`);
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(`HTTP ${res.status}: ${text}`);
     }
+    circuit.recordSuccess();
     return res.json();
   } catch (error) {
     clearTimeout(timer);
+    if (error instanceof TypeError || (error as any)?.name === 'AbortError') {
+      circuit.recordFailure();
+    }
     throw error;
   }
 }
@@ -75,9 +90,9 @@ export const notificationClient = {
     }>
   ) {
     try {
-      let allSuccess = true;
+      let failCount = 0;
       for (const input of notifications) {
-        const published = await amqpClient.publish('notification.send', {
+        const published = amqpClient.publish('notification.send', {
           emailType: 'push',
           userId: input.userId,
           type: input.type,
@@ -85,9 +100,9 @@ export const notificationClient = {
           body: input.body,
           data: input.data || {},
         });
-        if (!published) allSuccess = false;
+        if (!published) failCount++;
       }
-      if (allSuccess) {
+      if (failCount === 0) {
         return { success: true, via: 'rabbitmq', count: notifications.length };
       }
     } catch (err: any) {
@@ -159,15 +174,20 @@ export const userClient = {
     return request(`${config.services.userService}/internal/users/${id}`);
   },
 
-  async getUsers(ids: string[]) {
-    const results = await Promise.allSettled(ids.map((id) => request(`${config.services.userService}/internal/users/${id}`)));
-    return results
-      .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
-      .map((r) => r.value);
+  async getUsers(ids: string[]): Promise<Record<string, any>> {
+    if (ids.length === 0) return {};
+    return request(`${config.services.userService}/internal/users/batch`, {
+      method: 'POST',
+      body: { ids },
+    });
   },
 
   async getUsersByRole(role: string) {
     return request(`${config.services.userService}/internal/users?role=${role}`);
+  },
+
+  async getExpiringMemberships(days: number) {
+    return request(`${config.services.userService}/internal/users/expiring-membership?days=${days}`);
   },
 };
 

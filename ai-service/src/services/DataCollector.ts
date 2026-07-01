@@ -65,7 +65,7 @@ export class DataCollector {
       activeBorrowersRes,
       booksRes,
       assignmentsRes,
-    ] = await Promise.all([
+    ] = await Promise.allSettled([
       getJson(config.accessServiceUrl, '/access/stats', token),
       getJson(config.accessServiceUrl, '/access/active', token),
       getJson(config.accessServiceUrl, `/access/logs?dateFrom=${today}&limit=200`, token),
@@ -74,16 +74,26 @@ export class DataCollector {
       getJson(config.scheduleServiceUrl, `/schedules/internal/upcoming?from=${today}&to=${today}`),
     ]);
 
-    const warnings = [statsRes, activeRes, logsRes, activeBorrowersRes, booksRes, assignmentsRes]
+    const settled = (r: PromiseSettledResult<FetchResult>): FetchResult =>
+      r.status === 'fulfilled' ? r.value : { ok: false, error: r.reason?.message || 'Promise rejected' };
+
+    const statsResVal = settled(statsRes);
+    const activeResVal = settled(activeRes);
+    const logsResVal = settled(logsRes);
+    const activeBorrowersResVal = settled(activeBorrowersRes);
+    const booksResVal = settled(booksRes);
+    const assignmentsResVal = settled(assignmentsRes);
+
+    const warnings = [statsResVal, activeResVal, logsResVal, activeBorrowersResVal, booksResVal, assignmentsResVal]
       .filter((item): item is { ok: false; error: string } => !item.ok)
       .map((item) => item.error);
 
-    const stats = statsRes.ok ? statsRes.data : {};
-    const activePatrons = activeRes.ok ? list(activeRes.data) : [];
-    const accessLogs = logsRes.ok ? list(logsRes.data) : [];
-    const activeBorrowers = activeBorrowersRes.ok ? list(activeBorrowersRes.data) : [];
-    const books = booksRes.ok ? list(booksRes.data) : [];
-    const assignments = assignmentsRes.ok ? list(assignmentsRes.data) : [];
+    const stats = statsResVal.ok ? statsResVal.data : {};
+    const activePatrons = activeResVal.ok ? list(activeResVal.data) : [];
+    const accessLogs = logsResVal.ok ? list(logsResVal.data) : [];
+    const activeBorrowers = activeBorrowersResVal.ok ? list(activeBorrowersResVal.data) : [];
+    const books = booksResVal.ok ? list(booksResVal.data) : [];
+    const assignments = assignmentsResVal.ok ? list(assignmentsResVal.data) : [];
 
     const activeBorrows = countActiveBorrowers(activeBorrowers);
     const overdueBorrows = countOverdueBorrowers(activeBorrowers);

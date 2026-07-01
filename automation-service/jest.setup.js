@@ -13,8 +13,9 @@ jest.mock('./src/clients/serviceClients', () => ({
   },
   userClient: {
     getUser: jest.fn().mockResolvedValue(null),
-    getUsers: jest.fn().mockResolvedValue([]),
+    getUsers: jest.fn().mockResolvedValue({}),
     getUsersByRole: jest.fn().mockResolvedValue([]),
+    getExpiringMemberships: jest.fn().mockResolvedValue([]),
   },
   emailClient: {
     sendOverdueEmail: jest.fn().mockResolvedValue({ success: true }),

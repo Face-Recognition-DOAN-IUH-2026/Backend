@@ -27,9 +27,10 @@ describe('checkDueSoonBorrows', () => {
       { id: 'r2', patron_id: 'p2', book_id: 'b2', due_at: new Date(Date.now() + 1 * 86400000).toISOString(), book: { title: 'Book B' } },
     ];
     mockBorrowClient.getDueSoonBorrows = jest.fn().mockResolvedValue(mockRecords);
-    mockUserClient.getUser = jest.fn()
-      .mockResolvedValueOnce({ fullName: 'Patron A' })
-      .mockResolvedValueOnce({ fullName: 'Patron B' });
+    mockUserClient.getUsers = jest.fn().mockResolvedValue({
+      p1: { fullName: 'Patron A' },
+      p2: { fullName: 'Patron B' },
+    });
 
     const result = await checkDueSoonBorrows({ days_before: 3 });
 
@@ -46,7 +47,7 @@ describe('checkDueSoonBorrows', () => {
       { id: 'r1', patron_id: 'p1', book_id: 'b1', due_at: new Date(Date.now() + 86400000).toISOString(), book: { title: 'Great Book' } },
     ];
     mockBorrowClient.getDueSoonBorrows = jest.fn().mockResolvedValue(mockRecords);
-    mockUserClient.getUser = jest.fn().mockResolvedValue({ fullName: 'Nguyen Van A' });
+    mockUserClient.getUsers = jest.fn().mockResolvedValue({ p1: { fullName: 'Nguyen Van A' } });
 
     await checkDueSoonBorrows({ days_before: 3 });
 
@@ -60,7 +61,7 @@ describe('checkDueSoonBorrows', () => {
       { id: 'r1', patron_id: 'p1', book_id: 'b1', due_at: new Date(Date.now() + 86400000).toISOString(), book: { title: 'Book' } },
     ];
     mockBorrowClient.getDueSoonBorrows = jest.fn().mockResolvedValue(mockRecords);
-    mockUserClient.getUser = jest.fn().mockRejectedValue(new Error('Not found'));
+    mockUserClient.getUsers = jest.fn().mockRejectedValue(new Error('Not found'));
 
     await checkDueSoonBorrows({ days_before: 3 });
 

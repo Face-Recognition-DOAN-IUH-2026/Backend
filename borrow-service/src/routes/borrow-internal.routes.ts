@@ -8,6 +8,7 @@ import { WaitlistRepository } from '../repositories/WaitlistRepository';
 import { createInternalAuth } from '../../shared';
 import { publishEvent } from '../utils/eventPublisher';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
+import { In } from 'typeorm';
 import { calculateOverdueFine } from '../utils/fineCalculator';
 import { lookupPatronByStudentCode, lookupPatronById, PatronSummary } from '../clients/UserServiceClient';
 
@@ -648,50 +649,73 @@ router.post('/batch-return', async (req: Request, res: Response) => {
     }
 
     const results: any[] = [];
-    for (const barcode of barcodes) {
-      const record = await records().findOne({
-        where: { copy: { barcode } as any, status: 'borrowed' as any },
-        relations: { book: true, copy: true },
-      });
 
-      if (!record) {
-        results.push({ barcode, success: false, detail: 'Không tìm thấy phiếu mượn' });
-        continue;
+    await AppDataSource.transaction(async (manager) => {
+      const matchedRecords = await manager.createQueryBuilder(BorrowRecord, 'record')
+        .innerJoinAndSelect('record.copy', 'copy')
+        .leftJoinAndSelect('record.book', 'book')
+        .where('record.status = :status', { status: 'borrowed' })
+        .andWhere('copy.barcode IN (:...barcodes)', { barcodes })
+        .getMany();
+
+      const barcodeToRecord = new Map<string, BorrowRecord>();
+      for (const r of matchedRecords) {
+        if (r.copy?.barcode) {
+          barcodeToRecord.set(r.copy.barcode, r);
+        }
       }
-
-      record.returnAt = new Date();
-      record.status = 'returned';
 
       const now = new Date();
-      if (record.dueAt && now > new Date(record.dueAt)) {
-        const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
-        const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
-        record.fineAmount = calculateOverdueFine(overdueDays);
+      const recordsToSave: BorrowRecord[] = [];
+      const copiesToSave: any[] = [];
+
+      for (const barcode of barcodes) {
+        const record = barcodeToRecord.get(barcode);
+
+        if (!record) {
+          results.push({ barcode, success: false, detail: 'Không tìm thấy phiếu mượn' });
+          continue;
+        }
+
+        record.returnAt = now;
+        record.status = 'returned';
+
+        if (record.dueAt && now > new Date(record.dueAt)) {
+          const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
+          const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
+          record.fineAmount = calculateOverdueFine(overdueDays);
+        }
+
+        recordsToSave.push(record);
+
+        if (record.copy) {
+          record.copy.isAvailable = true;
+          copiesToSave.push(record.copy);
+        }
+
+        publishEvent('book.returned', {
+          bookId: record.bookId,
+          title: record.book?.title,
+          patronId: record.patronId,
+          barcode,
+        });
+
+        results.push({
+          barcode,
+          success: true,
+          record_id: record.id,
+          book_title: record.book?.title,
+          returned_at: record.returnAt,
+        });
       }
 
-      await records().save(record);
-
-      if (record.copy) {
-        record.copy.isAvailable = true;
-        await AppDataSource.getRepository('BookCopy').save(record.copy);
+      if (recordsToSave.length > 0) {
+        await manager.save(recordsToSave);
       }
-
-      // Publish book.returned event for automation-service
-      publishEvent('book.returned', {
-        bookId: record.bookId,
-        title: record.book?.title,
-        patronId: record.patronId,
-        barcode,
-      });
-
-      results.push({
-        barcode,
-        success: true,
-        record_id: record.id,
-        book_title: record.book?.title,
-        returned_at: record.returnAt,
-      });
-    }
+      if (copiesToSave.length > 0) {
+        await manager.save(copiesToSave);
+      }
+    });
 
     res.json({
       success: true,

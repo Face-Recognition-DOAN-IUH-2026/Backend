@@ -8,10 +8,12 @@ import { UserPublicDto } from '../dto';
 import { NotFoundError, BadRequestError, UnauthorizedError } from '../errors';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { getServiceToken } from '../../../shared';
+import { getServiceToken, CircuitBreaker, retryWithBackoff } from '../../../shared';
 import axios from 'axios';
 import { config } from '../config';
 import { accessServiceClient } from '../clients/AccessServiceClient';
+
+const notificationCircuit = new CircuitBreaker(5, 60_000);
 
 export class UserService {
   constructor(
@@ -256,11 +258,28 @@ export class UserService {
     await this.redis.setEmailVerificationCode(normalizedEmail, code);
 
     try {
-      await axios.post(
-        `${config.notificationServiceUrl}/internal/send-email-change`,
-        { toEmail: normalizedEmail, code },
-        { headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` } }
-      );
+      await retryWithBackoff(async () => {
+        if (!notificationCircuit.canRequest()) {
+          throw new Error('Notification service temporarily unavailable');
+        }
+        try {
+          const response = await axios.post(
+            `${config.notificationServiceUrl}/internal/send-email-change`,
+            { toEmail: normalizedEmail, code },
+            {
+              headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` },
+              timeout: 5000,
+            }
+          );
+          notificationCircuit.recordSuccess();
+          return response;
+        } catch (err: any) {
+          if (err?.response?.status >= 500 || err?.code === 'ECONNABORTED' || err?.code === 'ECONNREFUSED') {
+            notificationCircuit.recordFailure();
+          }
+          throw err;
+        }
+      }, 2, 500);
     } catch (e: any) {
       console.error('[UserService] Failed to send email change OTP:', e.response?.status, e.response?.data || e.message);
       throw new Error('Khong the gui email, vui long thu lai sau');

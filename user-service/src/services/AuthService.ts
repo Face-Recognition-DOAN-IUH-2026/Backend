@@ -6,7 +6,7 @@ import { User, UserRole } from '../entities/User.entity';
 import { UserRepository } from '../repositories/UserRepository';
 import { RedisService } from './RedisService';
 import { config } from '../config';
-import { getServiceToken } from '../../../shared';
+import { getServiceToken, CircuitBreaker, retryWithBackoff } from '../../../shared';
 import {
   RegisterDto,
   LoginDto,
@@ -15,6 +15,33 @@ import {
   UserPublicDto,
 } from '../dto';
 import { UnauthorizedError, ForbiddenError, ConflictError, NotFoundError, BadRequestError } from '../errors';
+
+const notificationCircuit = new CircuitBreaker(5, 60_000);
+
+async function postToNotification(path: string, body: Record<string, any>): Promise<any> {
+  return retryWithBackoff(async () => {
+    if (!notificationCircuit.canRequest()) {
+      throw new Error('Notification service temporarily unavailable');
+    }
+    try {
+      const res = await axios.post(
+        `${config.notificationServiceUrl}${path}`,
+        body,
+        {
+          headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` },
+          timeout: 5000,
+        }
+      );
+      notificationCircuit.recordSuccess();
+      return res;
+    } catch (err: any) {
+      if (err?.response?.status >= 500 || err?.code === 'ECONNABORTED' || err?.code === 'ECONNREFUSED') {
+        notificationCircuit.recordFailure();
+      }
+      throw err;
+    }
+  }, 2, 500);
+}
 
 export class AuthService {
   constructor(
@@ -179,11 +206,7 @@ export class AuthService {
     console.log(`[ForgotPassword] Code stored in Redis, calling notification-service at: ${config.notificationServiceUrl}`);
 
     try {
-      await axios.post(
-        `${config.notificationServiceUrl}/internal/send-password-reset`,
-        { toEmail: normalizedEmail, code },
-        { headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` } }
-      );
+      await postToNotification('/internal/send-password-reset', { toEmail: normalizedEmail, code });
       console.log(`[ForgotPassword] Email sent successfully to ${normalizedEmail}`);
     } catch (e: any) {
       console.error('[ForgotPassword] Failed to send email:', e.response?.status, e.response?.data || e.message);
@@ -225,11 +248,7 @@ export class AuthService {
     const code = crypto.randomInt(100000, 999999).toString();
     await this.redis.setPreRegisterOtp(normalizedEmail, code);
     try {
-      await axios.post(
-        `${config.notificationServiceUrl}/internal/send-email-verification`,
-        { toEmail: normalizedEmail, code },
-        { headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` } }
-      );
+      await postToNotification('/internal/send-email-verification', { toEmail: normalizedEmail, code });
     } catch (e: any) {
       console.error('[AuthService] Failed to send pre-register OTP:', e.response?.status, e.response?.data || e.message);
       throw new Error('Khong the gui ma OTP, vui long thu lai sau');
@@ -264,11 +283,7 @@ export class AuthService {
     console.log(`[Verification] Code stored in Redis, calling notification-service`);
 
     try {
-      await axios.post(
-        `${config.notificationServiceUrl}/internal/send-email-verification`,
-        { toEmail: normalizedEmail, code },
-        { headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` } }
-      );
+      await postToNotification('/internal/send-email-verification', { toEmail: normalizedEmail, code });
       console.log(`[Verification] Email sent successfully to ${normalizedEmail}`);
     } catch (e: any) {
       console.error('[Verification] Failed to send email:', e.response?.status, e.response?.data || e.message);
@@ -316,11 +331,7 @@ export class AuthService {
       const code = crypto.randomInt(100000, 999999).toString();
       await this.redis.setEmailVerificationCode(normalizedNew, code);
       try {
-        await axios.post(
-          `${config.notificationServiceUrl}/internal/send-email-verification`,
-          { toEmail: normalizedNew, code },
-          { headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` } }
-        );
+        await postToNotification('/internal/send-email-verification', { toEmail: normalizedNew, code });
       } catch (e: any) {
         console.error('[AuthService] Failed to send email correction OTP:', e.response?.status, e.response?.data || e.message);
         throw new Error('Khong the gui email, vui long thu lai sau');
