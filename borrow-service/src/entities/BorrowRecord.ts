@@ -6,6 +6,8 @@ import { BookCopy } from './BookCopy';
 @Index(['bookId', 'status'])
 @Index(['borrowAt'])
 @Index(['slipId'])
+@Index(['dueAt'])
+@Index(['copyId', 'status'])
 @Entity({ name: 'borrow_records' })
 export class BorrowRecord {
   @PrimaryGeneratedColumn('uuid')

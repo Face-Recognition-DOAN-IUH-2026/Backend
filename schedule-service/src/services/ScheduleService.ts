@@ -1,4 +1,4 @@
-import { Between, In, IsNull, LessThan, Not } from 'typeorm';
+import { Between, In, IsNull, Not } from 'typeorm';
 import { getAuditContext } from '../middlewares/auditContext';
 import { AppDataSource } from '../data-source';
 import { config } from '../config';
@@ -6,13 +6,10 @@ import {
   LibraryZone,
   ScheduleAuditLog,
   StaffAttendance,
-  StaffAvailabilityRequest,
   StaffSchedule,
   StaffScheduleTemplate,
   StaffShift,
   StaffShiftPreference,
-  ShiftBid,
-  ShiftSwap,
   GeofenceConfig,
 } from '../entities';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../errors';
@@ -30,13 +27,10 @@ function localDate(value: Date) {
 export class ScheduleService {
   private zones = AppDataSource.getRepository(LibraryZone);
   private shifts = AppDataSource.getRepository(StaffShift);
-  private availability = AppDataSource.getRepository(StaffAvailabilityRequest);
   private templates = AppDataSource.getRepository(StaffScheduleTemplate);
   private schedules = AppDataSource.getRepository(StaffSchedule);
   private attendance = AppDataSource.getRepository(StaffAttendance);
   private audit = AppDataSource.getRepository(ScheduleAuditLog);
-  private bids = AppDataSource.getRepository(ShiftBid);
-  private swaps = AppDataSource.getRepository(ShiftSwap);
   private preferences = AppDataSource.getRepository(StaffShiftPreference);
   private geofence = AppDataSource.getRepository(GeofenceConfig);
   private users = new UserServiceClient();
@@ -270,7 +264,7 @@ export class ScheduleService {
     const dupWarning = await this.ensureNoDuplicateAssignment(body.staffId!, body.shiftId!, body.zoneId!, body.workDate!, undefined, force);
     if (dupWarning) warnings.push(dupWarning);
 
-    await this.ensureNoApprovedLeave(body.staffId!, body.workDate!);
+
     await this.ensureFutureDate(body.workDate!);
 
     const zoneWarning = await this.ensureNoZoneConflictOnSameDay(body.staffId!, body.zoneId!, body.workDate!, undefined, force);
@@ -315,7 +309,6 @@ export class ScheduleService {
     const dupWarning = await this.ensureNoDuplicateAssignment(next.staffId, next.shiftId, next.zoneId, next.workDate, id, force);
     if (dupWarning) warnings.push(dupWarning);
 
-    await this.ensureNoApprovedLeave(next.staffId, next.workDate);
 
     const zoneWarning = await this.ensureNoZoneConflictOnSameDay(next.staffId, next.zoneId, next.workDate, id, force);
     if (zoneWarning) warnings.push(zoneWarning);
@@ -354,8 +347,6 @@ export class ScheduleService {
     schedule.status = 'cancelled';
     await this.schedules.save(schedule);
     await this.log('assignment.cancelled', 'staff_schedule', id, actorId, null);
-
-    await this.cancelPendingBidsAndSwapsForAssignments([id], actorId);
 
     const cancelledShift = await this.shifts.findOneBy({ id: schedule.shiftId! });
     publishEvent('schedule.changed', {
@@ -397,8 +388,6 @@ export class ScheduleService {
       note: s.note ? `${s.note}\nHủy hàng loạt bởi admin` : 'Hủy hàng loạt bởi admin',
     })));
 
-    await this.cancelPendingBidsAndSwapsForAssignments(candidates.map((s) => s.id), actorId);
-
     await Promise.all(candidates.map((s) =>
       this.log('assignment.bulk_cancelled', 'staff_schedule', s.id, actorId, { from, to, notify })
     ));
@@ -427,107 +416,6 @@ export class ScheduleService {
     };
   }
 
-  async createAvailability(staffId: string, body: Partial<StaffAvailabilityRequest>) {
-    if (body.dateFrom! > body.dateTo!) {
-      throw new BadRequestError('dateFrom must be before or equal to dateTo');
-    }
-
-    const overlapping = await this.availability.createQueryBuilder('av')
-      .where('av.staffId = :staffId', { staffId })
-      .andWhere('av.status IN (:...statuses)', { statuses: ['pending', 'approved'] })
-      .andWhere('av.dateFrom <= :dateTo', { dateTo: body.dateTo })
-      .andWhere('av.dateTo >= :dateFrom', { dateFrom: body.dateFrom })
-      .getOne();
-
-    if (overlapping) {
-      throw new ConflictError('Bạn đã có đơn đăng ký bận hoặc nghỉ phép trùng lặp trong khoảng thời gian này');
-    }
-
-    const item = await this.availability.save(this.availability.create({
-      staffId,
-      dateFrom: body.dateFrom!,
-      dateTo: body.dateTo!,
-      type: body.type ?? 'unavailable',
-      reason: body.reason ?? null,
-      status: 'pending',
-    }));
-    await this.log('availability.created', 'staff_availability_request', item.id, staffId, body);
-    return item;
-  }
-
-  async listAvailability(filters: { staffId?: string; status?: string } = {}) {
-    const today = localDate(new Date());
-    const stalePending = await this.availability.find({
-      where: { status: 'pending', dateTo: LessThan(today) },
-    });
-    if (stalePending.length) {
-      for (const req of stalePending) {
-        req.status = 'rejected';
-        req.reviewedAt = new Date();
-        req.reviewedBy = null;
-      }
-      await this.availability.save(stalePending);
-      for (const req of stalePending) {
-        await this.log('availability.auto_rejected', 'staff_availability_request', req.id, null, { reason: 'dateTo passed' });
-      }
-    }
-    const where: any = {};
-    if (filters.staffId) where.staffId = filters.staffId;
-    if (filters.status) where.status = filters.status;
-    return this.availability.find({ where, order: { createdAt: 'DESC' } });
-  }
-
-  async reviewAvailability(actorId: string, id: string, status: 'approved' | 'rejected') {
-    const item = await this.availability.findOneBy({ id });
-    if (!item) throw new NotFoundError('Availability request not found');
-    item.status = status;
-    item.reviewedBy = actorId || null;
-    item.reviewedAt = new Date();
-    await this.availability.save(item);
-    await this.log(`availability.${status}`, 'staff_availability_request', id, actorId, null);
-
-    if (status === 'approved') {
-      const affected = await this.schedules.find({
-        where: {
-          staffId: item.staffId,
-          workDate: Between(item.dateFrom, item.dateTo),
-          status: Not(In(['cancelled', 'completed'])),
-        },
-      });
-
-      for (const asg of affected) {
-        asg.status = 'cancelled';
-        asg.note = asg.note
-          ? `${asg.note}\nCancelled: approved leave ${item.dateFrom} to ${item.dateTo}`
-          : `Cancelled: approved leave ${item.dateFrom} to ${item.dateTo}`;
-      }
-      if (affected.length) await this.schedules.save(affected);
-
-      await this.cancelPendingBidsAndSwapsForAssignments(affected.map((a) => a.id), actorId);
-
-      for (const asg of affected) {
-        const att = await this.attendance.findOneBy({ scheduleId: asg.id });
-        if (att) {
-          att.invalidatedReason = 'leave.approved';
-          await this.attendance.save(att);
-          await this.attendance.softRemove(att);
-          await this.log('attendance.invalidated', 'staff_attendance', att.id, actorId, {
-            scheduleId: asg.id,
-            invalidatedReason: 'leave.approved',
-          });
-        }
-      }
-
-      if (affected.length) {
-        await this.log('availability.approved_cascade_cancel', 'staff_availability_request', id, actorId, {
-          cancelledAssignmentIds: affected.map((a) => a.id),
-          cancelledCount: affected.length,
-        });
-      }
-    }
-
-    return item;
-  }
 
   async listMine(staffId: string, from?: string, to?: string) {
     return this.listAssignments({ staffId, from, to });
@@ -630,339 +518,14 @@ export class ScheduleService {
     return { checkedOut };
   }
 
-  async openShifts() {
-    const today = localDate(new Date());
-    const twoWeeksLater = new Date();
-    twoWeeksLater.setDate(twoWeeksLater.getDate() + 13);
-    const to = localDate(twoWeeksLater);
-
-    const activeShifts = await this.shifts.findBy({ isActive: true });
-    const activeZones = await this.zones.findBy({ isActive: true });
-    if (!activeShifts.length || !activeZones.length) return [];
-
-    const existingAssignments = await this.schedules
-      .createQueryBuilder('s')
-      .select(['s.id', 's.shift_id', 's.zone_id', 's.work_date', 's.staff_id', 's.status'])
-      .where('s.work_date BETWEEN :from AND :to', { from: today, to })
-      .andWhere('s.status NOT IN (:...statuses)', { statuses: ['cancelled', 'completed'] })
-      .getRawMany();
-
-    const assignmentMap = new Map<string, string[]>();
-    for (const row of existingAssignments) {
-      const key = `${row.shift_id}:${row.zone_id}:${row.work_date}`;
-      if (!assignmentMap.has(key)) assignmentMap.set(key, []);
-      assignmentMap.get(key)!.push(row.id);
-    }
-
-    const open: Array<{ shift: StaffShift; zone: LibraryZone; workDate: string; assignmentId?: string }> = [];
-    for (const shift of activeShifts) {
-      for (const zone of activeZones) {
-        const cursor = new Date(`${today}T00:00:00`);
-        const end = new Date(`${to}T00:00:00`);
-
-    while (cursor <= end) {
-          const workDate = localDate(cursor);
-          const key = `${shift.id}:${zone.id}:${workDate}`;
-          const assigned = assignmentMap.get(key)?.length || 0;
-          const maxSlots = shift.maxStaff || shift.minStaff;
-          const firstAssignmentId = assignmentMap.get(key)?.[0];
-          for (let i = assigned; i < maxSlots; i++) {
-            open.push({ shift, zone, workDate, assignmentId: firstAssignmentId });
-          }
-          cursor.setDate(cursor.getDate() + 1);
-        }
-      }
-    }
-    return open;
-  }
-
-  async createBid(staffId: string, assignmentId: string, note?: string | null) {
-    const assignment = await this.schedules.findOneBy({ id: assignmentId });
-    if (!assignment) throw new NotFoundError('Assignment not found');
-    if (assignment.status !== 'scheduled') throw new ConflictError('Can only bid on scheduled/open assignments');
-    if (assignment.staffId === staffId) throw new ConflictError('Cannot bid on your own assignment');
-
-    const existing = await this.bids.findOneBy({ staffId, assignmentId, status: 'pending' });
-    if (existing) throw new ConflictError('You already have a pending bid for this assignment');
-
-    const shift = await this.requireShift(assignment.shiftId);
-
-    const currentCount = await this.schedules.count({
-      where: {
-        shiftId: assignment.shiftId,
-        zoneId: assignment.zoneId,
-        workDate: assignment.workDate,
-        status: Not(In(['cancelled', 'completed'])),
-      },
-    });
-
-    if (shift.maxStaff && currentCount >= shift.maxStaff) {
-      throw new ConflictError('Shift is at maximum capacity');
-    }
-
-    await this.ensureNoApprovedLeave(staffId, assignment.workDate);
-    await this.ensureNoShiftTimeOverlap(staffId, assignment.shiftId, assignment.workDate);
-
-    const shouldAutoApprove = !!shift.minStaff && currentCount < shift.minStaff;
-
-    const bid = this.bids.create({
-      staffId,
-      assignmentId,
-      note: note ?? null,
-      status: shouldAutoApprove ? 'approved' : 'pending',
-      ...(shouldAutoApprove ? { reviewedBy: 'system', reviewedAt: new Date() } : {}),
-    });
-    await this.bids.save(bid);
-
-    if (shouldAutoApprove) {
-      assignment.staffId = staffId;
-      assignment.assignedBy = 'system';
-      assignment.note = assignment.note ? `${assignment.note}\nAssigned via auto-approved bid` : 'Assigned via auto-approved bid';
-      await this.schedules.save(assignment);
-
-      await this.log('bid.auto_approved', 'shift_bid', bid.id, 'system', { staffId, assignmentId, shiftId: assignment.shiftId, currentCount, minStaff: shift.minStaff });
-      await publishEvent('bid.auto_approved', { bidId: bid.id, assignmentId, staffId, shiftId: assignment.shiftId, autoApproved: true });
-    } else {
-      await this.log('bid.created', 'shift_bid', bid.id, staffId, { assignmentId });
-    }
-
-    return bid;
-  }
-
-  async listBids(staffId?: string, status?: string) {
-    const where: any = {};
-    if (staffId) where.staffId = staffId;
-    if (status) where.status = status;
-    const items = await this.bids.find({ where, order: { createdAt: 'DESC' } });
-    const assignmentIds = [...new Set(items.map((b) => b.assignmentId))];
-    const schedules = assignmentIds.length ? await this.schedules.findBy({ id: In(assignmentIds) }) : [];
-    const staffIds = [...new Set(items.map((b) => b.staffId))];
-    const staff = staffIds.length ? await this.users.listStaff(staffIds) : [];
-    return items.map((bid) => {
-      const assignment = schedules.find((s) => s.id === bid.assignmentId) ?? null;
-      return { ...bid, assignment, staff: staff.find((s) => s.id === bid.staffId) ?? null };
-    });
-  }
-
-  async cancelBid(staffId: string, id: string) {
-    const bid = await this.bids.findOneBy({ id });
-    if (!bid) throw new NotFoundError('Bid not found');
-    if (bid.staffId !== staffId) throw new ForbiddenError('Cannot cancel another staff bid');
-    if (bid.status !== 'pending') throw new ConflictError('Can only cancel pending bids');
-    bid.status = 'cancelled';
-    await this.bids.save(bid);
-    await this.log('bid.cancelled', 'shift_bid', id, staffId, null);
-    return bid;
-  }
-
-  async reviewBid(actorId: string, id: string, action: 'approved' | 'rejected') {
-    const bid = await this.bids.findOneBy({ id });
-    if (!bid) throw new NotFoundError('Bid not found');
-    if (bid.status !== 'pending') throw new ConflictError('Bid is no longer pending');
-
-    if (action === 'approved') {
-      const assignment = await this.schedules.findOneBy({ id: bid.assignmentId });
-      if (!assignment || assignment.status === 'cancelled' || assignment.status === 'completed') {
-        bid.status = 'rejected';
-        bid.reviewedBy = actorId;
-        bid.reviewedAt = new Date();
-        bid.note = bid.note ? `${bid.note}\nAuto-rejected: assignment no longer available` : 'Auto-rejected: assignment no longer available';
-        await this.bids.save(bid);
-        throw new ConflictError('Assignment is no longer available for bidding');
-      }
-
-      await this.ensureNoDuplicateAssignment(bid.staffId, assignment.shiftId, assignment.zoneId, assignment.workDate, assignment.id);
-      await this.ensureNoApprovedLeave(bid.staffId, assignment.workDate);
-      await this.ensureNoZoneConflictOnSameDay(bid.staffId, assignment.zoneId, assignment.workDate, assignment.id);
-      await this.ensureNoShiftTimeOverlap(bid.staffId, assignment.shiftId, assignment.workDate, assignment.id);
-      await this.ensureNoOverstaffing(assignment.shiftId, assignment.zoneId, assignment.workDate);
-
-      assignment.staffId = bid.staffId;
-      assignment.assignedBy = actorId;
-      assignment.note = assignment.note ? `${assignment.note}\nAssigned via bid` : 'Assigned via bid';
-      await this.schedules.save(assignment);
-    }
-
-    bid.status = action;
-    bid.reviewedBy = actorId;
-    bid.reviewedAt = new Date();
-    await this.bids.save(bid);
-    await this.log(`bid.${action}`, 'shift_bid', id, actorId, { staffId: bid.staffId, assignmentId: bid.assignmentId });
-    return bid;
-  }
-
-  async createSwap(requesterStaffId: string, body: { targetStaffId: string | null; requesterAssignmentId: string; targetAssignmentId?: string | null; reason?: string | null }) {
-    if (body.targetStaffId && requesterStaffId === body.targetStaffId) {
-      throw new ConflictError('Cannot swap with yourself');
-    }
-
-    const assignment = await this.requireOwnedSchedule(requesterStaffId, body.requesterAssignmentId);
-    if (assignment.status !== 'scheduled') {
-      throw new ConflictError('Can only swap scheduled assignments');
-    }
-
-    if (body.targetAssignmentId && body.targetStaffId) {
-      const target = await this.schedules.findOneBy({ id: body.targetAssignmentId });
-      if (!target) throw new NotFoundError('Target assignment not found');
-      if (target.staffId !== body.targetStaffId) throw new ForbiddenError('Target assignment does not belong to target staff');
-      if (target.status !== 'scheduled') throw new ConflictError('Target assignment must be scheduled');
-
-      await this.ensureNoApprovedLeave(body.targetStaffId, assignment.workDate);
-      await this.ensureNoApprovedLeave(requesterStaffId, target.workDate);
-    } else if (body.targetStaffId) {
-      await this.ensureNoApprovedLeave(body.targetStaffId, assignment.workDate);
-    }
-
-    const existing = await this.swaps.findOneBy({ requesterAssignmentId: body.requesterAssignmentId, status: 'pending' });
-    if (existing) throw new ConflictError('You already have a pending swap for this assignment');
-    const swap = await this.swaps.save(this.swaps.create({
-      requesterStaffId,
-      targetStaffId: body.targetStaffId ?? null,
-      requesterAssignmentId: body.requesterAssignmentId,
-      targetAssignmentId: body.targetAssignmentId ?? null,
-      reason: body.reason ?? null,
-      status: 'pending',
-    }));
-    await this.log('swap.created', 'shift_swap', swap.id, requesterStaffId, { targetStaffId: body.targetStaffId });
-    return swap;
-  }
-
-  async cancelSwap(staffId: string, id: string) {
-    const swap = await this.swaps.findOneBy({ id });
-    if (!swap) throw new NotFoundError('Swap request not found');
-    if (swap.requesterStaffId !== staffId) throw new ForbiddenError('Only requester can cancel');
-    if (swap.status !== 'pending') throw new ConflictError('Can only cancel pending swaps');
-    swap.status = 'cancelled';
-    swap.reviewedAt = new Date();
-    swap.responseNote = 'Cancelled by requester';
-    await this.swaps.save(swap);
-    await this.log('swap.cancelled_by_requester', 'shift_swap', id, staffId, null);
-    return swap;
-  }
-
-  async listSwaps(staffId?: string, status?: string) {
-    const where: any[] = [];
-    if (staffId) {
-      where.push({ requesterStaffId: staffId });
-      where.push({ targetStaffId: staffId });
-    }
-    const finalWhere = where.length ? where : {};
-    const items = await this.swaps.find({ where: finalWhere, order: { createdAt: 'DESC' } });
-    const staffIds = [...new Set(items.flatMap((s) => [s.requesterStaffId, s.targetStaffId]).filter(Boolean))] as string[];
-    const staff = staffIds.length ? await this.users.listStaff(staffIds) : [];
-    const assignmentIds = [...new Set(items.flatMap((s) => [s.requesterAssignmentId, ...(s.targetAssignmentId ? [s.targetAssignmentId] : [])]))];
-    const assignments = assignmentIds.length ? await this.enrichAssignments(await this.schedules.findBy({ id: In(assignmentIds) })) : { items: [], total: 0 };
-    return items.map((swap) => ({
-      ...swap,
-      requester: staff.find((s) => s.id === swap.requesterStaffId) ?? null,
-      target: staff.find((s) => s.id === swap.targetStaffId) ?? null,
-      requesterAssignment: assignments.items.find((a) => a.id === swap.requesterAssignmentId) ?? null,
-      targetAssignment: swap.targetAssignmentId ? (assignments.items.find((a) => a.id === swap.targetAssignmentId) ?? null) : null,
-    }));
-  }
-
-  async respondSwap(staffId: string, id: string, action: 'accepted' | 'rejected', responseNote?: string | null) {
-    const swap = await this.swaps.findOneBy({ id });
-    if (!swap) throw new NotFoundError('Swap request not found');
-    if (!swap.targetStaffId || swap.targetStaffId !== staffId) throw new ForbiddenError('Cannot respond to swap request not addressed to you');
-    if (swap.status !== 'pending') throw new ConflictError('Swap request is no longer pending');
-
-    if (action === 'accepted') {
-      await AppDataSource.transaction(async (manager) => {
-        const reqAsg = await manager.findOne(StaffSchedule, {
-          where: { id: swap.requesterAssignmentId },
-          lock: { mode: 'pessimistic_write' },
-        });
-        if (!reqAsg) throw new NotFoundError('Requester assignment not found');
-
-        if (swap.targetAssignmentId) {
-          const tgtAsg = await manager.findOne(StaffSchedule, {
-            where: { id: swap.targetAssignmentId },
-            lock: { mode: 'pessimistic_write' },
-          });
-          if (!tgtAsg) throw new NotFoundError('Target assignment not found');
-
-          await this.ensureNoDuplicateAssignment(tgtAsg.staffId, reqAsg.shiftId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
-          await this.ensureNoApprovedLeave(tgtAsg.staffId, reqAsg.workDate);
-          await this.ensureNoZoneConflictOnSameDay(tgtAsg.staffId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
-          await this.ensureNoShiftTimeOverlap(tgtAsg.staffId, reqAsg.shiftId, reqAsg.workDate, reqAsg.id);
-
-          await this.ensureNoDuplicateAssignment(reqAsg.staffId, tgtAsg.shiftId, tgtAsg.zoneId, tgtAsg.workDate, tgtAsg.id);
-          await this.ensureNoApprovedLeave(reqAsg.staffId, tgtAsg.workDate);
-          await this.ensureNoZoneConflictOnSameDay(reqAsg.staffId, tgtAsg.zoneId, tgtAsg.workDate, tgtAsg.id);
-          await this.ensureNoShiftTimeOverlap(reqAsg.staffId, tgtAsg.shiftId, tgtAsg.workDate, tgtAsg.id);
-
-          const reqStaffId = reqAsg.staffId;
-          reqAsg.staffId = tgtAsg.staffId;
-          tgtAsg.staffId = reqStaffId;
-          await manager.save([reqAsg, tgtAsg]);
-        } else {
-          const targetId = swap.targetStaffId!;
-          await this.ensureNoDuplicateAssignment(targetId, reqAsg.shiftId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
-          await this.ensureNoApprovedLeave(targetId, reqAsg.workDate);
-          await this.ensureNoZoneConflictOnSameDay(targetId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
-          await this.ensureNoShiftTimeOverlap(targetId, reqAsg.shiftId, reqAsg.workDate, reqAsg.id);
-
-          reqAsg.staffId = targetId;
-          await manager.save(reqAsg);
-        }
-      });
-
-      const assignmentIds = swap.targetAssignmentId
-        ? [swap.requesterAssignmentId, swap.targetAssignmentId]
-        : [swap.requesterAssignmentId];
-      await this.cancelPendingBidsAndSwapsForAssignments(assignmentIds, staffId);
-    }
-
-    swap.status = action;
-    swap.responseNote = responseNote ?? null;
-    swap.reviewedAt = new Date();
-    await this.swaps.save(swap);
-    await this.log(`swap.${action}`, 'shift_swap', id, staffId, { responseNote });
-    return swap;
-  }
-
-  async claimOpenSwap(claimingStaffId: string, swapId: string) {
-    const swap = await this.swaps.findOneBy({ id: swapId });
-    if (!swap) throw new NotFoundError('Swap request not found');
-    if (swap.status !== 'pending') throw new ConflictError('Swap request is no longer pending');
-    if (swap.targetStaffId) throw new BadRequestError('This is not an open swap — it already has a target staff');
-    if (swap.requesterStaffId === claimingStaffId) throw new BadRequestError('Cannot claim your own swap');
-
-    await this.ensureNoApprovedLeave(claimingStaffId, swap.requesterAssignmentId);
-
-    await AppDataSource.transaction(async (manager) => {
-      const reqAsg = await manager.findOne(StaffSchedule, {
-        where: { id: swap.requesterAssignmentId },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!reqAsg) throw new NotFoundError('Requester assignment not found');
-
-      await this.ensureNoApprovedLeave(claimingStaffId, reqAsg.workDate);
-      await this.ensureNoZoneConflictOnSameDay(claimingStaffId, reqAsg.zoneId, reqAsg.workDate, reqAsg.id);
-      await this.ensureNoShiftTimeOverlap(claimingStaffId, reqAsg.shiftId, reqAsg.workDate, reqAsg.id);
-
-      reqAsg.staffId = claimingStaffId;
-      await manager.save(reqAsg);
-    });
-
-    swap.targetStaffId = claimingStaffId;
-    swap.status = 'accepted';
-    swap.reviewedAt = new Date();
-    await this.swaps.save(swap);
-
-    await this.cancelPendingBidsAndSwapsForAssignments([swap.requesterAssignmentId], claimingStaffId);
-    await this.log('swap.claimed', 'shift_swap', swapId, claimingStaffId, { requesterStaffId: swap.requesterStaffId });
-    await publishEvent('swap.claimed', { swapId, claimingStaffId, requesterStaffId: swap.requesterStaffId, requesterAssignmentId: swap.requesterAssignmentId });
-    return swap;
-  }
 
   async createAssignmentsBulk(actorId: string, items: Array<{ staffId: string; shiftId: string; zoneId: string; workDate: string; note?: string | null; status?: string }>, force?: boolean) {
-    for (const item of items) {
-      await this.ensureScheduleTargets(item.staffId, item.shiftId, item.zoneId);
-      await this.ensureFutureDate(item.workDate);
-      await this.ensureNoApprovedLeave(item.staffId, item.workDate);
-    }
+    await Promise.all(items.map((item) =>
+      Promise.all([
+        this.ensureScheduleTargets(item.staffId, item.shiftId, item.zoneId),
+        this.ensureFutureDate(item.workDate),
+      ])
+    ));
 
     const shiftIds = [...new Set(items.map(item => item.shiftId))];
     const activeShifts = await this.shifts.find({ where: { id: In(shiftIds), isActive: true } });
@@ -980,19 +543,35 @@ export class ScheduleService {
 
     const currentAssignments = [...dbAssignments];
 
-    const uniqueShiftZoneDates = [...new Set(items.map(item => `${item.shiftId}:${item.zoneId}:${item.workDate}`))];
+    const uniqueKeys = [...new Set(items.map(item => `${item.shiftId}:${item.zoneId}:${item.workDate}`))];
     const capacityCounts = new Map<string, number>();
-    for (const key of uniqueShiftZoneDates) {
-      const [shId, zId, wDate] = key.split(':');
-      const count = await this.schedules.count({
-        where: { shiftId: shId, zoneId: zId, workDate: wDate, status: Not(In(['cancelled', 'completed'])) }
-      });
-      capacityCounts.set(key, count);
+
+    if (uniqueKeys.length > 0) {
+      const counts = await this.schedules
+        .createQueryBuilder('s')
+        .select("s.shift_id || ':' || s.zone_id || ':' || s.work_date", 'combo_key')
+        .addSelect('COUNT(*)', 'cnt')
+        .where('s.status NOT IN (:...statuses)', { statuses: ['cancelled', 'completed'] })
+        .groupBy("s.shift_id || ':' || s.zone_id || ':' || s.work_date")
+        .getRawMany();
+
+      for (const row of counts) {
+        if (uniqueKeys.includes(row.combo_key)) {
+          capacityCounts.set(row.combo_key, parseInt(row.cnt, 10));
+        }
+      }
+    }
+
+    const existingShiftIds = [...new Set(dbAssignments.map(a => a.shiftId).filter(id => !shiftMap.has(id)))];
+    if (existingShiftIds.length > 0) {
+      const extraShifts = await this.shifts.findBy({ id: In(existingShiftIds) });
+      for (const s of extraShifts) shiftMap.set(s.id, s);
     }
 
     const savedEntities: StaffSchedule[] = [];
+    const auditEntries: Array<{ action: string; entity: string; entityId: string; actorId: string; data: any }> = [];
 
-    return await AppDataSource.transaction(async (transactionalEntityManager) => {
+    const result = await AppDataSource.transaction(async (transactionalEntityManager) => {
       for (const item of items) {
         const key = `${item.shiftId}:${item.zoneId}:${item.workDate}`;
         const shiftDef = shiftMap.get(item.shiftId);
@@ -1023,15 +602,8 @@ export class ScheduleService {
         const newEnd = shiftDef.endTime.slice(0, 5);
         for (const existingAsg of dayAssignments) {
           if (existingAsg.shiftId === item.shiftId) continue;
-          
-          let existShift = shiftMap.get(existingAsg.shiftId);
-          if (!existShift) {
-            const found = await this.shifts.findOneBy({ id: existingAsg.shiftId });
-            if (found) {
-              existShift = found;
-              shiftMap.set(found.id, found);
-            }
-          }
+
+          const existShift = shiftMap.get(existingAsg.shiftId);
           if (!existShift) continue;
 
           const existStart = existShift.startTime.slice(0, 5);
@@ -1057,7 +629,7 @@ export class ScheduleService {
 
         currentAssignments.push(saved);
 
-        await this.log('assignment.created', 'staff_schedule', saved.id, actorId, item);
+        auditEntries.push({ action: 'assignment.created', entity: 'staff_schedule', entityId: saved.id, actorId, data: item });
 
         publishEvent('schedule.changed', {
           staffId: item.staffId,
@@ -1069,6 +641,12 @@ export class ScheduleService {
       }
       return savedEntities;
     });
+
+    for (const entry of auditEntries) {
+      await this.log(entry.action, entry.entity, entry.entityId, entry.actorId, entry.data);
+    }
+
+    return result;
   }
 
   async autoSchedule(actorId: string, from: string, to: string) {
@@ -1080,12 +658,6 @@ export class ScheduleService {
       where: { workDate: Between(from, to), status: Not(In(['cancelled'])) },
     });
     
-    const approvedLeaves = await this.availability.createQueryBuilder('av')
-      .where('av.status = :status', { status: 'approved' })
-      .andWhere('av.dateFrom <= :to', { to })
-      .andWhere('av.dateTo >= :from', { from })
-      .getMany();
-      
     // Templates with validFrom/validTo date range filtering
     const allTemplates = await this.templates.findBy({ isActive: true });
 
@@ -1120,9 +692,6 @@ export class ScheduleService {
       preferencesByShiftZone.set(key, list);
     }
 
-    // Helper: check if a staff member is on leave for a given workDate
-    const isOnLeave = (staffId: string, workDate: string) =>
-      approvedLeaves.some((a) => a.staffId === staffId && workDate >= a.dateFrom && workDate <= a.dateTo);
 
     // Helper: check time overlap between two shifts
     const shiftsOverlap = (shiftA: typeof activeShifts[0], shiftB: typeof activeShifts[0]) =>
@@ -1163,11 +732,6 @@ export class ScheduleService {
           continue;
         }
         if (proposed.some((p) => p.staffId === t.staffId && p.workDate === workDate && p.shiftId === t.shiftId && p.zoneId === t.zoneId)) {
-          continue;
-        }
-        // Skip if on approved leave
-        if (isOnLeave(t.staffId, workDate)) {
-          skipped.push(`template_leave:${t.staffId}:${workDate}`);
           continue;
         }
         // Skip if zone conflict (already on a different zone that day)
@@ -1219,7 +783,6 @@ export class ScheduleService {
             // Skip if already assigned via template in this pass
             if (proposed.some((p) => p.staffId === s.id && p.workDate === workDate && p.shiftId === shift.id && p.zoneId === zone.id)) continue;
             if (existing.some((e) => e.staffId === s.id)) continue;
-            if (isOnLeave(s.id, workDate)) { skipped.push(`leave:${s.id}:${workDate}`); continue; }
 
             const existingCount = existingAssignments.filter((a) => a.staffId === s.id).length;
             const proposedCount = staffWorkload.get(s.id) || 0;
@@ -1463,9 +1026,6 @@ export class ScheduleService {
       const catPrefixes: Record<string, string[]> = {
         assignment: ['assignment.'],
         attendance: ['attendance.'],
-        availability: ['availability.'],
-        bid: ['bid.'],
-        swap: ['swap.'],
         config: ['zone.', 'shift.', 'template.'],
       };
       const prefixes = catPrefixes[filters.category];
@@ -1588,8 +1148,6 @@ export class ScheduleService {
       note: item.note ? `${item.note}\nCancelled by ${reason}` : `Cancelled by ${reason}`,
     })));
 
-    await this.cancelPendingBidsAndSwapsForAssignments(assignments.map((item) => item.id), actorId);
-
     await Promise.all(assignments.map((item) => (
       this.log('assignment.cancelled_by_config_delete', 'staff_schedule', item.id, actorId, {
         reason,
@@ -1635,16 +1193,6 @@ export class ScheduleService {
       throw new ConflictError('Staff is already assigned to this shift and zone');
     }
     return undefined;
-  }
-
-  private async ensureNoApprovedLeave(staffId: string, workDate: string) {
-    const leave = await this.availability
-      .createQueryBuilder('availability')
-      .where('availability.staff_id = :staffId', { staffId })
-      .andWhere('availability.status = :status', { status: 'approved' })
-      .andWhere(':workDate BETWEEN availability.date_from AND availability.date_to', { workDate })
-      .getOne();
-    if (leave) throw new ConflictError('Staff has approved unavailable time on this date');
   }
 
   private async ensureFutureDate(workDate: string) {
@@ -1751,137 +1299,6 @@ export class ScheduleService {
     };
   }
 
-  private async cancelPendingBidsAndSwapsForAssignments(assignmentIds: string[], actorId: string) {
-    if (!assignmentIds.length) return;
-
-    const pendingBids = await this.bids.find({
-      where: { assignmentId: In(assignmentIds), status: 'pending' },
-    });
-    for (const bid of pendingBids) {
-      bid.status = 'cancelled';
-      bid.reviewedBy = actorId;
-      bid.reviewedAt = new Date();
-      bid.note = bid.note ? `${bid.note}\nAuto-cancelled: assignment cancelled` : 'Auto-cancelled: assignment cancelled';
-    }
-    if (pendingBids.length) await this.bids.save(pendingBids);
-
-    const pendingSwaps = await this.swaps.find({
-      where: [
-        { requesterAssignmentId: In(assignmentIds), status: 'pending' },
-        { targetAssignmentId: In(assignmentIds), status: 'pending' },
-      ],
-    });
-    for (const swap of pendingSwaps) {
-      swap.status = 'cancelled';
-      swap.reviewedAt = new Date();
-      swap.responseNote = 'Auto-cancelled: assignment cancelled';
-    }
-    if (pendingSwaps.length) await this.swaps.save(pendingSwaps);
-
-    for (const asgId of assignmentIds) {
-      const att = await this.attendance.findOneBy({ scheduleId: asgId });
-      if (att) {
-        att.invalidatedReason = 'assignment.cancelled';
-        await this.attendance.save(att);
-        await this.attendance.softRemove(att);
-        await this.log('attendance.invalidated', 'staff_attendance', att.id, actorId, {
-          scheduleId: asgId,
-          invalidatedReason: 'assignment.cancelled',
-        });
-      }
-    }
-  }
-
-  async expireStaleBidsInternal() {
-    const now = new Date();
-    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-    const seventyTwoHoursAgo = new Date(now.getTime() - 72 * 60 * 60 * 1000);
-
-    const toWarn = await this.bids.find({
-      where: { status: 'pending', createdAt: LessThan(fortyEightHoursAgo), notifiedExpiring: false },
-    });
-    for (const bid of toWarn) {
-      publishEvent('bid.expiring_soon', { bidId: bid.id, staffId: bid.staffId, assignmentId: bid.assignmentId });
-      bid.notifiedExpiring = true;
-      await this.bids.save(bid);
-      await this.log('bid.expiry_warning_sent', 'shift_bid', bid.id, null, { hoursUntilExpiry: 24 });
-    }
-
-    const toExpire = await this.bids.find({
-      where: { status: 'pending', createdAt: LessThan(seventyTwoHoursAgo) },
-    });
-    for (const bid of toExpire) {
-      bid.status = 'expired';
-      bid.reviewedAt = new Date();
-      bid.note = bid.note ? `${bid.note}\nAuto-expired after 72 hours` : 'Auto-expired after 72 hours';
-    }
-    if (toExpire.length) {
-      await this.bids.save(toExpire);
-      for (const bid of toExpire) {
-        await this.log('bid.expired', 'shift_bid', bid.id, null, { reason: '72h expiry' });
-      }
-    }
-
-    await this.cleanBidsOnPastAssignments();
-
-    return { warned: toWarn.length, expired: toExpire.length };
-  }
-
-  async expireStaleSwapsInternal() {
-    const now = new Date();
-    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-    const seventyTwoHoursAgo = new Date(now.getTime() - 72 * 60 * 60 * 1000);
-
-    const toWarn = await this.swaps.find({
-      where: { status: 'pending', createdAt: LessThan(fortyEightHoursAgo), notifiedExpiring: false },
-    });
-    for (const swap of toWarn) {
-      publishEvent('swap.expiring_soon', { swapId: swap.id, requesterStaffId: swap.requesterStaffId, targetStaffId: swap.targetStaffId });
-      swap.notifiedExpiring = true;
-      await this.swaps.save(swap);
-      await this.log('swap.expiry_warning_sent', 'shift_swap', swap.id, null, { hoursUntilExpiry: 24 });
-    }
-
-    const toExpire = await this.swaps.find({
-      where: { status: 'pending', createdAt: LessThan(seventyTwoHoursAgo) },
-    });
-    for (const swap of toExpire) {
-      swap.status = 'expired';
-      swap.reviewedAt = new Date();
-      swap.responseNote = 'Auto-expired after 72 hours';
-    }
-    if (toExpire.length) {
-      await this.swaps.save(toExpire);
-      for (const swap of toExpire) {
-        await this.log('swap.expired', 'shift_swap', swap.id, null, { reason: '72h expiry' });
-      }
-    }
-
-    return { warned: toWarn.length, expired: toExpire.length };
-  }
-
-  private async cleanBidsOnPastAssignments() {
-    const today = localDate(new Date());
-    const pastAssignments = await this.schedules.find({
-      where: { workDate: LessThan(today), status: Not(In(['cancelled', 'completed'])) },
-    });
-    if (!pastAssignments.length) return;
-    const pastIds = pastAssignments.map((a) => a.id);
-    const staleBids = await this.bids.find({
-      where: { assignmentId: In(pastIds), status: 'pending' },
-    });
-    if (staleBids.length) {
-      for (const bid of staleBids) {
-        bid.status = 'expired';
-        bid.reviewedAt = new Date();
-        bid.note = bid.note ? `${bid.note}\nAuto-expired: assignment date passed` : 'Auto-expired: assignment date passed';
-      }
-      await this.bids.save(staleBids);
-      for (const bid of staleBids) {
-        await this.log('bid.expired', 'shift_bid', bid.id, null, { reason: 'assignment past date' });
-      }
-    }
-  }
 
   private async log(
     action: string, entityType: string, entityId: string | null,

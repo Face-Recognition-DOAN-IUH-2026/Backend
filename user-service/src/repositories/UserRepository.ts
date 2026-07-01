@@ -12,6 +12,11 @@ export class UserRepository {
     return this.repo.findOneBy({ email });
   }
 
+  async findByIds(ids: string[]): Promise<User[]> {
+    if (ids.length === 0) return [];
+    return this.repo.findBy({ id: In(ids) });
+  }
+
   async findByStudentCode(code: string): Promise<User | null> {
     return this.repo.findOneBy({ studentCode: code });
   }

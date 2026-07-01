@@ -61,24 +61,4 @@ router.post('/auto-checkout', internalAuth, async (req: Request, res: Response) 
   }
 });
 
-router.post('/expire-stale-bids', internalAuth, async (_req: Request, res: Response) => {
-  try {
-    const result = await scheduleService.expireStaleBidsInternal();
-    res.json(result);
-  } catch (error) {
-    console.error('Error expiring stale bids:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-router.post('/expire-stale-swaps', internalAuth, async (_req: Request, res: Response) => {
-  try {
-    const result = await scheduleService.expireStaleSwapsInternal();
-    res.json(result);
-  } catch (error) {
-    console.error('Error expiring stale swaps:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
 export default router;

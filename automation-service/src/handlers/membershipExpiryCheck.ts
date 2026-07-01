@@ -1,26 +1,10 @@
 import { userClient, notificationClient, emailClient } from '../clients/serviceClients';
-import { config as appConfig } from '../config';
-import { getServiceToken } from '../../../shared';
 
 export async function membershipExpiryCheck(taskConfig: Record<string, any>): Promise<any> {
   const daysBefore = taskConfig.days_before || 7;
 
   try {
-    const response = await fetch(
-      `${appConfig.services.userService}/internal/users/expiring-membership?days=${daysBefore}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${getServiceToken('automation-service', appConfig.jwtSecret)}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    if (!response.ok) {
-      return { checked: 0, notified: 0, message: 'Failed to query expiring memberships' };
-    }
-
-    const users = await response.json();
+    const users = await userClient.getExpiringMemberships(daysBefore);
 
     if (!Array.isArray(users) || users.length === 0) {
       return { checked: 0, notified: 0, message: 'No expiring memberships' };
@@ -34,18 +18,16 @@ export async function membershipExpiryCheck(taskConfig: Record<string, any>): Pr
       data: { expiryDate: user.membershipExpiry, daysLeft: daysBefore },
     }));
 
-    await notificationClient.createBulkNotifications(notifications);
-
-    // Send membership expiry emails
-    for (const user of users) {
-      if (user.email) {
-        try {
-          await emailClient.sendMembershipExpiryEmail(user.email, user.membershipExpiry);
-        } catch (err) {
+    const emailPromises = users
+      .filter((user: any) => user.email)
+      .map((user: any) =>
+        emailClient.sendMembershipExpiryEmail(user.email, user.membershipExpiry).catch((err: any) => {
           console.error(`[membershipExpiryCheck] Failed to send expiry email to ${user.email}:`, err);
-        }
-      }
-    }
+        })
+      );
+
+    await Promise.allSettled(emailPromises);
+    await notificationClient.createBulkNotifications(notifications);
 
     return { checked: users.length, notified: notifications.length };
   } catch {

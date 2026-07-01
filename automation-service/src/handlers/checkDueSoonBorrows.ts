@@ -1,4 +1,4 @@
-import { borrowClient, notificationClient, userClient, emailClient } from '../clients/serviceClients';
+import { borrowClient, notificationClient, userClient } from '../clients/serviceClients';
 
 export async function checkDueSoonBorrows(config: Record<string, any>): Promise<any> {
   const daysBefore = parseInt(config?.days_before) || 3;
@@ -8,17 +8,27 @@ export async function checkDueSoonBorrows(config: Record<string, any>): Promise<
     return { checked: 0, notified: 0, message: 'No due-soon borrows' };
   }
 
+  const uniquePatronIds = [...new Set(
+    dueSoon.map((r: any) => r.patron_id || r.patronId).filter(Boolean)
+  )];
+
+  let patronMap: Record<string, any> = {};
+  if (uniquePatronIds.length > 0) {
+    try {
+      patronMap = await userClient.getUsers(uniquePatronIds);
+    } catch (err) {
+      console.error('[checkDueSoonBorrows] Failed to batch fetch patrons:', err);
+    }
+  }
+
   const notifications: Array<{ userId: string; type: string; title: string; body: string; data: Record<string, any> }> = [];
 
   for (const record of dueSoon) {
     const patronId = record.patron_id || record.patronId;
     if (!patronId) continue;
 
-    let patronName = 'Bạn';
-    try {
-      const patron = await userClient.getUser(patronId);
-      if (patron?.fullName) patronName = patron.fullName;
-    } catch {}
+    const patron = patronMap[patronId];
+    const patronName = patron?.fullName || 'Bạn';
 
     const bookTitle = record.title || record.book_title || record.book?.title || 'Sách';
     const dueDate = record.due_at || record.dueAt;

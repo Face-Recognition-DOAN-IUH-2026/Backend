@@ -25,9 +25,6 @@ export async function scheduleChangeNotify(
 
   let message = '';
   switch (changeType) {
-    case 'swap':
-      message = `Lịch trực ngày ${workDate} đã được đổi. Ca mới: ${shiftDisplayName}.`;
-      break;
     case 'assigned':
       message = `Bạn đã được phân ca trực ngày ${workDate}: ${shiftDisplayName}.`;
       break;

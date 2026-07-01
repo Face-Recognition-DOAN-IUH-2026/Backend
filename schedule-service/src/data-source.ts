@@ -4,13 +4,10 @@ import { config } from './config';
 import {
   LibraryZone,
   StaffShift,
-  StaffAvailabilityRequest,
   StaffScheduleTemplate,
   StaffSchedule,
   StaffAttendance,
   ScheduleAuditLog,
-  ShiftBid,
-  ShiftSwap,
   GeofenceConfig,
   StaffShiftPreference,
 } from './entities';
@@ -25,13 +22,10 @@ export const AppDataSource = new DataSource({
   entities: [
     LibraryZone,
     StaffShift,
-    StaffAvailabilityRequest,
     StaffScheduleTemplate,
     StaffSchedule,
     StaffAttendance,
     ScheduleAuditLog,
-    ShiftBid,
-    ShiftSwap,
     GeofenceConfig,
     StaffShiftPreference,
   ],

@@ -102,22 +102,20 @@ router.post('/users/batch', async (req, res) => {
       res.status(400).json({ error: 'ids array is required' });
       return;
     }
+    const users = await userRepo.findByIds(ids);
     const results: Record<string, any> = {};
-    for (const id of ids) {
-      const user = await userRepo.findById(id);
-      if (user) {
-        results[id] = {
-          id: user.id,
-          fullName: user.fullName,
-          studentCode: user.studentCode,
-          cardNumber: user.cardNumber,
-          email: user.email,
-          role: user.role,
-          status: user.status,
-          currentStatus: user.currentStatus,
-          membershipExpiry: user.membershipExpiry,
-        };
-      }
+    for (const user of users) {
+      results[user.id] = {
+        id: user.id,
+        fullName: user.fullName,
+        studentCode: user.studentCode,
+        cardNumber: user.cardNumber,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        currentStatus: user.currentStatus,
+        membershipExpiry: user.membershipExpiry,
+      };
     }
     res.json(results);
   } catch (error: any) {

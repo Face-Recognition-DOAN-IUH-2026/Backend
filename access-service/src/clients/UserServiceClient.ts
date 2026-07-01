@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { getServiceToken } from '../../../shared';
+import { getServiceToken, CircuitBreaker, retryWithBackoff } from '../../../shared';
 
 export interface UserSummary {
   id: string;
@@ -11,54 +11,76 @@ export interface UserSummary {
   cardNumber?: string | null;
 }
 
+const circuit = new CircuitBreaker(5, 60_000);
+
 export class UserServiceClient {
-  private failures = 0;
-  private openUntil = 0;
-
-  private canRequest() {
-    if (Date.now() < this.openUntil) return false;
-    return true;
-  }
-
-  private recordSuccess() {
-    this.failures = 0;
-    this.openUntil = 0;
-  }
-
-  private recordFailure() {
-    this.failures += 1;
-    if (this.failures >= 3) {
-      this.openUntil = Date.now() + 15_000;
-    }
-  }
-
   async getUser(id: string): Promise<UserSummary | null> {
-    if (!this.canRequest()) return null;
+    if (!circuit.canRequest()) return null;
     try {
-      const res = await fetch(`${config.userServiceUrl}/internal/users/${id}`, {
-        headers: { 'Authorization': `Bearer ${getServiceToken('access-service', config.jwtSecret)}` },
-        signal: AbortSignal.timeout(3000),
-      });
-      if (res.status === 404) {
-        this.recordSuccess();
-        return null;
-      }
-      if (!res.ok) throw new Error(`user-service ${res.status}`);
-      this.recordSuccess();
-      return (await res.json()) as UserSummary;
+      return await retryWithBackoff(async () => {
+        const res = await fetch(`${config.userServiceUrl}/internal/users/${id}`, {
+          headers: { 'Authorization': `Bearer ${getServiceToken('access-service', config.jwtSecret)}` },
+          signal: AbortSignal.timeout(3000),
+        });
+        if (res.status === 404) {
+          circuit.recordSuccess();
+          return null;
+        }
+        if (res.status >= 500) {
+          circuit.recordFailure();
+          throw new Error(`user-service ${res.status}`);
+        }
+        if (!res.ok) throw new Error(`user-service ${res.status}`);
+        circuit.recordSuccess();
+        return (await res.json()) as UserSummary;
+      }, 2, 500);
     } catch {
-      this.recordFailure();
       return null;
     }
   }
 
   async getUsers(ids: string[]): Promise<Map<string, UserSummary>> {
     const uniqueIds = [...new Set(ids.filter(Boolean))];
-    const users = await Promise.all(uniqueIds.map((id) => this.getUser(id)));
-    const map = new Map<string, UserSummary>();
-    users.forEach((user) => {
-      if (user?.id) map.set(user.id, user);
-    });
-    return map;
+    if (uniqueIds.length === 0) return new Map();
+
+    if (!circuit.canRequest()) {
+      const results = await Promise.all(uniqueIds.map((id) => this.getUser(id)));
+      const map = new Map<string, UserSummary>();
+      results.forEach((user) => {
+        if (user?.id) map.set(user.id, user);
+      });
+      return map;
+    }
+
+    try {
+      const res = await fetch(`${config.userServiceUrl}/internal/users/batch`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${getServiceToken('access-service', config.jwtSecret)}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: uniqueIds }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.status >= 500) {
+        circuit.recordFailure();
+        throw new Error(`user-service batch ${res.status}`);
+      }
+      if (!res.ok) throw new Error(`user-service batch ${res.status}`);
+      circuit.recordSuccess();
+      const data = await res.json() as Record<string, UserSummary>;
+      const map = new Map<string, UserSummary>();
+      for (const [id, user] of Object.entries(data)) {
+        if (user?.id) map.set(id, user);
+      }
+      return map;
+    } catch {
+      const results = await Promise.all(uniqueIds.map((id) => this.getUser(id)));
+      const map = new Map<string, UserSummary>();
+      results.forEach((user) => {
+        if (user?.id) map.set(user.id, user);
+      });
+      return map;
+    }
   }
 }

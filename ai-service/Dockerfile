@@ -12,7 +12,7 @@ COPY shared /app/shared
 RUN ln -s /app/shared ./shared
 
 RUN npm run build
-RUN rm -rf dist/shared && ln -s /app/shared dist/shared
+RUN rm -rf dist/shared && ln -s /app/ai-service/dist/ai-service/shared dist/shared
 
 EXPOSE 3004
 

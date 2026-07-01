@@ -1,6 +1,8 @@
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { BookCopy } from './BookCopy';
 
+@Index(['shelfLocation'])
+@Index(['isAvailable'])
 @Entity({ name: 'books' })
 export class Book {
   @PrimaryGeneratedColumn('uuid')
