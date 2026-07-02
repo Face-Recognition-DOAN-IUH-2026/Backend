@@ -1,5 +1,6 @@
 import axios from 'axios';
-import { tools, getScheduleToday, searchBooks, getOverdueBorrows } from '../../tools/tools';
+import { patronToolDefs, staffToolDefs, adminToolDefs, getToolDefsForRole } from '../../tools/registry';
+import { getScheduleToday, searchBooks, getOverdueBorrows, getMyPatronInfo, getPatronInfoById } from '../../tools/tools';
 
 jest.mock('../../config', () => ({
   config: {
@@ -12,35 +13,100 @@ jest.mock('../../config', () => ({
 
 jest.mock('axios');
 
-describe('AI Tools', () => {
+describe('AI Tools - RBAC Security', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
+  describe('Role-based tool access', () => {
+    it('should provide only patron tools for patron role', () => {
+      const tools = getToolDefsForRole('patron');
+      expect(tools.length).toBe(patronToolDefs.length);
+      // Patron tools should have injectUserId: true for data access
+      const patronInfo = tools.find(t => t.name === 'get_patron_info');
+      expect(patronInfo?.injectUserId).toBe(true);
+      const patronBorrows = tools.find(t => t.name === 'get_patron_borrows');
+      expect(patronBorrows?.injectUserId).toBe(true);
+      const patronHistory = tools.find(t => t.name === 'get_patron_history');
+      expect(patronHistory?.injectUserId).toBe(true);
+
+      // Patrons should NOT have admin tools
+      expect(tools.find(t => t.name === 'get_overdue_borrows')).toBeUndefined();
+    });
+
+    it('should provide staff+ tools for staff role without injectUserId', () => {
+      const tools = getToolDefsForRole('staff');
+      // Staff tools should NOT have injectUserId (they accept AI-supplied params)
+      const staffInfo = tools.find(t => t.name === 'get_patron_info');
+      expect(staffInfo?.injectUserId).toBeUndefined();
+      expect(tools.find(t => t.name === 'get_overdue_borrows')).toBeDefined();
+      expect(tools.find(t => t.name === 'get_schedule_today')).toBeDefined();
+    });
+
+    it('should provide admin tools for admin role (same as staff)', () => {
+      const adminTools = getToolDefsForRole('admin');
+      const staffTools = getToolDefsForRole('staff');
+      expect(adminTools.length).toBe(staffTools.length);
+    });
+
+    it('should default to patron tools for unknown role', () => {
+      const tools = getToolDefsForRole('unknown_role');
+      expect(tools.length).toBe(patronToolDefs.length);
+    });
+  });
+
+  describe('injectUserId enforcement', () => {
+    it('should call getMyPatronInfo with userId (server-injected, not AI)', async () => {
+      const mockResponse = { data: { id: 'user-1', name: 'Test' } };
+      (axios.get as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await getMyPatronInfo('server-injected-user-id');
+
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.stringContaining('server-injected-user-id'),
+        expect.any(Object),
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it('should call getPatronInfoById with AI-supplied id for staff tools', async () => {
+      const mockResponse = { data: { id: 'patron-2', name: 'Other Patron' } };
+      (axios.get as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await getPatronInfoById('ai-supplied-id');
+
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.stringContaining('ai-supplied-id'),
+        expect.any(Object),
+      );
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe('Tool registry', () => {
     it('should register get_schedule_today tool', () => {
-      const tool = tools.find(t => t.name === 'get_schedule_today');
+      const tool = staffToolDefs.find(t => t.name === 'get_schedule_today');
       expect(tool).toBeDefined();
       expect(typeof tool?.func).toBe('function');
     });
 
     it('should register search_books tool', () => {
-      const tool = tools.find(t => t.name === 'search_books');
+      const tool = patronToolDefs.find(t => t.name === 'search_books');
       expect(tool).toBeDefined();
     });
 
     it('should register get_overdue_borrows tool', () => {
-      const tool = tools.find(t => t.name === 'get_overdue_borrows');
+      const tool = staffToolDefs.find(t => t.name === 'get_overdue_borrows');
       expect(tool).toBeDefined();
     });
 
     it('should register get_library_hours tool', () => {
-      const tool = tools.find(t => t.name === 'get_library_hours');
+      const tool = patronToolDefs.find(t => t.name === 'get_library_hours');
       expect(tool).toBeDefined();
     });
 
     it('should register lookup_book tool', () => {
-      const tool = tools.find(t => t.name === 'lookup_book');
+      const tool = patronToolDefs.find(t => t.name === 'lookup_book');
       expect(tool).toBeDefined();
     });
   });
