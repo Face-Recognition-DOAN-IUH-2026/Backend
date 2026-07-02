@@ -13,7 +13,11 @@ async def face_login(file: UploadFile = File(...)):
     raw = await file.read()
     result = await run_in_threadpool(_sync_face_login, raw)
     if result.get("status") != "success":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.get("error", "Face login failed"))
+        detail = result.get("error", "Face login failed")
+        extra = result.get("detail")
+        if extra:
+            detail = f"{detail} ({extra})"
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
     return {
         "access_token": result["access_token"],
         "refresh_token": result.get("refresh_token"),

@@ -30,6 +30,7 @@ async function safeGet<T>(url: string): Promise<ToolResult> {
   }
 }
 
+// ==================== Base tool functions (shared) ====================
 
 export async function searchBooks(query: string): Promise<ToolResult> {
   const url = `${config.borrowServiceUrl}/borrow/internal/books/search?query=${encodeURIComponent(query)}`;
@@ -41,20 +42,59 @@ export async function getShelfLocation(bookId: string): Promise<ToolResult> {
   return safeGet<any>(url);
 }
 
-export async function getPatronInfo(patronId: string): Promise<ToolResult> {
-  const url = `${config.userServiceUrl}/internal/patrons/${encodeURIComponent(patronId)}`;
+export async function lookupBook(isbnOrQuery: string): Promise<ToolResult> {
+  const url = `${config.borrowServiceUrl}/borrow/internal/books/lookup?isbn=${encodeURIComponent(isbnOrQuery)}`;
   return safeGet<any>(url);
 }
 
-export async function getPatronBorrows(patronId: string): Promise<ToolResult> {
-  const url = `${config.borrowServiceUrl}/borrow/internal/patron/${encodeURIComponent(patronId)}`;
+export function getLibraryHours(): ToolResult {
+  return {
+    success: true,
+    data: {
+      schedule: [
+        { days: 'Monday - Friday', hours: '06:30 - 21:00' },
+        { days: 'Saturday - Sunday', hours: '08:00 - 19:30' },
+      ],
+      note: 'Giờ mở cửa có thể thay đổi vào ngày lễ và kỳ nghỉ đặc biệt',
+    },
+  };
+}
+
+// ==================== Patron data — server-scoped (safe for patron tools) ====================
+
+export async function getMyPatronInfo(userId: string): Promise<ToolResult> {
+  const url = `${config.userServiceUrl}/internal/patrons/${encodeURIComponent(userId)}`;
   return safeGet<any>(url);
 }
 
-export async function getPatronHistory(patronId: string): Promise<ToolResult> {
-  const url = `${config.borrowServiceUrl}/borrow/internal/patrons/id/${encodeURIComponent(patronId)}/history`;
+export async function getMyBorrows(userId: string): Promise<ToolResult> {
+  const url = `${config.borrowServiceUrl}/borrow/internal/patron/${encodeURIComponent(userId)}`;
   return safeGet<any>(url);
 }
+
+export async function getMyHistory(userId: string): Promise<ToolResult> {
+  const url = `${config.borrowServiceUrl}/borrow/internal/patrons/id/${encodeURIComponent(userId)}/history`;
+  return safeGet<any>(url);
+}
+
+// ==================== Staff/Admin patron lookup (takes ID from AI, server validates) ====================
+
+export async function getPatronInfoById(id: string): Promise<ToolResult> {
+  const url = `${config.userServiceUrl}/internal/patrons/${encodeURIComponent(id)}`;
+  return safeGet<any>(url);
+}
+
+export async function getPatronBorrowsById(id: string): Promise<ToolResult> {
+  const url = `${config.borrowServiceUrl}/borrow/internal/patron/${encodeURIComponent(id)}`;
+  return safeGet<any>(url);
+}
+
+export async function getPatronHistoryById(id: string): Promise<ToolResult> {
+  const url = `${config.borrowServiceUrl}/borrow/internal/patrons/id/${encodeURIComponent(id)}/history`;
+  return safeGet<any>(url);
+}
+
+// ==================== Staff/Admin admin tools ====================
 
 export async function getOverdueBorrows(): Promise<ToolResult> {
   const url = `${config.borrowServiceUrl}/borrow/internal/overdue`;
@@ -75,75 +115,3 @@ export async function getScheduleToday(): Promise<ToolResult> {
 
   return result;
 }
-
-export function getLibraryHours(): ToolResult {
-  return {
-    success: true,
-    data: {
-      schedule: [
-        { days: 'Monday - Friday', hours: '06:30 - 21:00' },
-        { days: 'Saturday - Sunday', hours: '08:00 - 19:30' },
-      ],
-      note: 'Giờ mở cửa có thể thay đổi vào ngày lễ và kỳ nghỉ đặc biệt',
-    },
-  };
-}
-
-
-export async function lookupBook(
-  isbnOrQuery: string
-): Promise<ToolResult> {
-  const url = `${config.borrowServiceUrl}/borrow/internal/books/lookup?isbn=${encodeURIComponent(isbnOrQuery)}`;
-  return safeGet<any>(url);
-}
-
-
-export const tools = [
-  {
-    name: 'search_books',
-    description: 'Search for books in the library catalog. Use this when user wants to find books by title, author, or keywords. Input: search query string.',
-    func: searchBooks,
-  },
-  {
-    name: 'get_shelf_location',
-    description: 'Get the physical location (shelf, floor, tier, face) of a specific book. Use this when user asks where a book is located. Input: book ID.',
-    func: getShelfLocation,
-  },
-  {
-    name: 'get_patron_info',
-    description: 'Get detailed information about a library patron/member including their card status, registration date, and contact details. Input: patron ID.',
-    func: getPatronInfo,
-  },
-  {
-    name: 'get_patron_borrows',
-    description: 'Get all currently borrowed books for a specific patron. Use this to check what books a patron has checked out. Input: patron ID.',
-    func: getPatronBorrows,
-  },
-  {
-    name: 'get_patron_history',
-    description: 'Get the full borrow history (including returned books) for a specific patron. Use this when user asks about their borrow history, past books, or reading history. Input: patron ID.',
-    func: getPatronHistory,
-  },
-  {
-    name: 'get_overdue_borrows',
-    description: 'Get a list of all overdue book borrows in the system. Use this to check for overdue items or generate overdue reports. No input required.',
-    func: getOverdueBorrows,
-  },
-  {
-    name: 'get_schedule_today',
-    description: 'Get the staff work schedule for today. Returns list of staff members with their assigned shifts and locations. No input required.',
-    func: getScheduleToday,
-  },
-  {
-    name: 'get_library_hours',
-    description: 'Get the library opening hours for all days of the week. Returns regular hours and any notes about special hours. No input required.',
-    func: getLibraryHours,
-  },
-  {
-    name: 'lookup_book',
-    description: 'Look up a book by ISBN or title. First checks the local database, then falls back to Google Books API. Returns book details including title, author, description, cover image, categories. Use this when user wants to check if a book exists or get its metadata. Input: ISBN number or book title string.',
-    func: lookupBook,
-  },
-];
-
-export default tools;

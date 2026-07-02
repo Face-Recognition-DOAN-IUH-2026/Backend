@@ -6,10 +6,13 @@ import { AppDataSource } from './data-source';
 import aiRoutes from './routes/ai.routes';
 import chatRouter from './routes/chat';
 import confirmRouter from './routes/confirm';
+import patronChatRouter from './routes/chat.patron';
+import staffChatRouter from './routes/chat.staff';
+import adminChatRouter from './routes/chat.admin';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
-import { createAuth } from '../../shared';
+import { createAuth, requireRole } from '../../shared';
 import { getCollection } from './clients/chromadb';
 import { indexDocuments } from './rag/indexer';
 import { sessionStore } from './sessions';
@@ -58,8 +61,12 @@ app.get('/ai/health', async (_req, res) => {
   });
 });
 
-// Agent chat routes (authenticated users) - /ai/chat, /ai/confirm, /ai/chat/sessions/*
-// Must be BEFORE /ai to avoid requireRole middleware in aiRoutes blocking patron access
+// Role-specific chat routes (NEW: role-isolated tool registries)
+app.use('/ai/patrons/chat', auth, requireRole(['patron']), patronChatRouter);
+app.use('/ai/staff/chat', auth, requireRole(['admin', 'staff']), staffChatRouter);
+app.use('/ai/admin/chat', auth, requireRole(['admin']), adminChatRouter);
+
+// Legacy routes (backward compatibility — same endpoints, same auth)
 app.use('/ai/chat', auth, chatRouter);
 app.use('/ai/confirm', auth, confirmRouter);
 
@@ -124,8 +131,11 @@ async function start() {
     setupProcessErrorHandlers();
     const server = app.listen(config.port, '0.0.0.0', () => {
       console.log(`AI service running on port ${config.port}`);
+      console.log(`  Patron Chat:   /ai/patrons/chat (requireRole: patron)`);
+      console.log(`  Staff Chat:    /ai/staff/chat (requireRole: admin, staff)`);
+      console.log(`  Admin Chat:    /ai/admin/chat (requireRole: admin)`);
+      console.log(`  Legacy Chat:   /ai/chat (backward compat)`);
       console.log(`  Command Center: /ai/command-center/*`);
-      console.log(`  Agent Chat: /chat, /confirm`);
       console.log(`  LLM (OpenRouter): ${config.openRouter.model}`);
       console.log(`  LLM (NVIDIA NIM): ${config.nvidiaModel}`);
     });
