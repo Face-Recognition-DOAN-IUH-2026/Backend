@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { sessionStore } from '../sessions';
-import { tools } from '../tools/tools';
+import { patronToolDefs, staffToolDefs, adminToolDefs } from '../tools/registry';
 
 const router = Router();
+
+const allToolDefs = [...patronToolDefs, ...staffToolDefs, ...adminToolDefs];
 
 /**
  * @swagger
@@ -119,7 +121,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     try {
-      const tool = tools.find(t => t.name === pendingAction.toolName);
+      const tool = allToolDefs.find(t => t.name === pendingAction.toolName);
 
       if (tool) {
         const argValues = Object.values(pendingAction.toolArgs || {});

@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { sessionStore } from '../sessions';
 import { processMessage } from '../agent/agent';
 import { AuthRequest } from '../../../shared';
+import { adminToolDefs, getToolDefsForRole } from '../tools/registry';
 
 const router = Router();
 
@@ -259,9 +260,10 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     const result = await processMessage(
       message,
       session.id,
-      effectivePatronId,
+      user.role,
       sessionHistory,
       userContext,
+      getToolDefsForRole(user.role),
     );
 
     sessionStore.addMessage(session.id, {

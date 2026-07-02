@@ -22,7 +22,7 @@ import {
   addComment,
 } from '../../shared/jira-client';
 const app = express();
-const corsOrigin = config.corsOrigins.length > 0 ? config.corsOrigins : false;
+const corsOrigin = config.corsOrigins.includes('*') ? true : config.corsOrigins.length > 0 ? config.corsOrigins : false;
 
 // Security headers
 app.use(helmet());
@@ -279,13 +279,24 @@ const accessProxy = createProxyMiddleware({
 
 app.use('/api/access', faceLimiter, accessProxy);
 
-app.use('/api/ai', createProxyMiddleware({
+const aiProxyOpts = {
   target: config.services.aiService,
   changeOrigin: true,
   timeout: 120000,
   proxyTimeout: 120000,
   pathRewrite: stripApiPrefixFromOriginalPath,
-}));
+};
+
+const patronAiLimiter = rateLimit({ windowMs: 60000, max: 60, message: { error: 'Too many requests from patron' } });
+const staffAiLimiter = rateLimit({ windowMs: 60000, max: 120, message: { error: 'Too many requests from staff' } });
+const adminAiLimiter = rateLimit({ windowMs: 60000, max: 200, message: { error: 'Too many requests from admin' } });
+
+app.use('/api/ai/patrons', patronAiLimiter, createProxyMiddleware(aiProxyOpts));
+app.use('/api/ai/staff', staffAiLimiter, createProxyMiddleware(aiProxyOpts));
+app.use('/api/ai/admin', adminAiLimiter, createProxyMiddleware(aiProxyOpts));
+
+// Legacy catch-all for /api/ai (backward compatibility — command-center, insights, etc.)
+app.use('/api/ai', createProxyMiddleware(aiProxyOpts));
 
 // Patron stats from user-service (must be before catch-all /api/patrons)
 app.use('/api/patrons/stats', createProxyMiddleware({

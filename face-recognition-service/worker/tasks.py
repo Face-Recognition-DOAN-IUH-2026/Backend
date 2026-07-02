@@ -512,6 +512,8 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
         img = safe_read_image_from_bytes(raw_bytes)
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
 
+        img = enhance_illumination(img)
+
         face_data = detect_face_once(img)
         if not face_data.get("valid"):
             return {"status": "error", "error": "Không phát hiện khuôn mặt", "detail": face_data.get("error")}
@@ -522,7 +524,12 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
         results = _get_milvus().search(embedding=norm_vec, top_k=10)
         best = _resolve_best_match(results, settings.face_match_threshold)
         if not best:
-            return {"status": "error", "error": "Khuôn mặt không khớp với tài khoản nào"}
+            top_score = max((r["score"] for r in results), default=0.0)
+            return {
+                "status": "error",
+                "error": "Khuôn mặt không khớp với tài khoản nào",
+                "detail": f"top_score={round(top_score, 4)}, threshold={settings.face_match_threshold}, candidates={len(results)}",
+            }
 
         matched_user_id = best["user_id"]
         score = round(best["score"], 4)
