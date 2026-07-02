@@ -257,6 +257,17 @@ export class ScheduleService {
     return { items: enriched.items, total, page, limit };
   }
 
+  private advisoryLockKey(shiftId: string, zoneId: string, workDate: string): number {
+    let hash = 0;
+    const str = `${shiftId}::${zoneId}::${workDate}`;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash |= 0;
+    }
+    return Math.abs(hash);
+  }
+
   async createAssignment(actorId: string, body: Partial<StaffSchedule>, force?: boolean) {
     await this.ensureScheduleTargets(body.staffId!, body.shiftId!, body.zoneId!);
     const warnings: string[] = [];
@@ -273,18 +284,25 @@ export class ScheduleService {
     const overlapWarning = await this.ensureNoShiftTimeOverlap(body.staffId!, body.shiftId!, body.workDate!, undefined, force);
     if (overlapWarning) warnings.push(overlapWarning);
 
-    const overstaffWarning = await this.ensureNoOverstaffing(body.shiftId!, body.zoneId!, body.workDate!, force);
+    const { overstaffWarning, schedule } = await AppDataSource.transaction(async (manager) => {
+      const lockKey = this.advisoryLockKey(body.shiftId!, body.zoneId!, body.workDate!);
+      await manager.query(`SELECT pg_advisory_xact_lock($1)`, [lockKey]);
+
+      const overstaffWarningInner = await this.ensureNoOverstaffing(body.shiftId!, body.zoneId!, body.workDate!, force, manager);
+      const newSchedule = await manager.save(StaffSchedule, manager.create(StaffSchedule, {
+        staffId: body.staffId!,
+        shiftId: body.shiftId!,
+        zoneId: body.zoneId!,
+        workDate: body.workDate!,
+        assignedBy: actorId || null,
+        note: body.note ?? null,
+        status: body.status ?? 'scheduled',
+      }));
+      return { overstaffWarning: overstaffWarningInner, schedule: newSchedule };
+    });
+
     if (overstaffWarning) warnings.push(overstaffWarning);
 
-    const schedule = await this.schedules.save(this.schedules.create({
-      staffId: body.staffId!,
-      shiftId: body.shiftId!,
-      zoneId: body.zoneId!,
-      workDate: body.workDate!,
-      assignedBy: actorId || null,
-      note: body.note ?? null,
-      status: body.status ?? 'scheduled',
-    }));
     await this.log(force ? 'assignment.force_created' : 'assignment.created', 'staff_schedule', schedule.id, actorId, { ...body, force, warnings });
 
     const shift = await this.shifts.findOneBy({ id: body.shiftId! });
@@ -316,11 +334,18 @@ export class ScheduleService {
     const overlapWarning = await this.ensureNoShiftTimeOverlap(next.staffId, next.shiftId, next.workDate, id, force);
     if (overlapWarning) warnings.push(overlapWarning);
 
-    const overstaffWarning = await this.ensureNoOverstaffing(next.shiftId, next.zoneId, next.workDate, force);
+    const { overstaffWarning, saved } = await AppDataSource.transaction(async (manager) => {
+      const lockKey = this.advisoryLockKey(next.shiftId, next.zoneId, next.workDate);
+      await manager.query(`SELECT pg_advisory_xact_lock($1)`, [lockKey]);
+
+      const overstaffWarningInner = await this.ensureNoOverstaffing(next.shiftId, next.zoneId, next.workDate, force, manager);
+      Object.assign(schedule, body);
+      const updated = await manager.save(StaffSchedule, schedule);
+      return { overstaffWarning: overstaffWarningInner, saved: updated };
+    });
+
     if (overstaffWarning) warnings.push(overstaffWarning);
 
-    Object.assign(schedule, body);
-    const saved = await this.schedules.save(schedule);
     await this.log(force ? 'assignment.force_updated' : 'assignment.updated', 'staff_schedule', id, actorId, { ...body, force, warnings });
 
     const updatedShift = await this.shifts.findOneBy({ id: next.shiftId! });
@@ -885,17 +910,20 @@ export class ScheduleService {
     const shift = await this.requireShift(schedule.shiftId);
     const now = new Date();
     const shiftStart = new Date(`${schedule.workDate}T${shift.startTime}`);
-    const thirtyMinBefore = new Date(shiftStart.getTime() - 30 * 60 * 1000);
-    if (now < thirtyMinBefore) {
-      throw new ConflictError(`Chưa đến giờ check-in (shift starts at ${shift.startTime}, check-in opens 30 min before)`);
+    const checkinWindowMs = 45 * 60 * 1000;
+    const checkinOpen = new Date(shiftStart.getTime() - checkinWindowMs);
+    if (now < checkinOpen) {
+      throw new ConflictError(`Chưa đến giờ check-in (shift starts at ${shift.startTime}, check-in opens 45 min before)`);
     }
 
     let checkedViaWifi = false;
     if (lat != null && lng != null && schedule.zoneId) {
       const gf = await this.geofence.findOneBy({ zoneId: schedule.zoneId, isActive: true });
       if (gf) {
+        const gpsTolerance = 15;
+        const effectiveRadius = gf.radiusMeters + gpsTolerance;
         const distance = haversineDistanceMeters(lat, lng, gf.latitude, gf.longitude);
-        if (distance > gf.radiusMeters) {
+        if (distance > effectiveRadius) {
           if (wifiSsid && gf.allowedWifiSsids?.length && gf.allowedWifiSsids.includes(wifiSsid)) {
             checkedViaWifi = true;
           } else {
@@ -1256,10 +1284,11 @@ export class ScheduleService {
     return undefined;
   }
 
-  private async ensureNoOverstaffing(shiftId: string, zoneId: string, workDate: string, force?: boolean) {
+  private async ensureNoOverstaffing(shiftId: string, zoneId: string, workDate: string, force?: boolean, manager?: import('typeorm').EntityManager) {
     const shift = await this.requireShift(shiftId);
     if (!shift.maxStaff) return undefined;
-    const count = await this.schedules.count({
+    const repo = manager ? manager.getRepository(StaffSchedule) : this.schedules;
+    const count = await repo.count({
       where: { shiftId, zoneId, workDate, status: Not(In(['cancelled', 'completed'])) },
     });
     if (count >= shift.maxStaff) {
