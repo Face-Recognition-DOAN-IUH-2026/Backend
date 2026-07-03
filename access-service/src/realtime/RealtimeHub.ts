@@ -4,7 +4,7 @@ import { Response } from 'express';
 import { WebSocket } from 'ws';
 import { amqpClient } from '../clients/AmqpClient';
 import { config } from '../config';
-import { AccessRealtimeEvent } from '../contracts';
+import { AccessRealtimeEvent, FaceResultEvent } from '../contracts';
 
 const EXCHANGE = 'access.realtime.fanout';
 
@@ -80,6 +80,19 @@ export class RealtimeHub {
     for (const client of this.wsClients) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify({ event: 'camera_event', data: event }));
+      }
+    }
+  }
+
+  broadcastFaceResult(event: FaceResultEvent) {
+    const payload = JSON.stringify(event);
+    for (const client of this.sseClients) {
+      client.write(`event: face_result\n`);
+      client.write(`data: ${payload}\n\n`);
+    }
+    for (const client of this.wsClients) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ event: 'face_result', data: event }));
       }
     }
   }

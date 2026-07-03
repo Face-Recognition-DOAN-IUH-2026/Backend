@@ -6,6 +6,7 @@ import { AppDataSource } from './data-source';
 import aiRoutes from './routes/ai.routes';
 import chatRouter from './routes/chat';
 import confirmRouter from './routes/confirm';
+import cardParserRouter from './routes/card-parser';
 import patronChatRouter from './routes/chat.patron';
 import staffChatRouter from './routes/chat.staff';
 import adminChatRouter from './routes/chat.admin';
@@ -69,6 +70,9 @@ app.use('/ai/admin/chat', auth, requireRole(['admin']), adminChatRouter);
 // Legacy routes (backward compatibility — same endpoints, same auth)
 app.use('/ai/chat', auth, chatRouter);
 app.use('/ai/confirm', auth, confirmRouter);
+
+// Card text parsing (OCR result -> structured data via LLM)
+app.use('/ai', auth, cardParserRouter);
 
 // AI Command Center routes (admin/staff only) - /ai/command-center/*, /ai/insights/*, /ai/recommendations/*
 app.use('/ai', auth, aiRoutes);

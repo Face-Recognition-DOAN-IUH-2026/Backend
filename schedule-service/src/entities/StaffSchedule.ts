@@ -1,6 +1,8 @@
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
 @Index(['staffId', 'workDate', 'status'])
+@Index(['shiftId', 'zoneId', 'workDate'])
+@Index(['staffId', 'shiftId', 'zoneId', 'workDate'])
 @Entity({ name: 'staff_schedules', schema: 'schedule' })
 export class StaffSchedule {
   @PrimaryGeneratedColumn('uuid')

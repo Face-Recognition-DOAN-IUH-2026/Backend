@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import auth, camera, face, kiosk, patrons, tasks, users
+from api.routers import auth, camera, face, kiosk, ocr, patrons, tasks, users
 from infra.config import settings
 
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
@@ -152,6 +152,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(face.router)
+    app.include_router(ocr.router)
     app.include_router(tasks.router)
     app.include_router(users.router)
     app.include_router(patrons.router)

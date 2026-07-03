@@ -48,6 +48,12 @@ export class BorrowRepository {
     return this.copies.findOne({ where: { id }, relations: { book: true } });
   }
 
+  async getCopiesByIds(ids: string[]): Promise<Map<string, BookCopy & { book: Book }>> {
+    if (!ids.length) return new Map();
+    const copies = await this.copies.find({ where: { id: In(ids) }, relations: { book: true } });
+    return new Map(copies.map(c => [c.id, c as BookCopy & { book: Book }]));
+  }
+
   async getAvailableCopy(bookId: string) {
     return this.copies.findOne({ where: { bookId, isAvailable: true }, order: { createdAt: 'ASC' } });
   }
@@ -368,19 +374,53 @@ export class BorrowRepository {
   }
 
   async bulkDeleteBooks(bookIds: string[]): Promise<{ deleted: number; errors: string[] }> {
-    const errors: string[] = [];
-    let deleted = 0;
-    for (const bookId of bookIds) {
-      const hasActive = await this.hasActiveBorrows(bookId);
-      if (hasActive) {
-        const book = await this.books.findOne({ where: { id: bookId } });
-        errors.push(book ? `${book.title} (${book.isbn}) - đang có bản được mượn` : `ID ${bookId} - đang có bản được mượn`);
-        continue;
-      }
-      await this.deleteBookAndCopies(bookId);
-      deleted++;
+    if (!bookIds.length) return { deleted: 0, errors: [] };
+
+    // Batch-check active borrows with a single GROUP BY query (was N individual queries)
+    const activeCounts = await this.records.createQueryBuilder('record')
+      .innerJoin('record.copy', 'copy')
+      .select('copy.bookId', 'bookId')
+      .addSelect('COUNT(*)', 'cnt')
+      .where('copy.bookId IN (:...bookIds)', { bookIds })
+      .andWhere('record.status = :status', { status: 'borrowed' })
+      .andWhere('record.returnAt IS NULL')
+      .groupBy('copy.bookId')
+      .getRawMany();
+
+    const activeMap = new Map(activeCounts.map((r: any) => [r.bookId, +r.cnt]));
+    const booksWithActive = bookIds.filter(id => (activeMap.get(id) ?? 0) > 0);
+
+    // Fetch book details for error messages in one query (was N individual queries)
+    let bookInfoMap = new Map<string, { title: string; isbn: string }>();
+    if (booksWithActive.length > 0) {
+      const books = await this.books.find({ where: { id: In(booksWithActive) }, select: ['id', 'title', 'isbn'] });
+      bookInfoMap = new Map(books.map(b => [b.id, { title: b.title, isbn: b.isbn }]));
     }
-    return { deleted, errors };
+
+    const errors: string[] = [];
+    const deletableIds: string[] = [];
+
+    for (const bookId of bookIds) {
+      if ((activeMap.get(bookId) ?? 0) > 0) {
+        const info = bookInfoMap.get(bookId);
+        errors.push(info ? `${info.title} (${info.isbn}) - đang có bản được mượn` : `ID ${bookId} - đang có bản được mượn`);
+      } else {
+        deletableIds.push(bookId);
+      }
+    }
+
+    // Batch-delete in order: records, copies, books
+    if (deletableIds.length > 0) {
+      await this.records.createQueryBuilder()
+        .delete()
+        .from(BorrowRecord)
+        .where('copyId IN (SELECT id FROM book_copies WHERE bookId IN (:...bookIds))', { bookIds: deletableIds })
+        .execute();
+      await this.copies.delete({ bookId: In(deletableIds) });
+      await this.books.delete(deletableIds);
+    }
+
+    return { deleted: deletableIds.length, errors };
   }
 
   // === Borrow Slip ===
