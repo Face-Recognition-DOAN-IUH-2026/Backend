@@ -2,6 +2,7 @@ import { Column, CreateDateColumn, DeleteDateColumn, Entity, Index, PrimaryGener
 
 @Index(['scheduleId'])
 @Index(['staffId', 'checkInAt'])
+@Index(['status', 'checkInAt'])
 @Entity({ name: 'staff_attendance', schema: 'schedule' })
 export class StaffAttendance {
   @PrimaryGeneratedColumn('uuid')

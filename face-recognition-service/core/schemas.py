@@ -70,6 +70,18 @@ class LivenessResult(BaseModel):
     job_id: str
 
 
+class ProcessRequest(BaseModel):
+    camera_id: str = Field(default="unknown", min_length=1)
+    process_type: str = Field(default="face_recognition", pattern="^(face_recognition|liveness_check|verify|identify)$")
+    consent_given: bool = True
+    target_user_id: str | None = None
+
+
+class ProcessResult(BaseModel):
+    task_id: str
+    status: str = "processing"
+
+
 # ===== Patron Schemas =====
 
 class PatronCreate(BaseModel):

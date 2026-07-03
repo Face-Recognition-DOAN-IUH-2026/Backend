@@ -14,6 +14,21 @@ export const ACCESS_STATUSES = [
 export type AccessStatus = (typeof ACCESS_STATUSES)[number];
 export type AccessType = 'entry' | 'exit';
 
+export const FaceResultEventSchema = z.object({
+  event_id: z.string().min(1),
+  event_type: z.literal('face_result'),
+  task_id: z.string().min(1),
+  process_type: z.string().min(1),
+  status: z.enum(['SUCCESS', 'FAILURE']),
+  result: z.record(z.unknown()).optional(),
+  user_id: z.string().nullish(),
+  camera_id: z.string().nullish(),
+  occurred_at: z.string().datetime(),
+  source: z.string().min(1).default('face-recognition-service'),
+});
+
+export type FaceResultEvent = z.infer<typeof FaceResultEventSchema>;
+
 export const AccessStatusSchema = z.enum(ACCESS_STATUSES);
 export const AccessTypeSchema = z.enum(['entry', 'exit']);
 

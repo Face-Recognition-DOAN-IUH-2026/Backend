@@ -643,6 +643,103 @@ def liveness_task(self, object_key: str | None = None, image_data: str | None = 
         raise self.retry(exc=exc)
 
 
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
+def process_image_task(
+    self,
+    object_key: str,
+    camera_id: str = "unknown",
+    process_type: str = "face_recognition",
+    user_id: str | None = None,
+    target_user_id: str | None = None,
+) -> dict:
+    """Unified image processing endpoint for SSE-based result delivery.
+
+    Routes to the appropriate processing pipeline based on process_type,
+    then publishes the result to access-service for real-time SSE broadcast.
+    """
+    logger.info("Processing image: type=%s, camera=%s, user=%s", process_type, camera_id, user_id)
+    try:
+        _, img = _resolve_image(object_key, None)
+
+        if process_type == "verify":
+            if not target_user_id:
+                return {"status": "error", "error": "target_user_id required for verify"}
+            vec = extract_embedding_placeholder(img)
+            norm_vec = l2_normalize(vec)
+            patron_id = _get_patron_id_by_user_id(target_user_id) or target_user_id
+            enrolled_emb = _get_milvus().get_embedding_by_user_id(patron_id)
+            if not enrolled_emb:
+                result = {"verified": False, "score": 0.0, "error": "Face not enrolled"}
+            else:
+                enrolled_arr = np.array(enrolled_emb, dtype=np.float32)
+                score = float(np.dot(np.array(norm_vec, dtype=np.float32), enrolled_arr))
+                result = {"verified": score > settings.face_match_threshold, "score": score}
+
+        elif process_type == "identify":
+            vec = extract_embedding_placeholder(img)
+            norm_vec = l2_normalize(vec)
+            search_results = _get_milvus().search(embedding=norm_vec, top_k=5)
+            matches = []
+            for h in search_results:
+                pid = h["user_id"]
+                user = _get_user_info(pid) or {"id": pid}
+                matches.append({
+                    "user_id": pid,
+                    "score": float(h["score"]),
+                    "email": user.get("email"),
+                    "full_name": user.get("full_name"),
+                    "role": user.get("role"),
+                })
+            result = {"matches": matches}
+
+        elif process_type == "liveness_check":
+            result = run_liveness_analysis(img)
+
+        else:
+            # face_recognition: identify + liveness in one pass
+            vec = extract_embedding_placeholder(img)
+            norm_vec = l2_normalize(vec)
+            search_results = _get_milvus().search(embedding=norm_vec, top_k=5)
+            best = _resolve_best_match(search_results, settings.face_match_threshold)
+            liveness = run_liveness_analysis(img)
+            if best:
+                patron_id = best["user_id"]
+                user = _get_user_via_api(patron_id)
+                access_status = "granted" if liveness.get("is_live", False) else "spoof"
+                _publish_camera_event({
+                    "camera_id": camera_id,
+                    "status": access_status,
+                    "patron_id": patron_id,
+                    "student_code": (user or {}).get("student_code"),
+                    "full_name": (user or {}).get("full_name"),
+                    "score": best["score"],
+                    "is_live": liveness.get("is_live"),
+                    "liveness_score": liveness.get("liveness_score"),
+                })
+            else:
+                _publish_camera_event({
+                    "camera_id": camera_id,
+                    "status": "no_match",
+                    "score": max((r["score"] for r in search_results), default=0.0),
+                })
+            result = {
+                "matches": [
+                    {"user_id": h["user_id"], "score": float(h["score"])}
+                    for h in search_results
+                ],
+                **liveness,
+            }
+
+        if object_key:
+            _delete_temp_frame(object_key)
+
+        return {"status": "success", "process_type": process_type, "result": result}
+
+    except Exception as exc:
+        logger.exception("process_image_task failed: type=%s", process_type)
+        raise self.retry(exc=exc)
+
+
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
 def delete_user_task(self, user_id: str) -> dict:
     """Delete face embeddings, enrollment images, and PG records for a user.

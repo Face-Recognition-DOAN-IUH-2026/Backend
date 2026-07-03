@@ -985,6 +985,15 @@ router.post('/create', async (req: Request, res: Response) => {
     }
 
     const repo = new BorrowRepository();
+    const requestedCopyIds = bookCopies.map((item: any) => item.bookCopyId).filter(Boolean);
+
+    // Batch-fetch all copies in one query (was N individual queries)
+    const copyMap = await repo.getCopiesByIds(requestedCopyIds);
+
+    // Batch-fetch active borrows once (was N queries inside loop)
+    const activeBorrows = await repo.getActiveBorrowsByPatron(patronId);
+    const activeBookIds = new Set(activeBorrows.map(r => r.bookId));
+
     const bookIds: string[] = [];
     const copyIds: (string | null)[] = [];
     const shelfLocations: (string | null)[] = [];
@@ -993,7 +1002,7 @@ router.post('/create', async (req: Request, res: Response) => {
       const copyId = item.bookCopyId;
       if (!copyId) continue;
 
-      const copy = await repo.getCopyById(copyId);
+      const copy = copyMap.get(copyId);
       if (!copy) {
         res.status(404).json({ success: false, detail: `Book copy ${copyId} not found` });
         return;
@@ -1003,14 +1012,13 @@ router.post('/create', async (req: Request, res: Response) => {
         return;
       }
 
-      const book = copy.book || await repo.getBookById(copy.bookId);
+      const book = copy.book;
       if (!book) {
         res.status(404).json({ success: false, detail: 'Book not found for copy' });
         return;
       }
 
-      const active = await repo.getActiveBorrowsByPatron(patronId);
-      if (active.some((r) => r.bookId === book.id)) {
+      if (activeBookIds.has(book.id)) {
         res.status(409).json({ success: false, detail: `Book "${book.title}" is already borrowed by this patron` });
         return;
       }
@@ -1032,18 +1040,21 @@ router.post('/create', async (req: Request, res: Response) => {
       return;
     }
 
+    // Mark copies as unavailable (use cached copies, no re-fetch)
     for (const copyId of copyIds) {
       if (copyId) {
-        const copy = await repo.getCopyById(copyId);
+        const copy = copyMap.get(copyId);
         if (copy) await repo.setCopyAvailable(copy, false);
       }
     }
 
     const { slip, records } = await repo.createSlip(patronId, bookIds, copyIds, shelfLocations);
 
+    // Enrich response using cached data (was N individual book+copy queries)
     for (let i = 0; i < records.length; i += 1) {
+      const copy = copyIds[i] ? copyMap.get(copyIds[i]!) : null;
       records[i].book = (await repo.getBookById(bookIds[i]))!;
-      records[i].copy = copyIds[i] ? await repo.getCopyById(copyIds[i]!) : null;
+      records[i].copy = copy || null;
     }
 
     for (const record of records) {

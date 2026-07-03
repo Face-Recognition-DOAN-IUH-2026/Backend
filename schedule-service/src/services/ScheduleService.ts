@@ -2,6 +2,7 @@ import { Between, In, IsNull, Not } from 'typeorm';
 import { getAuditContext } from '../middlewares/auditContext';
 import { AppDataSource } from '../data-source';
 import { config } from '../config';
+import { RedisCacheService } from '../redis';
 import {
   LibraryZone,
   ScheduleAuditLog,
@@ -45,12 +46,17 @@ export class ScheduleService {
 
   async createZone(actorId: string, body: Partial<LibraryZone>) {
     const zone = await this.zones.save(this.zones.create(body));
+    await RedisCacheService.del('schedule:zones:list');
     await this.log('zone.created', 'library_zone', zone.id, actorId, body);
     return zone;
   }
 
   async listZones() {
-    return this.zones.find({ order: { floor: 'ASC', zoneName: 'ASC' } });
+    const cached = await RedisCacheService.get<LibraryZone[]>('schedule:zones:list');
+    if (cached) return cached;
+    const zones = await this.zones.find({ order: { floor: 'ASC', zoneName: 'ASC' } });
+    await RedisCacheService.set('schedule:zones:list', zones, 3600);
+    return zones;
   }
 
   async updateZone(actorId: string, id: string, body: Partial<LibraryZone>) {
@@ -58,6 +64,7 @@ export class ScheduleService {
     if (!zone) throw new NotFoundError('Zone not found');
     Object.assign(zone, body);
     const saved = await this.zones.save(zone);
+    await RedisCacheService.del('schedule:zones:list');
     await this.log('zone.updated', 'library_zone', id, actorId, body);
     return saved;
   }
@@ -67,6 +74,7 @@ export class ScheduleService {
     if (!zone) throw new NotFoundError('Zone not found');
     zone.isActive = false;
     await this.zones.save(zone);
+    await RedisCacheService.del('schedule:zones:list');
     const cancelledCount = await this.cancelAssignmentsForTarget(actorId, { zoneId: id }, 'zone.deactivated');
 
     const templates = await this.templates.findBy({ zoneId: id, isActive: true });
@@ -79,12 +87,17 @@ export class ScheduleService {
 
   async createShift(actorId: string, body: Partial<StaffShift>) {
     const shift = await this.shifts.save(this.shifts.create(body));
+    await RedisCacheService.del('schedule:shifts:list');
     await this.log('shift.created', 'staff_shift', shift.id, actorId, body);
     return shift;
   }
 
   async listShifts() {
-    return this.shifts.find({ order: { startTime: 'ASC' } });
+    const cached = await RedisCacheService.get<StaffShift[]>('schedule:shifts:list');
+    if (cached) return cached;
+    const shifts = await this.shifts.find({ order: { startTime: 'ASC' } });
+    await RedisCacheService.set('schedule:shifts:list', shifts, 3600);
+    return shifts;
   }
 
   async updateShift(actorId: string, id: string, body: Partial<StaffShift>) {
@@ -92,6 +105,7 @@ export class ScheduleService {
     if (!shift) throw new NotFoundError('Shift not found');
     Object.assign(shift, body);
     const saved = await this.shifts.save(shift);
+    await RedisCacheService.del('schedule:shifts:list');
     await this.log('shift.updated', 'staff_shift', id, actorId, body);
     return saved;
   }
@@ -101,6 +115,7 @@ export class ScheduleService {
     if (!shift) throw new NotFoundError('Shift not found');
     shift.isActive = false;
     await this.shifts.save(shift);
+    await RedisCacheService.del('schedule:shifts:list');
     const cancelledCount = await this.cancelAssignmentsForTarget(actorId, { shiftId: id }, 'shift.deactivated');
 
     const templates = await this.templates.findBy({ shiftId: id, isActive: true });
@@ -593,10 +608,12 @@ export class ScheduleService {
       for (const s of extraShifts) shiftMap.set(s.id, s);
     }
 
-    const savedEntities: StaffSchedule[] = [];
     const auditEntries: Array<{ action: string; entity: string; entityId: string; actorId: string; data: any }> = [];
 
     const result = await AppDataSource.transaction(async (transactionalEntityManager) => {
+      const virtualAssignments = [...currentAssignments];
+      const toSave: Array<{ staffId: string; shiftId: string; zoneId: string; workDate: string; assignedBy: string | null; note: string | null; status: string }> = [];
+
       for (const item of items) {
         const key = `${item.shiftId}:${item.zoneId}:${item.workDate}`;
         const shiftDef = shiftMap.get(item.shiftId);
@@ -610,7 +627,7 @@ export class ScheduleService {
           capacityCounts.set(key, currentCount + 1);
         }
 
-        const hasDuplicate = currentAssignments.some(
+        const hasDuplicate = virtualAssignments.some(
           a => a.staffId === item.staffId &&
                a.shiftId === item.shiftId &&
                a.zoneId === item.zoneId &&
@@ -619,7 +636,7 @@ export class ScheduleService {
         );
         if (hasDuplicate && !force) throw new ConflictError('Staff is already assigned to this shift and zone');
 
-        const dayAssignments = currentAssignments.filter(a => a.staffId === item.staffId && a.workDate === item.workDate);
+        const dayAssignments = virtualAssignments.filter(a => a.staffId === item.staffId && a.workDate === item.workDate);
         const hasZoneConflict = dayAssignments.some(a => a.zoneId !== item.zoneId);
         if (hasZoneConflict && !force) throw new ConflictError('Staff is already assigned to a different zone on this day');
 
@@ -640,21 +657,19 @@ export class ScheduleService {
           }
         }
 
-        const schedule = transactionalEntityManager.create(StaffSchedule, {
+        const status = item.status ?? 'scheduled';
+        virtualAssignments.push({ staffId: item.staffId, shiftId: item.shiftId, zoneId: item.zoneId, workDate: item.workDate, status } as any);
+        toSave.push({
           staffId: item.staffId,
           shiftId: item.shiftId,
           zoneId: item.zoneId,
           workDate: item.workDate,
           assignedBy: actorId || null,
           note: item.note ?? null,
-          status: item.status ?? 'scheduled',
+          status,
         });
-        const saved = await transactionalEntityManager.save(StaffSchedule, schedule);
-        savedEntities.push(saved);
 
-        currentAssignments.push(saved);
-
-        auditEntries.push({ action: 'assignment.created', entity: 'staff_schedule', entityId: saved.id, actorId, data: item });
+        auditEntries.push({ action: 'assignment.created', entity: 'staff_schedule', entityId: '', actorId, data: item });
 
         publishEvent('schedule.changed', {
           staffId: item.staffId,
@@ -664,6 +679,16 @@ export class ScheduleService {
           changeType: 'assigned',
         });
       }
+
+      if (toSave.length === 0) return [];
+
+      const entities = toSave.map(data => transactionalEntityManager.create(StaffSchedule, data));
+      const savedEntities = await transactionalEntityManager.save(StaffSchedule, entities);
+
+      for (let i = 0; i < savedEntities.length; i++) {
+        auditEntries[i].entityId = savedEntities[i].id;
+      }
+
       return savedEntities;
     });
 
@@ -717,16 +742,36 @@ export class ScheduleService {
       preferencesByShiftZone.set(key, list);
     }
 
+    // Build Maps for O(1) lookups (replaces .find() in inner loops)
+    const staffMap = new Map(staff.map(s => [s.id, s]));
+    const shiftMap = new Map(activeShifts.map(s => [s.id, s]));
+    const zoneMap = new Map(activeZones.map(z => [z.id, z]));
+
+    // Build Set of existing assignment composite keys for O(1) conflict check
+    const existingKeys = new Set(
+      existingAssignments.map(a => `${a.staffId}:${a.workDate}:${a.shiftId}:${a.zoneId}`)
+    );
 
     // Helper: check time overlap between two shifts
     const shiftsOverlap = (shiftA: typeof activeShifts[0], shiftB: typeof activeShifts[0]) =>
       shiftA.startTime < shiftB.endTime && shiftA.endTime > shiftB.startTime;
 
-    // Helper: get all assignments for a staff on a given day (existing + proposed)
-    const getStaffDayAssignments = (staffId: string, workDate: string) => [
-      ...existingAssignments.filter((a) => a.staffId === staffId && a.workDate === workDate),
-      ...proposed.filter((p) => p.staffId === staffId && p.workDate === workDate),
-    ];
+    // Helper: get all assignments for a staff on a given day (existing + proposed) using Maps
+    const staffDayMap = new Map<string, Array<typeof existingAssignments[0] | typeof proposed[0]>>();
+    for (const a of existingAssignments) {
+      const key = `${a.staffId}:${a.workDate}`;
+      const list = staffDayMap.get(key) || [];
+      list.push(a);
+      staffDayMap.set(key, list);
+    }
+    // proposed items are added dynamically below
+
+    const getStaffDayAssignments = (staffId: string, workDate: string) => {
+      const key = `${staffId}:${workDate}`;
+      const existing = staffDayMap.get(key) || [];
+      const newProposed = proposed.filter(p => p.staffId === staffId && p.workDate === workDate);
+      return [...existing, ...newProposed];
+    };
 
     const understaffed: Array<{ shiftId: string; zoneId: string; workDate: string; needed: number; shiftName?: string; zoneName?: string }> = [];
 
@@ -747,12 +792,13 @@ export class ScheduleService {
 
       for (const t of validDayTemplates) {
         // Skip if staff member is not found in active staff list
-        if (!staff.find((s) => s.id === t.staffId)) continue;
+        if (!staffMap.has(t.staffId)) continue;
         // Skip if shift or zone no longer active
-        if (!activeShifts.find((sh) => sh.id === t.shiftId)) continue;
-        if (!activeZones.find((z) => z.id === t.zoneId)) continue;
-        // Skip if already assigned (existing or already proposed)
-        if (existingAssignments.some((a) => a.staffId === t.staffId && a.workDate === workDate && a.shiftId === t.shiftId && a.zoneId === t.zoneId)) {
+        if (!shiftMap.has(t.shiftId)) continue;
+        if (!zoneMap.has(t.zoneId)) continue;
+        // Skip if already assigned (existing or already proposed) — O(1) Set lookup
+        const tKey = `${t.staffId}:${workDate}:${t.shiftId}:${t.zoneId}`;
+        if (existingKeys.has(tKey)) {
           skipped.push(`template_exists:${t.staffId}:${workDate}`);
           continue;
         }
@@ -764,10 +810,10 @@ export class ScheduleService {
         const hasZoneConflict = dayAssignments.some((a) => a.zoneId !== t.zoneId);
         if (hasZoneConflict) { skipped.push(`template_zone_conflict:${t.staffId}:${workDate}`); continue; }
         // Skip if shift time overlap
-        const templateShift = activeShifts.find((sh) => sh.id === t.shiftId)!;
+        const templateShift = shiftMap.get(t.shiftId)!;
         const hasTimeOverlap = dayAssignments.some((a) => {
           if (a.shiftId === t.shiftId) return false;
-          const existingShift = activeShifts.find((sh) => sh.id === a.shiftId);
+          const existingShift = shiftMap.get(a.shiftId);
           return existingShift ? shiftsOverlap(templateShift, existingShift) : false;
         });
         if (hasTimeOverlap) { skipped.push(`template_time_overlap:${t.staffId}:${workDate}`); continue; }
@@ -822,11 +868,11 @@ export class ScheduleService {
             }
             if (hasZoneConflict) { skipped.push(`zone_conflict:${s.id}:${workDate}`); continue; }
 
-            const shiftDef = activeShifts.find((sh) => sh.id === shift.id)!;
+            const shiftDef = shiftMap.get(shift.id)!;
             let hasTimeOverlap = false;
             for (const a of sameDayAssignments) {
               if (a.shiftId !== shift.id) {
-                const existingShiftDef = activeShifts.find((sh) => sh.id === a.shiftId);
+                const existingShiftDef = shiftMap.get(a.shiftId);
                 if (existingShiftDef && shiftsOverlap(shiftDef, existingShiftDef)) {
                   hasTimeOverlap = true;
                   break;
