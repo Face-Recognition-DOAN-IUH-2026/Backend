@@ -5,7 +5,6 @@ import { Book } from './entities/Book';
 import { BookCopy } from './entities/BookCopy';
 import { BorrowRecord } from './entities/BorrowRecord';
 import { BorrowSlip } from './entities/BorrowSlip';
-import { BookReservation } from './entities/BookReservation';
 import { Waitlist } from './entities/Waitlist';
 
 export const AppDataSource = new DataSource({
@@ -15,7 +14,7 @@ export const AppDataSource = new DataSource({
   database: config.postgres.database,
   username: config.postgres.username,
   password: config.postgres.password,
-  entities: [Book, BookCopy, BorrowRecord, BorrowSlip, BookReservation, Waitlist],
+  entities: [Book, BookCopy, BorrowRecord, BorrowSlip, Waitlist],
   synchronize: true,
   logging: process.env.TYPEORM_LOGGING === 'true',
 });

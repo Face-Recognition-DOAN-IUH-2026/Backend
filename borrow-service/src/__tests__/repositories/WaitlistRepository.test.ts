@@ -20,6 +20,7 @@ describe('WaitlistRepository', () => {
         update: jest.fn().mockReturnThis(),
         set: jest.fn().mockReturnThis(),
         whereInIds: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
         execute: jest.fn().mockResolvedValue({ affected: 1 }),
       }),
     };
@@ -124,6 +125,74 @@ describe('WaitlistRepository', () => {
       await repo.markNotified(['wl-1', 'wl-2']);
 
       expect(mockWaitlistRepo.createQueryBuilder).toHaveBeenCalled();
+    });
+  });
+
+  describe('getNextInQueue', () => {
+    it('should return null when no waiting entries', async () => {
+      mockWaitlistRepo.find.mockResolvedValue([]);
+
+      const result = await repo.getNextInQueue('book-1');
+
+      expect(result).toBeNull();
+      expect(mockWaitlistRepo.find).toHaveBeenCalledWith({
+        where: { bookId: 'book-1', status: 'waiting' },
+        order: { createdAt: 'ASC' },
+        take: 1,
+      });
+    });
+
+    it('should return the first waiting entry', async () => {
+      const entry = { id: 'wl-1', bookId: 'book-1', patronId: 'p1', status: 'waiting', createdAt: new Date('2025-01-01') };
+      mockWaitlistRepo.find.mockResolvedValue([entry]);
+
+      const result = await repo.getNextInQueue('book-1');
+
+      expect(result).toEqual(entry);
+    });
+  });
+
+  describe('markExpired', () => {
+    it('should update status to expired', async () => {
+      await repo.markExpired('wl-1');
+
+      expect(mockWaitlistRepo.createQueryBuilder).toHaveBeenCalled();
+    });
+  });
+
+  describe('markFulfilled', () => {
+    it('should update status to fulfilled', async () => {
+      await repo.markFulfilled('wl-1');
+
+      expect(mockWaitlistRepo.createQueryBuilder).toHaveBeenCalled();
+    });
+  });
+
+  describe('getExpiredNotifications', () => {
+    it('should return entries with notifiedAt older than threshold', async () => {
+      const old = new Date(Date.now() - 48 * 60 * 60 * 1000);
+      const recent = new Date(Date.now() - 1 * 60 * 60 * 1000);
+      const entries = [
+        { id: 'wl-1', status: 'notified', notifiedAt: old },
+        { id: 'wl-2', status: 'notified', notifiedAt: recent },
+      ];
+      mockWaitlistRepo.find.mockResolvedValue(entries);
+
+      const result = await repo.getExpiredNotifications(24);
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('wl-1');
+    });
+
+    it('should return empty when no entries exceed threshold', async () => {
+      const recent = new Date(Date.now() - 1 * 60 * 60 * 1000);
+      mockWaitlistRepo.find.mockResolvedValue([
+        { id: 'wl-1', status: 'notified', notifiedAt: recent },
+      ]);
+
+      const result = await repo.getExpiredNotifications(24);
+
+      expect(result).toHaveLength(0);
     });
   });
 });

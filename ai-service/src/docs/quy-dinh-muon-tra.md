@@ -1,3 +1,7 @@
+﻿---
+roles: patron, staff
+---
+
 # Quy định mượn trả sách - Thư viện IUH
 
 ## Điều kiện mượn sách

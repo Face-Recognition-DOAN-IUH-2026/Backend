@@ -31,6 +31,7 @@ const rules = [
       /AccessServiceClient\.ts$/,
       /routes[\\/]borrow\.routes\.ts$/,
       /config\.ts$/,
+      /__tests__[\\/]/,
     ],
   },
   {
