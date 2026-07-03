@@ -11,9 +11,8 @@ import { WaitlistRepository } from '../repositories/WaitlistRepository';
 import { isPatronInside, getPatronAccessStatus, getPatronRawAccessStatus } from '../clients/AccessServiceClient';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { lookupPatronById, lookupPatronByStudentCode, lookupPatronsByIds, PatronSummary } from '../clients/UserServiceClient';
-import { serializeBook, serializeBookWithStats, serializeBorrowRecord, serializeBorrowSlip, serializeCopy, serializeReservation } from '../services/serializers';
+import { serializeBook, serializeBookWithStats, serializeBorrowRecord, serializeBorrowSlip, serializeCopy } from '../services/serializers';
 import { publishEvent } from '../utils/eventPublisher';
-import { checkReservationsOnReturn } from '../services/reservationFulfillment';
 import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
@@ -931,7 +930,6 @@ router.post('/staff-return/by-patron', requireRole(['admin', 'staff'], 'Chi quan
       barcode: copy?.barcode,
       fineAmount: record.fineAmount || 0,
     });
-    checkReservationsOnReturn(book.id).catch(() => {});
 
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
@@ -1016,7 +1014,6 @@ router.post('/staff-return/batch', requireRole(['admin', 'staff'], 'Chi quan tri
           barcode: copy?.barcode,
           fineAmount: record.fineAmount || 0,
         });
-        checkReservationsOnReturn(book.id).catch(() => {});
 
         results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'success', message: 'Tra sach thanh cong' });
         ok += 1;
@@ -1079,7 +1076,6 @@ router.post('/staff-return/record/:record_id', requireRole(['admin', 'staff'], '
       barcode: copy?.barcode,
       fineAmount: record.fineAmount || 0,
     });
-    checkReservationsOnReturn(record.bookId).catch(() => {});
 
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
@@ -1130,7 +1126,6 @@ router.post('/staff-return', requireRole(['admin', 'staff'], 'Chi quan tri vien 
       barcode: copy.barcode,
       fineAmount: record.fineAmount || 0,
     });
-    checkReservationsOnReturn(record.bookId).catch(() => {});
 
     res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
   } catch (error) {
@@ -1946,148 +1941,6 @@ router.put('/books/:book_id', requireRole(['admin', 'staff'], 'Chi quan tri vien
 
 /**
  * @swagger
- * /borrow/reserve:
- *   post:
- *     summary: Reserve a book
- *     tags: [Borrow]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [book_id]
- *             properties:
- *               book_id:
- *                 type: string
- *                 format: uuid
- *     responses:
- *       200:
- *         description: Reservation created
- */
-router.post('/reserve', requireRole(['patron', 'admin', 'staff'], 'Chi doc gia moi co the dat sach'), async (req: AuthRequest, res, next) => {
-  try {
-    const body = z.object({ book_id: z.string().uuid() }).parse(req.body);
-    const userId = patronIdFrom(req.user);
-    const repo = new BorrowRepository();
-    const book = await repo.getBookById(body.book_id);
-    if (!book) throw new HttpError(404, 'Khong tim thay sach');
-
-    const availableCopies = await repo.countCopies(book.id, true);
-    if (availableCopies > 0) {
-      throw new HttpError(409, 'Sach nay con ban, ban co the muon truc tiep');
-    }
-
-    const reservationRepo = AppDataSource.getRepository('BookReservation');
-    const existing = await reservationRepo.findOne({
-      where: { patronId: userId, bookId: book.id, status: 'pending' },
-    });
-    if (existing) throw new HttpError(409, 'Ban da dat sach nay roi');
-
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + config.reservationExpiryHours);
-
-    const reservation = reservationRepo.create({
-      patronId: userId,
-      bookId: book.id,
-      expiresAt,
-      status: 'pending',
-    });
-    await reservationRepo.save(reservation);
-
-    const queuePosition = await reservationRepo.count({ where: { bookId: book.id, status: 'pending' as any } });
-    res.json({
-      status: 'success',
-      message: `Dat sach thanh cong. Hang doi: #${queuePosition}. Sach se duoc giu ${config.reservationExpiryHours} gio.`,
-      reservation: serializeReservation(reservation),
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /borrow/reservations:
- *   get:
- *     summary: Get patron reservations
- *     tags: [Borrow]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of reservations
- */
-router.get('/reservations', requireRole(['patron', 'admin', 'staff'], 'Chi doc gia moi co the xem dat sach'), async (req: AuthRequest, res, next) => {
-  try {
-    const userId = patronIdFrom(req.user);
-    const reservationRepo = AppDataSource.getRepository('BookReservation');
-    const reservations = await reservationRepo.find({
-      where: { patronId: userId, status: 'pending' as any },
-      relations: { book: true },
-      order: { reservedAt: 'ASC' },
-    });
-
-    const now = new Date();
-    const valid: any[] = [];
-    const expired: any[] = [];
-    for (const r of reservations) {
-      if (r.expiresAt && new Date(r.expiresAt) < now) {
-        expired.push(r);
-      } else {
-        valid.push(r);
-      }
-    }
-
-    for (const r of expired) {
-      r.status = 'expired';
-      await reservationRepo.save(r);
-    }
-
-    res.json({ items: valid.map(serializeReservation), total: valid.length });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /borrow/reservations/{id}:
- *   delete:
- *     summary: Cancel a reservation
- *     tags: [Borrow]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Reservation cancelled
- */
-router.delete('/reservations/:id', requireRole(['patron', 'admin', 'staff'], 'Chi doc gia moi co the huy dat sach'), async (req: AuthRequest, res, next) => {
-  try {
-    const userId = patronIdFrom(req.user);
-    const reservationRepo = AppDataSource.getRepository('BookReservation');
-    const reservation = await reservationRepo.findOne({
-      where: { id: req.params.id, patronId: userId },
-    });
-    if (!reservation) throw new HttpError(404, 'Khong tim thay dat hang');
-    await reservationRepo.remove(reservation);
-    res.json({ status: 'success', message: 'Huy dat hang thanh cong' });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
  * /borrow/renew:
  *   post:
  *     summary: Renew a borrow
@@ -2145,7 +1998,7 @@ router.post('/renew', auth, async (req: AuthRequest, res, next) => {
   }
 });
 
-router.post('/waitlist', requireRole(['patron', 'admin', 'staff'], 'Chi doc gia moi co the vao danh sach cho'), async (req: AuthRequest, res, next) => {
+router.post('/waitlist', requireRole(['patron', 'admin', 'staff'], 'Chỉ độc giả, admin, nhân viên mới được vào danh sách chờ'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ book_id: z.string().uuid() }).parse(req.body);
     const userId = patronIdFrom(req.user);
@@ -2171,7 +2024,7 @@ router.post('/waitlist', requireRole(['patron', 'admin', 'staff'], 'Chi doc gia 
   }
 });
 
-router.delete('/waitlist/:id', requireRole(['patron', 'admin', 'staff'], 'Chi doc gia moi co the huy danh sach cho'), async (req: AuthRequest, res, next) => {
+router.delete('/waitlist/:id', requireRole(['patron', 'admin', 'staff'], 'Chỉ độc giả, admin, nhân viên mới được hủy danh sách chờ'), async (req: AuthRequest, res, next) => {
   try {
     const userId = patronIdFrom(req.user);
     const repo = new WaitlistRepository();

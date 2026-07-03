@@ -3,20 +3,6 @@ import { BookCopy } from '../entities/BookCopy';
 import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowSlip } from '../entities/BorrowSlip';
 
-export function serializeReservation(reservation: any) {
-  return {
-    id: reservation.id,
-    book_id: reservation.bookId,
-    patron_id: reservation.patronId,
-    reserved_at: reservation.reservedAt,
-    expires_at: reservation.expiresAt,
-    status: reservation.status,
-    notified_at: reservation.notifiedAt,
-    created_at: reservation.createdAt,
-    book: reservation.book ? serializeBook(reservation.book) : undefined,
-  };
-}
-
 export function serializeCopy(copy: BookCopy) {
   return {
     id: copy.id,

@@ -109,10 +109,6 @@ jest.mock('../../utils/eventPublisher', () => ({
   publishEvent: jest.fn(),
 }));
 
-jest.mock('../../services/reservationFulfillment', () => ({
-  checkReservationsOnReturn: jest.fn().mockResolvedValue(undefined),
-}));
-
 const PATRON_UUID = '11111111-1111-1111-1111-111111111111';
 const BOOK_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
