@@ -172,7 +172,7 @@ export async function processMessage(
     ? toolDefs
     : getToolDefsForRole(role);
 
-  const contextDocs = await retrieve(message, 5);
+  const contextDocs = await retrieve(message, 5, role);
   const systemPrompt = buildSystemPrompt(contextDocs, userContext, availableTools);
 
   const messages: Array<{ role: ChatRole; content: string }> = [

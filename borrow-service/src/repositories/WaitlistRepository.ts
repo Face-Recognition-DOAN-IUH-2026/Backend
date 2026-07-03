@@ -44,4 +44,39 @@ export class WaitlistRepository {
   async getWaitlistById(id: string): Promise<Waitlist | null> {
     return this.repo().findOne({ where: { id } });
   }
+
+  async getNextInQueue(bookId: string): Promise<Waitlist | null> {
+    const entries = await this.repo().find({
+      where: { bookId, status: 'waiting' },
+      order: { createdAt: 'ASC' },
+      take: 1,
+    });
+    return entries[0] || null;
+  }
+
+  async markExpired(id: string): Promise<void> {
+    await this.repo()
+      .createQueryBuilder()
+      .update(Waitlist)
+      .set({ status: 'expired' })
+      .where('id = :id', { id })
+      .execute();
+  }
+
+  async markFulfilled(id: string): Promise<void> {
+    await this.repo()
+      .createQueryBuilder()
+      .update(Waitlist)
+      .set({ status: 'fulfilled' })
+      .where('id = :id', { id })
+      .execute();
+  }
+
+  async getExpiredNotifications(hours: number): Promise<Waitlist[]> {
+    const threshold = new Date(Date.now() - hours * 60 * 60 * 1000);
+    return this.repo().find({
+      where: { status: 'notified' },
+      order: { notifiedAt: 'ASC' },
+    }).then(entries => entries.filter(e => e.notifiedAt && e.notifiedAt < threshold));
+  }
 }

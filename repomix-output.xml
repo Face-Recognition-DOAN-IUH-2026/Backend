@@ -705,442 +705,6 @@ user-service/tsconfig.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="access-service/migrations/1720200000000-CreateKioskApprovalRequests.ts">
-import { MigrationInterface, QueryRunner } from 'typeorm';
-
-export class CreateKioskApprovalRequests1720200000000 implements MigrationInterface {
-  name = 'CreateKioskApprovalRequests1720200000000';
-
-  public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`
-      CREATE TABLE IF NOT EXISTS access.kiosk_approval_requests (
-        id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-        event_code varchar(10) NOT NULL,
-        kiosk_device_id uuid NOT NULL,
-        patron_id uuid NULL,
-        patron_student_code varchar(20) NULL,
-        fail_image_url text NULL,
-        isbns varchar(500) NULL,
-        device_auth_token text NOT NULL,
-        status varchar(20) NOT NULL DEFAULT 'pending',
-        approved_by uuid NULL,
-        approved_at timestamptz NULL,
-        reject_reason text NULL,
-        created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        expires_at timestamptz NOT NULL
-      )
-    `);
-    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_approval_event_code ON access.kiosk_approval_requests(event_code)`);
-    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_approval_status ON access.kiosk_approval_requests(status)`);
-  }
-
-  public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP TABLE IF EXISTS access.kiosk_approval_requests`);
-  }
-}
-</file>
-
-<file path="access-service/src/__tests__/routes/kiosk-approval.test.ts">
-import request from 'supertest';
-
-jest.mock('../../../shared', () => ({
-  createAuth: () => (_req: any, _res: any, next: any) => next(),
-  requireRole: () => (_req: any, _res: any, next: any) => next(),
-  createInternalAuth: () => (_req: any, _res: any, next: any) => next(),
-  HttpError: class HttpError extends Error {
-    constructor(public statusCode: number, message: string) {
-      super(message);
-    }
-  },
-}));
-
-jest.mock('../../services/AccessService', () => ({
-  accessService: {
-    findKioskDevice: jest.fn(),
-    setStatus: jest.fn(),
-    getStatus: jest.fn(),
-    createApprovalRequest: jest.fn(),
-    getPendingApprovalRequests: jest.fn(),
-    getApprovalRequest: jest.fn(),
-    approveRequest: jest.fn(),
-    rejectRequest: jest.fn(),
-  },
-}));
-
-jest.mock('../../clients/AmqpClient', () => ({
-  amqpClient: {
-    connect: jest.fn(),
-    publish: jest.fn(),
-    publishFanout: jest.fn(),
-    subscribeFanout: jest.fn(),
-  },
-}));
-
-jest.mock('../../clients/UserServiceClient', () => ({
-  UserServiceClient: jest.fn(() => ({
-    getUsers: jest.fn(),
-    lookupPatron: jest.fn(),
-  })),
-}));
-
-jest.mock('../../realtime/RealtimeHub', () => ({
-  realtimeHub: {
-    connectBroker: jest.fn(),
-    publish: jest.fn(),
-    addSseClient: jest.fn(),
-  },
-}));
-
-let mockFindKioskDevice: jest.Mock;
-let mockCreateApprovalRequest: jest.Mock;
-let mockGetPendingApprovalRequests: jest.Mock;
-let mockGetApprovalRequest: jest.Mock;
-let mockApproveRequest: jest.Mock;
-let mockRejectRequest: jest.Mock;
-
-function setupMocks() {
-  const svc = require('../../services/AccessService').accessService;
-  mockFindKioskDevice = svc.findKioskDevice;
-  mockCreateApprovalRequest = svc.createApprovalRequest;
-  mockGetPendingApprovalRequests = svc.getPendingApprovalRequests;
-  mockGetApprovalRequest = svc.getApprovalRequest;
-  mockApproveRequest = svc.approveRequest;
-  mockRejectRequest = svc.rejectRequest;
-}
-
-describe('KIOSK-1 Approval Flow', () => {
-  let app: any;
-
-  beforeAll(async () => {
-    const express = require('express');
-    app = express();
-    app.use(express.json());
-    const routes = await import('../../routes/access.routes');
-    app.use('/access', routes.default);
-    app.use((err: any, _req: any, res: any, _next: any) => {
-      const status = err.statusCode || 500;
-      res.status(status).json({ error: err.message || 'Internal server error' });
-    });
-    setupMocks();
-  });
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  describe('POST /access/kiosk/approval-request', () => {
-    it('should return 400 when body is missing', async () => {
-      const res = await request(app)
-        .post('/access/kiosk/approval-request')
-        .send({});
-      expect(res.status).toBe(400);
-    });
-
-    it('should return 400 when patron_id is missing', async () => {
-      const res = await request(app)
-        .post('/access/kiosk/approval-request')
-        .send({ device_id: 'd1', student_code: 'SV001' });
-      expect(res.status).toBe(400);
-    });
-
-    it('should return 403 for unknown device', async () => {
-      mockFindKioskDevice.mockResolvedValue(null);
-      const res = await request(app)
-        .post('/access/kiosk/approval-request')
-        .send({ device_id: 'bad-device', patron_id: 'p1', student_code: 'SV001' });
-      expect(res.status).toBe(403);
-    });
-
-    it('should create approval request and return event code', async () => {
-      mockFindKioskDevice.mockResolvedValue({ id: 'd1', deviceName: 'Kiosk 1', ipAddress: '127.0.0.1', isActive: true });
-      mockCreateApprovalRequest.mockResolvedValue({
-        id: 'req-1',
-        event_code: 'A45',
-        device_auth_token: 'tok1',
-        status: 'pending',
-        expires_at: new Date(Date.now() + 300000).toISOString(),
-      });
-
-      const res = await request(app)
-        .post('/access/kiosk/approval-request')
-        .send({ device_id: 'd1', patron_id: 'p1', student_code: 'SV001' });
-
-      expect(res.status).toBe(201);
-      expect(res.body.event_code).toBe('A45');
-      expect(res.body.device_auth_token).toBe('tok1');
-    });
-  });
-
-  describe('GET /access/kiosk/approval-requests/pending', () => {
-    it('should return list of pending requests', async () => {
-      mockGetPendingApprovalRequests.mockResolvedValue([
-        { id: 'req-1', event_code: 'A45', status: 'pending' },
-      ]);
-
-      const res = await request(app).get('/access/kiosk/approval-requests/pending');
-      expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body[0].event_code).toBe('A45');
-    });
-  });
-
-  describe('POST /access/kiosk/approval-requests/:code/approve', () => {
-    it('should approve and return success', async () => {
-      mockApproveRequest.mockResolvedValue({ status: 'approved', event_code: 'A45' });
-
-      const res = await request(app)
-        .post('/access/kiosk/approval-requests/A45/approve')
-        .send({ approved_by: 'staff-1' });
-
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe('approved');
-    });
-
-    it('should return 404 for unknown request', async () => {
-      mockApproveRequest.mockRejectedValue({ statusCode: 404, message: 'Not found' });
-
-      const res = await request(app)
-        .post('/access/kiosk/approval-requests/ZZ99/approve')
-        .send({ approved_by: 'staff-1' });
-
-      expect(res.status).toBe(404);
-    });
-  });
-
-  describe('POST /access/kiosk/approval-requests/:code/reject', () => {
-    it('should reject and return success', async () => {
-      mockRejectRequest.mockResolvedValue({ status: 'rejected', event_code: 'A45' });
-
-      const res = await request(app)
-        .post('/access/kiosk/approval-requests/A45/reject')
-        .send({ approved_by: 'staff-1', reason: 'Hình ảnh không rõ' });
-
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe('rejected');
-    });
-  });
-
-  describe('GET /access/kiosk/approval-requests/:code', () => {
-    it('should return request status', async () => {
-      mockGetApprovalRequest.mockResolvedValue({
-        id: 'req-1',
-        event_code: 'A45',
-        status: 'pending',
-        expires_at: new Date(Date.now() + 300000).toISOString(),
-      });
-
-      const res = await request(app).get('/access/kiosk/approval-requests/A45');
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe('pending');
-    });
-  });
-});
-</file>
-
-<file path="access-service/src/__tests__/routes/kiosk-presence.test.ts">
-import { Router } from 'express';
-import request from 'supertest';
-
-// Mock shared auth to bypass validation
-jest.mock('../../../shared', () => ({
-  createAuth: () => (_req: any, _res: any, next: any) => next(),
-  requireRole: () => (_req: any, _res: any, next: any) => next(),
-  createInternalAuth: () => (_req: any, _res: any, next: any) => next(),
-  HttpError: class HttpError extends Error {
-    constructor(public statusCode: number, message: string) {
-      super(message);
-    }
-  },
-}));
-
-// Mock AccessService
-let mockSetStatus = jest.fn();
-let mockGetStatus = jest.fn();
-let mockFindKioskDevice = jest.fn();
-let mockRecordKioskPresence = jest.fn();
-
-jest.mock('../../services/AccessService', () => ({
-  accessService: {
-    setStatus: (...args: any[]) => mockSetStatus(...args),
-    getStatus: (...args: any[]) => mockGetStatus(...args),
-    findKioskDevice: (...args: any[]) => mockFindKioskDevice(...args),
-    recordKioskPresence: (...args: any[]) => mockRecordKioskPresence(...args),
-  },
-}));
-
-// Mock AmqpClient
-jest.mock('../../clients/AmqpClient', () => ({
-  amqpClient: {
-    connect: jest.fn(),
-    publish: jest.fn(),
-    publishFanout: jest.fn(),
-    subscribeFanout: jest.fn(),
-  },
-}));
-
-// Mock UserServiceClient
-jest.mock('../../clients/UserServiceClient', () => ({
-  UserServiceClient: jest.fn(() => ({
-    getUsers: jest.fn(),
-    lookupPatron: jest.fn(),
-  })),
-}));
-
-// Mock realtimeHub
-jest.mock('../../realtime/RealtimeHub', () => ({
-  realtimeHub: {
-    connectBroker: jest.fn(),
-    publish: jest.fn(),
-    addSseClient: jest.fn(),
-  },
-}));
-
-describe('POST /access/kiosk/presence', () => {
-  let app: any;
-
-  beforeAll(async () => {
-    const express = require('express');
-    app = express();
-    app.use(express.json());
-    const routeModule = await import('../../routes/access.routes');
-    app.use('/access', routeModule.default);
-    app.use((err: any, _req: any, res: any, _next: any) => {
-      const status = err.statusCode || 500;
-      res.status(status).json({ error: err.message || 'Internal server error' });
-    });
-  });
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('should return 400 when patron_id is missing', async () => {
-    const res = await request(app)
-      .post('/access/kiosk/presence')
-      .send({ student_code: 'SV001', device_id: 'kiosk-1' });
-    expect(res.status).toBe(400);
-  });
-
-  it('should return 400 when device_id is missing', async () => {
-    const res = await request(app)
-      .post('/access/kiosk/presence')
-      .send({ patron_id: 'p1', student_code: 'SV001' });
-    expect(res.status).toBe(400);
-  });
-
-  it('should return 403 for unknown device', async () => {
-    mockFindKioskDevice.mockResolvedValue(null);
-
-    const res = await request(app)
-      .post('/access/kiosk/presence')
-      .send({ patron_id: 'p1', student_code: 'SV001', device_id: 'unknown-device' });
-    expect(res.status).toBe(403);
-    expect(res.body.error).toContain('không hợp lệ');
-  });
-
-  it('should set status to inside and return 200 for valid request', async () => {
-    const device = { id: 'kiosk-1', deviceName: 'Main Kiosk', ipAddress: '127.0.0.1', isActive: true };
-    mockFindKioskDevice.mockResolvedValue(device);
-    mockRecordKioskPresence.mockResolvedValue({
-      patron_id: 'p1',
-      current_status: 'inside',
-      currentStatus: 'inside',
-      message: 'Đã ghi nhận hiện diện qua Kiosk',
-      skipped: false,
-    });
-
-    const res = await request(app)
-      .post('/access/kiosk/presence')
-      .send({ patron_id: 'p1', student_code: 'SV001', device_id: 'kiosk-1' });
-
-    expect(res.status).toBe(200);
-    expect(mockRecordKioskPresence).toHaveBeenCalledWith('p1', 'SV001', 'kiosk-1');
-    expect(res.body.current_status).toBe('inside');
-  });
-});
-</file>
-
-<file path="access-service/src/entities/KioskApprovalRequest.ts">
-import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
-import { config } from '../config';
-
-@Entity({ schema: config.db.schema, name: 'kiosk_approval_requests' })
-@Index(['eventCode'], { unique: true })
-@Index(['status'])
-export class KioskApprovalRequest {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
-
-  @Column({ name: 'event_code', type: 'varchar', length: 10, unique: true })
-  eventCode!: string;
-
-  @Column({ name: 'kiosk_device_id', type: 'uuid' })
-  kioskDeviceId!: string;
-
-  @Column({ name: 'patron_id', type: 'uuid', nullable: true })
-  patronId!: string | null;
-
-  @Column({ name: 'patron_student_code', type: 'varchar', length: 20, nullable: true })
-  patronStudentCode!: string | null;
-
-  @Column({ name: 'fail_image_url', type: 'text', nullable: true })
-  failImageUrl!: string | null;
-
-  @Column({ type: 'varchar', length: 500, nullable: true })
-  isbns!: string | null;
-
-  @Column({ name: 'device_auth_token', type: 'text' })
-  deviceAuthToken!: string;
-
-  @Column({ type: 'varchar', length: 20, default: 'pending' })
-  status!: string;
-
-  @Column({ name: 'approved_by', type: 'uuid', nullable: true })
-  approvedBy!: string | null;
-
-  @Column({ name: 'approved_at', type: 'timestamptz', nullable: true })
-  approvedAt!: Date | null;
-
-  @Column({ name: 'reject_reason', type: 'text', nullable: true })
-  rejectReason!: string | null;
-
-  @Column({ name: 'created_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
-  createdAt!: Date;
-
-  @Column({ name: 'expires_at', type: 'timestamptz' })
-  expiresAt!: Date;
-}
-</file>
-
-<file path="access-service/src/entities/KioskDevice.ts">
-import { Column, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
-import { config } from '../config';
-
-@Entity({ schema: config.db.schema, name: 'kiosk_devices' })
-export class KioskDevice {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
-
-  @Column({ name: 'device_name', type: 'varchar', length: 100 })
-  deviceName!: string;
-
-  @Column({ name: 'ip_address', type: 'varchar', length: 45 })
-  ipAddress!: string;
-
-  @Column({ name: 'mac_address', type: 'varchar', length: 17, nullable: true })
-  macAddress!: string | null;
-
-  @Column({ type: 'varchar', length: 100, nullable: true })
-  location!: string | null;
-
-  @Column({ name: 'is_active', type: 'boolean', default: true })
-  isActive!: boolean;
-
-  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
-  updatedAt!: Date;
-}
-</file>
-
 <file path="api-gateway/.dockerignore">
 node_modules
 .env
@@ -8072,6 +7636,361 @@ export class CreateAccessSchema1719100000000 implements MigrationInterface {
 }
 </file>
 
+<file path="access-service/migrations/1720200000000-CreateKioskApprovalRequests.ts">
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+export class CreateKioskApprovalRequests1720200000000 implements MigrationInterface {
+  name = 'CreateKioskApprovalRequests1720200000000';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS access.kiosk_approval_requests (
+        id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        event_code varchar(10) NOT NULL,
+        kiosk_device_id uuid NOT NULL,
+        patron_id uuid NULL,
+        patron_student_code varchar(20) NULL,
+        fail_image_url text NULL,
+        isbns varchar(500) NULL,
+        device_auth_token text NOT NULL,
+        status varchar(20) NOT NULL DEFAULT 'pending',
+        approved_by uuid NULL,
+        approved_at timestamptz NULL,
+        reject_reason text NULL,
+        created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at timestamptz NOT NULL
+      )
+    `);
+    await queryRunner.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_approval_event_code ON access.kiosk_approval_requests(event_code)`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_approval_status ON access.kiosk_approval_requests(status)`);
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE IF EXISTS access.kiosk_approval_requests`);
+  }
+}
+</file>
+
+<file path="access-service/src/__tests__/routes/kiosk-approval.test.ts">
+import request from 'supertest';
+
+jest.mock('../../../shared', () => ({
+  createAuth: () => (_req: any, _res: any, next: any) => next(),
+  requireRole: () => (_req: any, _res: any, next: any) => next(),
+  createInternalAuth: () => (_req: any, _res: any, next: any) => next(),
+  HttpError: class HttpError extends Error {
+    constructor(public statusCode: number, message: string) {
+      super(message);
+    }
+  },
+}));
+
+jest.mock('../../services/AccessService', () => ({
+  accessService: {
+    findKioskDevice: jest.fn(),
+    setStatus: jest.fn(),
+    getStatus: jest.fn(),
+    createApprovalRequest: jest.fn(),
+    getPendingApprovalRequests: jest.fn(),
+    getApprovalRequest: jest.fn(),
+    approveRequest: jest.fn(),
+    rejectRequest: jest.fn(),
+  },
+}));
+
+jest.mock('../../clients/AmqpClient', () => ({
+  amqpClient: {
+    connect: jest.fn(),
+    publish: jest.fn(),
+    publishFanout: jest.fn(),
+    subscribeFanout: jest.fn(),
+  },
+}));
+
+jest.mock('../../clients/UserServiceClient', () => ({
+  UserServiceClient: jest.fn(() => ({
+    getUsers: jest.fn(),
+    lookupPatron: jest.fn(),
+  })),
+}));
+
+jest.mock('../../realtime/RealtimeHub', () => ({
+  realtimeHub: {
+    connectBroker: jest.fn(),
+    publish: jest.fn(),
+    addSseClient: jest.fn(),
+  },
+}));
+
+let mockFindKioskDevice: jest.Mock;
+let mockCreateApprovalRequest: jest.Mock;
+let mockGetPendingApprovalRequests: jest.Mock;
+let mockGetApprovalRequest: jest.Mock;
+let mockApproveRequest: jest.Mock;
+let mockRejectRequest: jest.Mock;
+
+function setupMocks() {
+  const svc = require('../../services/AccessService').accessService;
+  mockFindKioskDevice = svc.findKioskDevice;
+  mockCreateApprovalRequest = svc.createApprovalRequest;
+  mockGetPendingApprovalRequests = svc.getPendingApprovalRequests;
+  mockGetApprovalRequest = svc.getApprovalRequest;
+  mockApproveRequest = svc.approveRequest;
+  mockRejectRequest = svc.rejectRequest;
+}
+
+describe('KIOSK-1 Approval Flow', () => {
+  let app: any;
+
+  beforeAll(async () => {
+    const express = require('express');
+    app = express();
+    app.use(express.json());
+    const routes = await import('../../routes/access.routes');
+    app.use('/access', routes.default);
+    app.use((err: any, _req: any, res: any, _next: any) => {
+      const status = err.statusCode || 500;
+      res.status(status).json({ error: err.message || 'Internal server error' });
+    });
+    setupMocks();
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('POST /access/kiosk/approval-request', () => {
+    it('should return 400 when body is missing', async () => {
+      const res = await request(app)
+        .post('/access/kiosk/approval-request')
+        .send({});
+      expect(res.status).toBe(400);
+    });
+
+    it('should return 400 when patron_id is missing', async () => {
+      const res = await request(app)
+        .post('/access/kiosk/approval-request')
+        .send({ device_id: 'd1', student_code: 'SV001' });
+      expect(res.status).toBe(400);
+    });
+
+    it('should return 403 for unknown device', async () => {
+      mockFindKioskDevice.mockResolvedValue(null);
+      const res = await request(app)
+        .post('/access/kiosk/approval-request')
+        .send({ device_id: 'bad-device', patron_id: 'p1', student_code: 'SV001' });
+      expect(res.status).toBe(403);
+    });
+
+    it('should create approval request and return event code', async () => {
+      mockFindKioskDevice.mockResolvedValue({ id: 'd1', deviceName: 'Kiosk 1', ipAddress: '127.0.0.1', isActive: true });
+      mockCreateApprovalRequest.mockResolvedValue({
+        id: 'req-1',
+        event_code: 'A45',
+        device_auth_token: 'tok1',
+        status: 'pending',
+        expires_at: new Date(Date.now() + 300000).toISOString(),
+      });
+
+      const res = await request(app)
+        .post('/access/kiosk/approval-request')
+        .send({ device_id: 'd1', patron_id: 'p1', student_code: 'SV001' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.event_code).toBe('A45');
+      expect(res.body.device_auth_token).toBe('tok1');
+    });
+  });
+
+  describe('GET /access/kiosk/approval-requests/pending', () => {
+    it('should return list of pending requests', async () => {
+      mockGetPendingApprovalRequests.mockResolvedValue([
+        { id: 'req-1', event_code: 'A45', status: 'pending' },
+      ]);
+
+      const res = await request(app).get('/access/kiosk/approval-requests/pending');
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body[0].event_code).toBe('A45');
+    });
+  });
+
+  describe('POST /access/kiosk/approval-requests/:code/approve', () => {
+    it('should approve and return success', async () => {
+      mockApproveRequest.mockResolvedValue({ status: 'approved', event_code: 'A45' });
+
+      const res = await request(app)
+        .post('/access/kiosk/approval-requests/A45/approve')
+        .send({ approved_by: 'staff-1' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('approved');
+    });
+
+    it('should return 404 for unknown request', async () => {
+      mockApproveRequest.mockRejectedValue({ statusCode: 404, message: 'Not found' });
+
+      const res = await request(app)
+        .post('/access/kiosk/approval-requests/ZZ99/approve')
+        .send({ approved_by: 'staff-1' });
+
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('POST /access/kiosk/approval-requests/:code/reject', () => {
+    it('should reject and return success', async () => {
+      mockRejectRequest.mockResolvedValue({ status: 'rejected', event_code: 'A45' });
+
+      const res = await request(app)
+        .post('/access/kiosk/approval-requests/A45/reject')
+        .send({ approved_by: 'staff-1', reason: 'Hình ảnh không rõ' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('rejected');
+    });
+  });
+
+  describe('GET /access/kiosk/approval-requests/:code', () => {
+    it('should return request status', async () => {
+      mockGetApprovalRequest.mockResolvedValue({
+        id: 'req-1',
+        event_code: 'A45',
+        status: 'pending',
+        expires_at: new Date(Date.now() + 300000).toISOString(),
+      });
+
+      const res = await request(app).get('/access/kiosk/approval-requests/A45');
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('pending');
+    });
+  });
+});
+</file>
+
+<file path="access-service/src/__tests__/routes/kiosk-presence.test.ts">
+import { Router } from 'express';
+import request from 'supertest';
+
+// Mock shared auth to bypass validation
+jest.mock('../../../shared', () => ({
+  createAuth: () => (_req: any, _res: any, next: any) => next(),
+  requireRole: () => (_req: any, _res: any, next: any) => next(),
+  createInternalAuth: () => (_req: any, _res: any, next: any) => next(),
+  HttpError: class HttpError extends Error {
+    constructor(public statusCode: number, message: string) {
+      super(message);
+    }
+  },
+}));
+
+// Mock AccessService
+let mockSetStatus = jest.fn();
+let mockGetStatus = jest.fn();
+let mockFindKioskDevice = jest.fn();
+let mockRecordKioskPresence = jest.fn();
+
+jest.mock('../../services/AccessService', () => ({
+  accessService: {
+    setStatus: (...args: any[]) => mockSetStatus(...args),
+    getStatus: (...args: any[]) => mockGetStatus(...args),
+    findKioskDevice: (...args: any[]) => mockFindKioskDevice(...args),
+    recordKioskPresence: (...args: any[]) => mockRecordKioskPresence(...args),
+  },
+}));
+
+// Mock AmqpClient
+jest.mock('../../clients/AmqpClient', () => ({
+  amqpClient: {
+    connect: jest.fn(),
+    publish: jest.fn(),
+    publishFanout: jest.fn(),
+    subscribeFanout: jest.fn(),
+  },
+}));
+
+// Mock UserServiceClient
+jest.mock('../../clients/UserServiceClient', () => ({
+  UserServiceClient: jest.fn(() => ({
+    getUsers: jest.fn(),
+    lookupPatron: jest.fn(),
+  })),
+}));
+
+// Mock realtimeHub
+jest.mock('../../realtime/RealtimeHub', () => ({
+  realtimeHub: {
+    connectBroker: jest.fn(),
+    publish: jest.fn(),
+    addSseClient: jest.fn(),
+  },
+}));
+
+describe('POST /access/kiosk/presence', () => {
+  let app: any;
+
+  beforeAll(async () => {
+    const express = require('express');
+    app = express();
+    app.use(express.json());
+    const routeModule = await import('../../routes/access.routes');
+    app.use('/access', routeModule.default);
+    app.use((err: any, _req: any, res: any, _next: any) => {
+      const status = err.statusCode || 500;
+      res.status(status).json({ error: err.message || 'Internal server error' });
+    });
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should return 400 when patron_id is missing', async () => {
+    const res = await request(app)
+      .post('/access/kiosk/presence')
+      .send({ student_code: 'SV001', device_id: 'kiosk-1' });
+    expect(res.status).toBe(400);
+  });
+
+  it('should return 400 when device_id is missing', async () => {
+    const res = await request(app)
+      .post('/access/kiosk/presence')
+      .send({ patron_id: 'p1', student_code: 'SV001' });
+    expect(res.status).toBe(400);
+  });
+
+  it('should return 403 for unknown device', async () => {
+    mockFindKioskDevice.mockResolvedValue(null);
+
+    const res = await request(app)
+      .post('/access/kiosk/presence')
+      .send({ patron_id: 'p1', student_code: 'SV001', device_id: 'unknown-device' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain('không hợp lệ');
+  });
+
+  it('should set status to inside and return 200 for valid request', async () => {
+    const device = { id: 'kiosk-1', deviceName: 'Main Kiosk', ipAddress: '127.0.0.1', isActive: true };
+    mockFindKioskDevice.mockResolvedValue(device);
+    mockRecordKioskPresence.mockResolvedValue({
+      patron_id: 'p1',
+      current_status: 'inside',
+      currentStatus: 'inside',
+      message: 'Đã ghi nhận hiện diện qua Kiosk',
+      skipped: false,
+    });
+
+    const res = await request(app)
+      .post('/access/kiosk/presence')
+      .send({ patron_id: 'p1', student_code: 'SV001', device_id: 'kiosk-1' });
+
+    expect(res.status).toBe(200);
+    expect(mockRecordKioskPresence).toHaveBeenCalledWith('p1', 'SV001', 'kiosk-1');
+    expect(res.body.current_status).toBe('inside');
+  });
+});
+</file>
+
 <file path="access-service/src/__tests__/services/AnomalyAlertService.test.ts">
 import { detectAnomalies, sendAnomalyAlert, processAnomalyDetection } from '../../services/AnomalyAlertService';
 
@@ -8439,6 +8358,87 @@ export class AccessLog {
 
   @Column({ name: 'access_time', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   accessTime!: Date;
+}
+</file>
+
+<file path="access-service/src/entities/KioskApprovalRequest.ts">
+import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
+import { config } from '../config';
+
+@Entity({ schema: config.db.schema, name: 'kiosk_approval_requests' })
+@Index(['eventCode'], { unique: true })
+@Index(['status'])
+export class KioskApprovalRequest {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @Column({ name: 'event_code', type: 'varchar', length: 10, unique: true })
+  eventCode!: string;
+
+  @Column({ name: 'kiosk_device_id', type: 'uuid' })
+  kioskDeviceId!: string;
+
+  @Column({ name: 'patron_id', type: 'uuid', nullable: true })
+  patronId!: string | null;
+
+  @Column({ name: 'patron_student_code', type: 'varchar', length: 20, nullable: true })
+  patronStudentCode!: string | null;
+
+  @Column({ name: 'fail_image_url', type: 'text', nullable: true })
+  failImageUrl!: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  isbns!: string | null;
+
+  @Column({ name: 'device_auth_token', type: 'text' })
+  deviceAuthToken!: string;
+
+  @Column({ type: 'varchar', length: 20, default: 'pending' })
+  status!: string;
+
+  @Column({ name: 'approved_by', type: 'uuid', nullable: true })
+  approvedBy!: string | null;
+
+  @Column({ name: 'approved_at', type: 'timestamptz', nullable: true })
+  approvedAt!: Date | null;
+
+  @Column({ name: 'reject_reason', type: 'text', nullable: true })
+  rejectReason!: string | null;
+
+  @Column({ name: 'created_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
+  createdAt!: Date;
+
+  @Column({ name: 'expires_at', type: 'timestamptz' })
+  expiresAt!: Date;
+}
+</file>
+
+<file path="access-service/src/entities/KioskDevice.ts">
+import { Column, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { config } from '../config';
+
+@Entity({ schema: config.db.schema, name: 'kiosk_devices' })
+export class KioskDevice {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @Column({ name: 'device_name', type: 'varchar', length: 100 })
+  deviceName!: string;
+
+  @Column({ name: 'ip_address', type: 'varchar', length: 45 })
+  ipAddress!: string;
+
+  @Column({ name: 'mac_address', type: 'varchar', length: 17, nullable: true })
+  macAddress!: string | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  location!: string | null;
+
+  @Column({ name: 'is_active', type: 'boolean', default: true })
+  isActive!: boolean;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt!: Date;
 }
 </file>
 
@@ -49426,6 +49426,74 @@ exports.ScheduleService = ScheduleService;
 exports.scheduleService = new ScheduleService();
 </file>
 
+<file path="schedule-service/src/clients/UserServiceClient.ts">
+import { config } from '../config';
+import { NotFoundError, ServiceUnavailableError } from '../errors';
+import { getServiceToken, CircuitBreaker, retryWithBackoff } from '../../../shared';
+
+export interface StaffUser {
+  id: string;
+  fullName: string | null;
+  email: string;
+  role: string;
+  status: string;
+}
+
+const circuit = new CircuitBreaker(5, 30_000);
+
+export class UserServiceClient {
+  private async getJson<T>(path: string): Promise<T> {
+    if (!circuit.canRequest()) {
+      throw new ServiceUnavailableError('user-service is temporarily unavailable');
+    }
+
+    try {
+      return await retryWithBackoff(async () => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 4000);
+        try {
+          const response = await fetch(`${config.userServiceUrl}${path}`, {
+            headers: { 'Authorization': `Bearer ${getServiceToken('schedule-service', config.jwtSecret)}` },
+            signal: controller.signal,
+          });
+          clearTimeout(timeout);
+          if (response.status === 404) return null as T;
+          if (response.status >= 500) {
+            circuit.recordFailure();
+            throw new Error(`user-service responded ${response.status}`);
+          }
+          if (!response.ok) throw new Error(`user-service responded ${response.status}`);
+          circuit.recordSuccess();
+          return await response.json() as T;
+        } catch (err) {
+          clearTimeout(timeout);
+          throw err;
+        }
+      }, 2, 500);
+    } catch (err) {
+      throw new ServiceUnavailableError(`Cannot reach user-service: ${String(err)}`);
+    }
+  }
+
+  async getStaff(id: string): Promise<StaffUser | null> {
+    return this.getJson<StaffUser | null>(`/internal/users/${id}`);
+  }
+
+  async listStaff(ids?: string[]): Promise<StaffUser[]> {
+    const query = ids?.length ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
+    return this.getJson<StaffUser[]>(`/internal/staff${query}`);
+  }
+
+  async requireActiveStaff(id: string): Promise<StaffUser> {
+    const user = await this.getStaff(id);
+    if (!user || !['staff', 'admin'].includes(user.role) || user.status !== 'active') {
+      throw new NotFoundError('Staff not found or inactive');
+    }
+    return user;
+  }
+}
+</file>
+
 <file path="schedule-service/src/entities/GeofenceConfig.ts">
 import { Column, CreateDateColumn, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
@@ -51512,6 +51580,71 @@ export interface UpdateUserDto {
 }
 </file>
 
+<file path="user-service/src/repositories/UserRepository.ts">
+import { In, Repository } from 'typeorm';
+import { User } from '../entities/User.entity';
+
+export class UserRepository {
+  constructor(protected repo: Repository<User>) {}
+
+  async findById(id: string): Promise<User | null> {
+    return this.repo.findOneBy({ id });
+  }
+
+  async findByEmail(email: string): Promise<User | null> {
+    return this.repo.findOneBy({ email });
+  }
+
+  async findByIds(ids: string[]): Promise<User[]> {
+    if (ids.length === 0) return [];
+    return this.repo.findBy({ id: In(ids) });
+  }
+
+  async findByStudentCode(code: string): Promise<User | null> {
+    return this.repo.findOneBy({ studentCode: code });
+  }
+
+  async findByCardNumber(card: string): Promise<User | null> {
+    return this.repo.findOneBy({ cardNumber: card });
+  }
+
+  async findAll(skip = 0, limit = 200): Promise<[User[], number]> {
+    return this.repo.findAndCount({
+      skip,
+      take: limit,
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async findStaff(ids?: string[]): Promise<User[]> {
+    return this.repo.find({
+      where: {
+        role: In(['staff', 'admin']),
+        status: 'active',
+        ...(ids?.length ? { id: In(ids) } : {}),
+      },
+      order: { fullName: 'ASC', email: 'ASC' },
+    });
+  }
+
+  async create(data: Partial<User>): Promise<User> {
+    const user = this.repo.create(data);
+    return this.repo.save(user);
+  }
+
+  async update(id: string, data: Partial<User>): Promise<User | null> {
+    const result = await this.repo.update(id, data);
+    if (result.affected === 0) return null;
+    return this.findById(id);
+  }
+
+  async delete(id: string): Promise<boolean> {
+    const result = await this.repo.delete(id);
+    return (result.affected ?? 0) > 0;
+  }
+}
+</file>
+
 <file path="user-service/src/subscribers/AmqpSubscriber.ts">
 import { amqpClient } from '../clients/AmqpClient';
 import { AppDataSource } from '../data-source';
@@ -51714,29 +51847,6 @@ export type RecognitionEventInput = z.infer<typeof RecognitionEventInputSchema>;
 export type AccessRealtimeEvent = z.infer<typeof AccessRealtimeEventSchema>;
 </file>
 
-<file path="access-service/src/data-source.ts">
-import 'reflect-metadata';
-import { DataSource } from 'typeorm';
-import { config } from './config';
-import { AccessLog } from './entities/AccessLog';
-import { KioskDevice } from './entities/KioskDevice';
-import { KioskApprovalRequest } from './entities/KioskApprovalRequest';
-import { PatronAccessState } from './entities/PatronAccessState';
-
-export const AppDataSource = new DataSource({
-  type: 'postgres',
-  host: config.db.host,
-  port: config.db.port,
-  database: config.db.database,
-  username: config.db.user,
-  password: config.db.password,
-  entities: [AccessLog, KioskDevice, KioskApprovalRequest, PatronAccessState],
-  migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
-  synchronize: false,
-  logging: process.env.TYPEORM_LOGGING === 'true',
-});
-</file>
-
 <file path="access-service/src/realtime/RealtimeHub.ts">
 import crypto from 'crypto';
 import { randomUUID } from 'crypto';
@@ -51826,185 +51936,6 @@ export class RealtimeHub {
 }
 
 export const realtimeHub = new RealtimeHub();
-</file>
-
-<file path="ai-service/src/__tests__/tools/tools.test.ts">
-import axios from 'axios';
-import { patronToolDefs, staffToolDefs, adminToolDefs, getToolDefsForRole } from '../../tools/registry';
-import { getScheduleToday, searchBooks, getOverdueBorrows, getMyPatronInfo, getPatronInfoById } from '../../tools/tools';
-
-jest.mock('../../config', () => ({
-  config: {
-    borrowServiceUrl: 'http://borrow-service:8000',
-    userServiceUrl: 'http://user-service:3001',
-    scheduleServiceUrl: 'http://schedule-service:3002',
-    serviceJwtSecret: 'test-service-jwt-secret',
-  },
-}));
-
-jest.mock('axios');
-
-describe('AI Tools - RBAC Security', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  describe('Role-based tool access', () => {
-    it('should provide only patron tools for patron role', () => {
-      const tools = getToolDefsForRole('patron');
-      expect(tools.length).toBe(patronToolDefs.length);
-      // Patron tools should have injectUserId: true for data access
-      const patronInfo = tools.find(t => t.name === 'get_patron_info');
-      expect(patronInfo?.injectUserId).toBe(true);
-      const patronBorrows = tools.find(t => t.name === 'get_patron_borrows');
-      expect(patronBorrows?.injectUserId).toBe(true);
-      const patronHistory = tools.find(t => t.name === 'get_patron_history');
-      expect(patronHistory?.injectUserId).toBe(true);
-
-      // Patrons should NOT have admin tools
-      expect(tools.find(t => t.name === 'get_overdue_borrows')).toBeUndefined();
-    });
-
-    it('should provide staff+ tools for staff role without injectUserId', () => {
-      const tools = getToolDefsForRole('staff');
-      // Staff tools should NOT have injectUserId (they accept AI-supplied params)
-      const staffInfo = tools.find(t => t.name === 'get_patron_info');
-      expect(staffInfo?.injectUserId).toBeUndefined();
-      expect(tools.find(t => t.name === 'get_overdue_borrows')).toBeDefined();
-      expect(tools.find(t => t.name === 'get_schedule_today')).toBeDefined();
-    });
-
-    it('should provide admin tools for admin role (same as staff)', () => {
-      const adminTools = getToolDefsForRole('admin');
-      const staffTools = getToolDefsForRole('staff');
-      expect(adminTools.length).toBe(staffTools.length);
-    });
-
-    it('should default to patron tools for unknown role', () => {
-      const tools = getToolDefsForRole('unknown_role');
-      expect(tools.length).toBe(patronToolDefs.length);
-    });
-  });
-
-  describe('injectUserId enforcement', () => {
-    it('should call getMyPatronInfo with userId (server-injected, not AI)', async () => {
-      const mockResponse = { data: { id: 'user-1', name: 'Test' } };
-      (axios.get as jest.Mock).mockResolvedValue(mockResponse);
-
-      const result = await getMyPatronInfo('server-injected-user-id');
-
-      expect(axios.get).toHaveBeenCalledWith(
-        expect.stringContaining('server-injected-user-id'),
-        expect.any(Object),
-      );
-      expect(result.success).toBe(true);
-    });
-
-    it('should call getPatronInfoById with AI-supplied id for staff tools', async () => {
-      const mockResponse = { data: { id: 'patron-2', name: 'Other Patron' } };
-      (axios.get as jest.Mock).mockResolvedValue(mockResponse);
-
-      const result = await getPatronInfoById('ai-supplied-id');
-
-      expect(axios.get).toHaveBeenCalledWith(
-        expect.stringContaining('ai-supplied-id'),
-        expect.any(Object),
-      );
-      expect(result.success).toBe(true);
-    });
-  });
-
-  describe('Tool registry', () => {
-    it('should register get_schedule_today tool', () => {
-      const tool = staffToolDefs.find(t => t.name === 'get_schedule_today');
-      expect(tool).toBeDefined();
-      expect(typeof tool?.func).toBe('function');
-    });
-
-    it('should register search_books tool', () => {
-      const tool = patronToolDefs.find(t => t.name === 'search_books');
-      expect(tool).toBeDefined();
-    });
-
-    it('should register get_overdue_borrows tool', () => {
-      const tool = staffToolDefs.find(t => t.name === 'get_overdue_borrows');
-      expect(tool).toBeDefined();
-    });
-
-    it('should register get_library_hours tool', () => {
-      const tool = patronToolDefs.find(t => t.name === 'get_library_hours');
-      expect(tool).toBeDefined();
-    });
-
-    it('should register lookup_book tool', () => {
-      const tool = patronToolDefs.find(t => t.name === 'lookup_book');
-      expect(tool).toBeDefined();
-    });
-  });
-
-  describe('get_schedule_today', () => {
-    it('should call schedule-service internal today endpoint', async () => {
-      const mockResponse = {
-        data: [
-          { id: '1', shift: { startTime: '08:00' }, staff: { name: 'Staff A' } },
-          { id: '2', shift: { startTime: '14:00' }, staff: { name: 'Staff B' } },
-        ],
-      };
-
-      (axios.get as jest.Mock).mockResolvedValue(mockResponse);
-
-      const result = await getScheduleToday();
-
-      expect(axios.get).toHaveBeenCalledWith(
-        'http://schedule-service:3002/schedules/internal/today',
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            'Authorization': expect.stringContaining('Bearer '),
-          }),
-          timeout: 10000,
-        })
-      );
-
-      expect(result.success).toBe(true);
-      expect(result.data).toHaveLength(2);
-    });
-
-    it('should sort schedule results by shift startTime', async () => {
-      const mockResponse = {
-        data: [
-          { id: '2', shift: { startTime: '14:00' }, staff: { name: 'Staff B' } },
-          { id: '1', shift: { startTime: '08:00' }, staff: { name: 'Staff A' } },
-        ],
-      };
-
-      (axios.get as jest.Mock).mockResolvedValue(mockResponse);
-
-      const result = await getScheduleToday();
-
-      expect(result.success).toBe(true);
-      expect(result.data[0].shift.startTime).toBe('08:00');
-      expect(result.data[1].shift.startTime).toBe('14:00');
-    });
-
-    it('should handle errors when schedule service fails', async () => {
-      (axios.get as jest.Mock).mockRejectedValue(new Error('Network error'));
-
-      const result = await getScheduleToday();
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBeDefined();
-    });
-
-    it('should handle 401 auth errors from schedule service', async () => {
-      (axios.get as jest.Mock).mockRejectedValue({ response: { data: { message: 'Unauthorized' }, status: 401 } });
-
-      const result = await getScheduleToday();
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBeDefined();
-    });
-  });
-});
 </file>
 
 <file path="ai-service/src/services/DataCollector.ts">
@@ -54635,72 +54566,26 @@ CORS_ORIGINS=*
 SERVICE_JWT_SECRET=REPLACE_WITH_SERVICE_JWT_SECRET
 </file>
 
-<file path="schedule-service/src/clients/UserServiceClient.ts">
-import { config } from '../config';
-import { NotFoundError, ServiceUnavailableError } from '../errors';
-import { getServiceToken, CircuitBreaker, retryWithBackoff } from '../../../shared';
+<file path="schedule-service/Dockerfile">
+FROM node:20-alpine
 
-export interface StaffUser {
-  id: string;
-  fullName: string | null;
-  email: string;
-  role: string;
-  status: string;
-}
+WORKDIR /app/schedule-service
 
-const circuit = new CircuitBreaker(5, 30_000);
+COPY schedule-service/package*.json ./
+COPY schedule-service/tsconfig.json ./
+COPY schedule-service/node_modules ./node_modules
 
-export class UserServiceClient {
-  private async getJson<T>(path: string): Promise<T> {
-    if (!circuit.canRequest()) {
-      throw new ServiceUnavailableError('user-service is temporarily unavailable');
-    }
+COPY schedule-service/src ./src
+COPY schedule-service/migrations ./migrations
+COPY shared /app/shared
+RUN ln -s /app/shared ./shared
 
-    try {
-      return await retryWithBackoff(async () => {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 4000);
-        try {
-          const response = await fetch(`${config.userServiceUrl}${path}`, {
-            headers: { 'Authorization': `Bearer ${getServiceToken('schedule-service', config.jwtSecret)}` },
-            signal: controller.signal,
-          });
-          clearTimeout(timeout);
-          if (response.status === 404) return null as T;
-          if (response.status >= 500) {
-            circuit.recordFailure();
-            throw new Error(`user-service responded ${response.status}`);
-          }
-          if (!response.ok) throw new Error(`user-service responded ${response.status}`);
-          circuit.recordSuccess();
-          return await response.json() as T;
-        } catch (err) {
-          clearTimeout(timeout);
-          throw err;
-        }
-      }, 2, 500);
-    } catch (err) {
-      throw new ServiceUnavailableError(`Cannot reach user-service: ${String(err)}`);
-    }
-  }
+RUN npm run build
+RUN if [ ! -e dist/shared ]; then ln -s /app/schedule-service/dist/schedule-service/shared dist/shared; fi
 
-  async getStaff(id: string): Promise<StaffUser | null> {
-    return this.getJson<StaffUser | null>(`/internal/users/${id}`);
-  }
+EXPOSE 3002
 
-  async listStaff(ids?: string[]): Promise<StaffUser[]> {
-    const query = ids?.length ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
-    return this.getJson<StaffUser[]>(`/internal/staff${query}`);
-  }
-
-  async requireActiveStaff(id: string): Promise<StaffUser> {
-    const user = await this.getStaff(id);
-    if (!user || !['staff', 'admin'].includes(user.role) || user.status !== 'active') {
-      throw new NotFoundError('Staff not found or inactive');
-    }
-    return user;
-  }
-}
+CMD ["sh", "-c", "TYPEORM_MIGRATION_RUN=true npx typeorm-ts-node-commonjs migration:run -d src/data-source.ts && node dist/schedule-service/src/index.js"]
 </file>
 
 <file path="schedule-service/src/entities/index.ts">
@@ -55288,71 +55173,6 @@ export class FaceServiceClient {
 export const faceServiceClient = new FaceServiceClient();
 </file>
 
-<file path="user-service/src/repositories/UserRepository.ts">
-import { In, Repository } from 'typeorm';
-import { User } from '../entities/User.entity';
-
-export class UserRepository {
-  constructor(protected repo: Repository<User>) {}
-
-  async findById(id: string): Promise<User | null> {
-    return this.repo.findOneBy({ id });
-  }
-
-  async findByEmail(email: string): Promise<User | null> {
-    return this.repo.findOneBy({ email });
-  }
-
-  async findByIds(ids: string[]): Promise<User[]> {
-    if (ids.length === 0) return [];
-    return this.repo.findBy({ id: In(ids) });
-  }
-
-  async findByStudentCode(code: string): Promise<User | null> {
-    return this.repo.findOneBy({ studentCode: code });
-  }
-
-  async findByCardNumber(card: string): Promise<User | null> {
-    return this.repo.findOneBy({ cardNumber: card });
-  }
-
-  async findAll(skip = 0, limit = 200): Promise<[User[], number]> {
-    return this.repo.findAndCount({
-      skip,
-      take: limit,
-      order: { createdAt: 'DESC' },
-    });
-  }
-
-  async findStaff(ids?: string[]): Promise<User[]> {
-    return this.repo.find({
-      where: {
-        role: In(['staff', 'admin']),
-        status: 'active',
-        ...(ids?.length ? { id: In(ids) } : {}),
-      },
-      order: { fullName: 'ASC', email: 'ASC' },
-    });
-  }
-
-  async create(data: Partial<User>): Promise<User> {
-    const user = this.repo.create(data);
-    return this.repo.save(user);
-  }
-
-  async update(id: string, data: Partial<User>): Promise<User | null> {
-    const result = await this.repo.update(id, data);
-    if (result.affected === 0) return null;
-    return this.findById(id);
-  }
-
-  async delete(id: string): Promise<boolean> {
-    const result = await this.repo.delete(id);
-    return (result.affected ?? 0) > 0;
-  }
-}
-</file>
-
 <file path="user-service/src/seed.ts">
 import 'reflect-metadata';
 import bcrypt from 'bcryptjs';
@@ -55442,6 +55262,29 @@ RUN if [ ! -e dist/shared ]; then ln -s /app/access-service/dist/access-service/
 EXPOSE 3003
 
 CMD ["sh", "-c", "TYPEORM_MIGRATION_RUN=true npx typeorm-ts-node-commonjs migration:run -d src/data-source.ts && node dist/access-service/src/index.js"]
+</file>
+
+<file path="access-service/src/data-source.ts">
+import 'reflect-metadata';
+import { DataSource } from 'typeorm';
+import { config } from './config';
+import { AccessLog } from './entities/AccessLog';
+import { KioskDevice } from './entities/KioskDevice';
+import { KioskApprovalRequest } from './entities/KioskApprovalRequest';
+import { PatronAccessState } from './entities/PatronAccessState';
+
+export const AppDataSource = new DataSource({
+  type: 'postgres',
+  host: config.db.host,
+  port: config.db.port,
+  database: config.db.database,
+  username: config.db.user,
+  password: config.db.password,
+  entities: [AccessLog, KioskDevice, KioskApprovalRequest, PatronAccessState],
+  migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
+  synchronize: false,
+  logging: process.env.TYPEORM_LOGGING === 'true',
+});
 </file>
 
 <file path="access-service/src/routes/internal.routes.ts">
@@ -55612,6 +55455,185 @@ export async function startUserEventSubscriber(): Promise<void> {
   "include": ["src/**/*", "shared/**/*"],
   "exclude": ["node_modules", "dist", "src/__tests__"]
 }
+</file>
+
+<file path="ai-service/src/__tests__/tools/tools.test.ts">
+import axios from 'axios';
+import { patronToolDefs, staffToolDefs, adminToolDefs, getToolDefsForRole } from '../../tools/registry';
+import { getScheduleToday, searchBooks, getOverdueBorrows, getMyPatronInfo, getPatronInfoById } from '../../tools/tools';
+
+jest.mock('../../config', () => ({
+  config: {
+    borrowServiceUrl: 'http://borrow-service:8000',
+    userServiceUrl: 'http://user-service:3001',
+    scheduleServiceUrl: 'http://schedule-service:3002',
+    serviceJwtSecret: 'test-service-jwt-secret',
+  },
+}));
+
+jest.mock('axios');
+
+describe('AI Tools - RBAC Security', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('Role-based tool access', () => {
+    it('should provide only patron tools for patron role', () => {
+      const tools = getToolDefsForRole('patron');
+      expect(tools.length).toBe(patronToolDefs.length);
+      // Patron tools should have injectUserId: true for data access
+      const patronInfo = tools.find(t => t.name === 'get_patron_info');
+      expect(patronInfo?.injectUserId).toBe(true);
+      const patronBorrows = tools.find(t => t.name === 'get_patron_borrows');
+      expect(patronBorrows?.injectUserId).toBe(true);
+      const patronHistory = tools.find(t => t.name === 'get_patron_history');
+      expect(patronHistory?.injectUserId).toBe(true);
+
+      // Patrons should NOT have admin tools
+      expect(tools.find(t => t.name === 'get_overdue_borrows')).toBeUndefined();
+    });
+
+    it('should provide staff+ tools for staff role without injectUserId', () => {
+      const tools = getToolDefsForRole('staff');
+      // Staff tools should NOT have injectUserId (they accept AI-supplied params)
+      const staffInfo = tools.find(t => t.name === 'get_patron_info');
+      expect(staffInfo?.injectUserId).toBeUndefined();
+      expect(tools.find(t => t.name === 'get_overdue_borrows')).toBeDefined();
+      expect(tools.find(t => t.name === 'get_schedule_today')).toBeDefined();
+    });
+
+    it('should provide admin tools for admin role (same as staff)', () => {
+      const adminTools = getToolDefsForRole('admin');
+      const staffTools = getToolDefsForRole('staff');
+      expect(adminTools.length).toBe(staffTools.length);
+    });
+
+    it('should default to patron tools for unknown role', () => {
+      const tools = getToolDefsForRole('unknown_role');
+      expect(tools.length).toBe(patronToolDefs.length);
+    });
+  });
+
+  describe('injectUserId enforcement', () => {
+    it('should call getMyPatronInfo with userId (server-injected, not AI)', async () => {
+      const mockResponse = { data: { id: 'user-1', name: 'Test' } };
+      (axios.get as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await getMyPatronInfo('server-injected-user-id');
+
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.stringContaining('server-injected-user-id'),
+        expect.any(Object),
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it('should call getPatronInfoById with AI-supplied id for staff tools', async () => {
+      const mockResponse = { data: { id: 'patron-2', name: 'Other Patron' } };
+      (axios.get as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await getPatronInfoById('ai-supplied-id');
+
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.stringContaining('ai-supplied-id'),
+        expect.any(Object),
+      );
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('Tool registry', () => {
+    it('should register get_schedule_today tool', () => {
+      const tool = staffToolDefs.find(t => t.name === 'get_schedule_today');
+      expect(tool).toBeDefined();
+      expect(typeof tool?.func).toBe('function');
+    });
+
+    it('should register search_books tool', () => {
+      const tool = patronToolDefs.find(t => t.name === 'search_books');
+      expect(tool).toBeDefined();
+    });
+
+    it('should register get_overdue_borrows tool', () => {
+      const tool = staffToolDefs.find(t => t.name === 'get_overdue_borrows');
+      expect(tool).toBeDefined();
+    });
+
+    it('should register get_library_hours tool', () => {
+      const tool = patronToolDefs.find(t => t.name === 'get_library_hours');
+      expect(tool).toBeDefined();
+    });
+
+    it('should register lookup_book tool', () => {
+      const tool = patronToolDefs.find(t => t.name === 'lookup_book');
+      expect(tool).toBeDefined();
+    });
+  });
+
+  describe('get_schedule_today', () => {
+    it('should call schedule-service internal today endpoint', async () => {
+      const mockResponse = {
+        data: [
+          { id: '1', shift: { startTime: '08:00' }, staff: { name: 'Staff A' } },
+          { id: '2', shift: { startTime: '14:00' }, staff: { name: 'Staff B' } },
+        ],
+      };
+
+      (axios.get as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await getScheduleToday();
+
+      expect(axios.get).toHaveBeenCalledWith(
+        'http://schedule-service:3002/schedules/internal/today',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Authorization': expect.stringContaining('Bearer '),
+          }),
+          timeout: 10000,
+        })
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data).toHaveLength(2);
+    });
+
+    it('should sort schedule results by shift startTime', async () => {
+      const mockResponse = {
+        data: [
+          { id: '2', shift: { startTime: '14:00' }, staff: { name: 'Staff B' } },
+          { id: '1', shift: { startTime: '08:00' }, staff: { name: 'Staff A' } },
+        ],
+      };
+
+      (axios.get as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await getScheduleToday();
+
+      expect(result.success).toBe(true);
+      expect(result.data[0].shift.startTime).toBe('08:00');
+      expect(result.data[1].shift.startTime).toBe('14:00');
+    });
+
+    it('should handle errors when schedule service fails', async () => {
+      (axios.get as jest.Mock).mockRejectedValue(new Error('Network error'));
+
+      const result = await getScheduleToday();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+
+    it('should handle 401 auth errors from schedule service', async () => {
+      (axios.get as jest.Mock).mockRejectedValue({ response: { data: { message: 'Unauthorized' }, status: 401 } });
+
+      const result = await getScheduleToday();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+  });
+});
 </file>
 
 <file path="ai-service/src/clients/nvidia.ts">
@@ -57740,28 +57762,6 @@ export async function startUserEventSubscriber(): Promise<void> {
 }
 </file>
 
-<file path="schedule-service/Dockerfile">
-FROM node:20-alpine
-
-WORKDIR /app/schedule-service
-
-COPY schedule-service/package*.json ./
-COPY schedule-service/tsconfig.json ./
-COPY schedule-service/node_modules ./node_modules
-
-COPY schedule-service/src ./src
-COPY schedule-service/migrations ./migrations
-COPY shared /app/shared
-RUN ln -s /app/shared ./shared
-
-RUN npm run build
-RUN if [ ! -e dist/shared ]; then ln -s /app/schedule-service/dist/schedule-service/shared dist/shared; fi
-
-EXPOSE 3002
-
-CMD ["sh", "-c", "TYPEORM_MIGRATION_RUN=true npx typeorm-ts-node-commonjs migration:run -d src/data-source.ts && node dist/schedule-service/src/index.js"]
-</file>
-
 <file path="user-service/.env.example">
 PORT=3001
 NODE_ENV=development
@@ -59583,6 +59583,44 @@ describe('ScheduleService — Coverage Part 2', () => {
 });
 </file>
 
+<file path="schedule-service/src/data-source.ts">
+import 'reflect-metadata';
+import { DataSource } from 'typeorm';
+import { config } from './config';
+import {
+  LibraryZone,
+  StaffShift,
+  StaffScheduleTemplate,
+  StaffSchedule,
+  StaffAttendance,
+  ScheduleAuditLog,
+  GeofenceConfig,
+  StaffShiftPreference,
+} from './entities';
+
+export const AppDataSource = new DataSource({
+  type: 'postgres',
+  host: config.db.host,
+  port: config.db.port,
+  database: config.db.database,
+  username: config.db.user,
+  password: config.db.password,
+  entities: [
+    LibraryZone,
+    StaffShift,
+    StaffScheduleTemplate,
+    StaffSchedule,
+    StaffAttendance,
+    ScheduleAuditLog,
+    GeofenceConfig,
+    StaffShiftPreference,
+  ],
+  migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
+  synchronize: process.env.NODE_ENV !== 'production',
+  logging: process.env.TYPEORM_LOGGING === 'true',
+});
+</file>
+
 <file path="schedule-service/src/subscribers/UserEventSubscriber.ts">
 import crypto from 'crypto';
 import { config } from '../config';
@@ -61142,518 +61180,6 @@ export const config = {
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || [],
   redisUrl: process.env.REDIS_URL || 'redis://redis:6379/0',
 };
-</file>
-
-<file path="access-service/src/routes/access.routes.ts">
-import { Router } from 'express';
-import { z, ZodError } from 'zod';
-import { accessService } from '../services/AccessService';
-import { createAuth, requireRole } from '../../shared';
-import { config } from '../config';
-
-const auth = createAuth({
-  jwtSecret: config.jwtSecret,
-  jwtAudience: config.jwtAudience,
-  jwtIssuer: config.jwtIssuer,
-});
-import { realtimeHub } from '../realtime/RealtimeHub';
-
-const router = Router();
-
-/**
- * @swagger
- * /access/events:
- *   get:
- *     summary: SSE stream for real-time access events
- *     tags: [Access]
- *     responses:
- *       200:
- *         description: Event stream (text/event-stream)
- */
-router.get('/events', auth, (_req, res) => {
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders?.();
-  realtimeHub.addSseClient(res);
-});
-
-/**
- * @swagger
- * /access/recent:
- *   get:
- *     summary: Get recent access events
- *     tags: [Access]
- *     parameters:
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 20
- *     responses:
- *       200:
- *         description: List of recent access events
- */
-router.get('/recent', async (req, res, next) => {
-  try {
-    res.json(await accessService.getRecent(Number(req.query.limit || 20)));
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /access/logs:
- *   get:
- *     summary: Get access logs (filtered)
- *     tags: [Access]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: patron_id
- *         schema:
- *           type: string
- *       - in: query
- *         name: dateFrom
- *         schema:
- *           type: string
- *       - in: query
- *         name: dateTo
- *         schema:
- *           type: string
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 200
- *     responses:
- *       200:
- *         description: List of access logs
- */
-router.get('/logs', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
-  try {
-    res.json(await accessService.getLogs({
-      patronId: req.query.patron_id as string | undefined,
-      dateFrom: req.query.dateFrom as string | undefined,
-      dateTo: req.query.dateTo as string | undefined,
-      limit: Number(req.query.limit || 200),
-    }));
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /access/active:
- *   get:
- *     summary: Get currently active patrons
- *     tags: [Access]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of active patrons
- */
-router.get('/active', auth, requireRole(['admin', 'staff']), async (_req, res, next) => {
-  try {
-    res.json(await accessService.getActive());
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /access/frequency:
- *   get:
- *     summary: Get access frequency over time
- *     tags: [Access]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: days
- *         schema:
- *           type: integer
- *           default: 7
- *     responses:
- *       200:
- *         description: Access frequency data
- */
-router.get('/frequency', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
-  try {
-    res.json(await accessService.getFrequency(Number(req.query.days || 7)));
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /access/stats:
- *   get:
- *     summary: Get access statistics
- *     tags: [Access]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Access statistics
- */
-router.get('/stats', auth, requireRole(['admin', 'staff']), async (_req, res, next) => {
-  try {
-    res.json(await accessService.getStats());
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /access/test-broadcast:
- *   post:
- *     summary: Broadcast a manual test recognition event
- *     tags: [Access]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               camera_id:
- *                 type: string
- *                 default: kiosk
- *               status:
- *                 type: string
- *                 default: granted
- *               patron_id:
- *                 type: string
- *               student_code:
- *                 type: string
- *               full_name:
- *                 type: string
- *               access_type:
- *                 type: string
- *                 enum: [entry, exit]
- *               score:
- *                 type: number
- *     responses:
- *       200:
- *         description: Broadcast result
- */
-router.post('/test-broadcast', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
-  try {
-    const body = z.object({
-      camera_id: z.string().default('kiosk'),
-      status: z.string().default('granted'),
-      patron_id: z.string().optional(),
-      student_code: z.string().optional(),
-      full_name: z.string().optional(),
-      access_type: z.enum(['entry', 'exit']).optional(),
-      score: z.number().optional(),
-    }).passthrough().parse(req.body || {});
-    const event = await accessService.recordRecognitionEvent({ ...body, source: 'manual-test' });
-    res.json({ ok: true, event });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /access/force-exit:
- *   post:
- *     summary: Force mark a patron as outside the library
- *     tags: [Access]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - patron_id
- *             properties:
- *               patron_id:
- *                 type: string
- *     responses:
- *       200:
- *         description: Patron marked as outside
- */
-/**
- * @swagger
- * /access/kiosk/presence:
- *   post:
- *     summary: Mark patron as present via Kiosk interaction
- *     tags: [Access]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - patron_id
- *               - student_code
- *               - device_id
- *             properties:
- *               patron_id:
- *                 type: string
- *               student_code:
- *                 type: string
- *               device_id:
- *                 type: string
- *     responses:
- *       200:
- *         description: Presence recorded
- *       400:
- *         description: Missing required fields
- *       403:
- *         description: Unknown kiosk device
- */
-router.post('/kiosk/presence', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
-  try {
-    const body = z.object({
-      patron_id: z.string().min(1, 'patron_id là bắt buộc'),
-      student_code: z.string().min(1, 'student_code là bắt buộc'),
-      device_id: z.string().min(1, 'device_id là bắt buộc'),
-    }).parse(req.body || {});
-
-    const device = await accessService.findKioskDevice(body.device_id);
-    if (!device) {
-      res.status(403).json({ error: 'Thiết bị Kiosk không hợp lệ' });
-      return;
-    }
-
-    const result = await accessService.recordKioskPresence(body.patron_id, body.student_code, body.device_id);
-    res.json(result);
-  } catch (error) {
-    if (error instanceof ZodError) {
-      res.status(400).json({ error: error.errors.map(e => e.message).join(', ') });
-      return;
-    }
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /access/kiosk/approval-request:
- *   post:
- *     summary: Create a kiosk approval request (when face recognition fails)
- *     tags: [Access]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - device_id
- *               - patron_id
- *               - student_code
- *             properties:
- *               device_id:
- *                 type: string
- *               patron_id:
- *                 type: string
- *               student_code:
- *                 type: string
- *               fail_image_url:
- *                 type: string
- *               isbns:
- *                 type: string
- *     responses:
- *       201:
- *         description: Approval request created
- *       400:
- *         description: Validation error
- *       403:
- *         description: Unknown kiosk device
- */
-router.post('/kiosk/approval-request', async (req, res, next) => {
-  try {
-    const body = z.object({
-      device_id: z.string().min(1),
-      patron_id: z.string().min(1),
-      student_code: z.string().min(1),
-      fail_image_url: z.string().optional(),
-      isbns: z.string().optional(),
-    }).parse(req.body || {});
-
-    const device = await accessService.findKioskDevice(body.device_id);
-    if (!device) {
-      res.status(403).json({ error: 'Thiết bị Kiosk không hợp lệ' });
-      return;
-    }
-
-    const result = await accessService.createApprovalRequest({
-      kioskDeviceId: body.device_id,
-      patronId: body.patron_id,
-      patronStudentCode: body.student_code,
-      failImageUrl: body.fail_image_url || null,
-      isbns: body.isbns || null,
-    });
-    res.status(201).json(result);
-  } catch (error) {
-    if (error instanceof ZodError) {
-      res.status(400).json({ error: error.errors.map(e => e.message).join(', ') });
-      return;
-    }
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /access/kiosk/approval-requests/pending:
- *   get:
- *     summary: Get pending approval requests for staff dashboard
- *     tags: [Access]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of pending requests
- */
-router.get('/kiosk/approval-requests/pending', auth, requireRole(['admin', 'staff']), async (_req, res, next) => {
-  try {
-    res.json(await accessService.getPendingApprovalRequests());
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /access/kiosk/approval-requests/{code}:
- *   get:
- *     summary: Get approval request status (polled by kiosk)
- *     tags: [Access]
- *     parameters:
- *       - in: path
- *         name: code
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Approval request status
- *       404:
- *         description: Not found
- */
-router.get('/kiosk/approval-requests/:code', async (req, res, next) => {
-  try {
-    const result = await accessService.getApprovalRequest(req.params.code);
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /access/kiosk/approval-requests/{code}/approve:
- *   post:
- *     summary: Approve a kiosk approval request
- *     tags: [Access]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: code
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - approved_by
- *             properties:
- *               approved_by:
- *                 type: string
- *     responses:
- *       200:
- *         description: Request approved
- */
-router.post('/kiosk/approval-requests/:code/approve', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
-  try {
-    const body = z.object({ approved_by: z.string().min(1) }).parse(req.body || {});
-    const result = await accessService.approveRequest(req.params.code, body.approved_by);
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /access/kiosk/approval-requests/{code}/reject:
- *   post:
- *     summary: Reject a kiosk approval request
- *     tags: [Access]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: code
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - approved_by
- *             properties:
- *               approved_by:
- *                 type: string
- *               reason:
- *                 type: string
- *     responses:
- *       200:
- *         description: Request rejected
- */
-router.post('/kiosk/approval-requests/:code/reject', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
-  try {
-    const body = z.object({ approved_by: z.string().min(1), reason: z.string().optional() }).parse(req.body || {});
-    const result = await accessService.rejectRequest(req.params.code, body.approved_by, body.reason);
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post('/force-exit', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
-  try {
-    const body = z.object({
-      patron_id: z.string(),
-    }).parse(req.body || {});
-    await accessService.setStatus(body.patron_id, 'outside', 'manual_override');
-    res.json({ ok: true, message: 'Đã đánh dấu độc giả đã ra khỏi thư viện' });
-  } catch (error) {
-    next(error);
-  }
-});
-
-export default router;
 </file>
 
 <file path="ai-service/Dockerfile">
@@ -64036,44 +63562,6 @@ export const config = {
 };
 </file>
 
-<file path="schedule-service/src/data-source.ts">
-import 'reflect-metadata';
-import { DataSource } from 'typeorm';
-import { config } from './config';
-import {
-  LibraryZone,
-  StaffShift,
-  StaffScheduleTemplate,
-  StaffSchedule,
-  StaffAttendance,
-  ScheduleAuditLog,
-  GeofenceConfig,
-  StaffShiftPreference,
-} from './entities';
-
-export const AppDataSource = new DataSource({
-  type: 'postgres',
-  host: config.db.host,
-  port: config.db.port,
-  database: config.db.database,
-  username: config.db.user,
-  password: config.db.password,
-  entities: [
-    LibraryZone,
-    StaffShift,
-    StaffScheduleTemplate,
-    StaffSchedule,
-    StaffAttendance,
-    ScheduleAuditLog,
-    GeofenceConfig,
-    StaffShiftPreference,
-  ],
-  migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
-  synchronize: process.env.NODE_ENV !== 'production',
-  logging: process.env.TYPEORM_LOGGING === 'true',
-});
-</file>
-
 <file path="schedule-service/src/routes/schedule-internal.routes.ts">
 import { Router, Request, Response } from 'express';
 import { scheduleService } from '../services/ScheduleService';
@@ -64458,6 +63946,518 @@ export class PatronController {
 }
 
 export const patronController = new PatronController();
+</file>
+
+<file path="access-service/src/routes/access.routes.ts">
+import { Router } from 'express';
+import { z, ZodError } from 'zod';
+import { accessService } from '../services/AccessService';
+import { createAuth, requireRole } from '../../shared';
+import { config } from '../config';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
+import { realtimeHub } from '../realtime/RealtimeHub';
+
+const router = Router();
+
+/**
+ * @swagger
+ * /access/events:
+ *   get:
+ *     summary: SSE stream for real-time access events
+ *     tags: [Access]
+ *     responses:
+ *       200:
+ *         description: Event stream (text/event-stream)
+ */
+router.get('/events', auth, (_req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+  realtimeHub.addSseClient(res);
+});
+
+/**
+ * @swagger
+ * /access/recent:
+ *   get:
+ *     summary: Get recent access events
+ *     tags: [Access]
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *     responses:
+ *       200:
+ *         description: List of recent access events
+ */
+router.get('/recent', async (req, res, next) => {
+  try {
+    res.json(await accessService.getRecent(Number(req.query.limit || 20)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/logs:
+ *   get:
+ *     summary: Get access logs (filtered)
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: patron_id
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: dateFrom
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: dateTo
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 200
+ *     responses:
+ *       200:
+ *         description: List of access logs
+ */
+router.get('/logs', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
+  try {
+    res.json(await accessService.getLogs({
+      patronId: req.query.patron_id as string | undefined,
+      dateFrom: req.query.dateFrom as string | undefined,
+      dateTo: req.query.dateTo as string | undefined,
+      limit: Number(req.query.limit || 200),
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/active:
+ *   get:
+ *     summary: Get currently active patrons
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of active patrons
+ */
+router.get('/active', auth, requireRole(['admin', 'staff']), async (_req, res, next) => {
+  try {
+    res.json(await accessService.getActive());
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/frequency:
+ *   get:
+ *     summary: Get access frequency over time
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: days
+ *         schema:
+ *           type: integer
+ *           default: 7
+ *     responses:
+ *       200:
+ *         description: Access frequency data
+ */
+router.get('/frequency', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
+  try {
+    res.json(await accessService.getFrequency(Number(req.query.days || 7)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/stats:
+ *   get:
+ *     summary: Get access statistics
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Access statistics
+ */
+router.get('/stats', auth, requireRole(['admin', 'staff']), async (_req, res, next) => {
+  try {
+    res.json(await accessService.getStats());
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/test-broadcast:
+ *   post:
+ *     summary: Broadcast a manual test recognition event
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               camera_id:
+ *                 type: string
+ *                 default: kiosk
+ *               status:
+ *                 type: string
+ *                 default: granted
+ *               patron_id:
+ *                 type: string
+ *               student_code:
+ *                 type: string
+ *               full_name:
+ *                 type: string
+ *               access_type:
+ *                 type: string
+ *                 enum: [entry, exit]
+ *               score:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Broadcast result
+ */
+router.post('/test-broadcast', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
+  try {
+    const body = z.object({
+      camera_id: z.string().default('kiosk'),
+      status: z.string().default('granted'),
+      patron_id: z.string().optional(),
+      student_code: z.string().optional(),
+      full_name: z.string().optional(),
+      access_type: z.enum(['entry', 'exit']).optional(),
+      score: z.number().optional(),
+    }).passthrough().parse(req.body || {});
+    const event = await accessService.recordRecognitionEvent({ ...body, source: 'manual-test' });
+    res.json({ ok: true, event });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/force-exit:
+ *   post:
+ *     summary: Force mark a patron as outside the library
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - patron_id
+ *             properties:
+ *               patron_id:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Patron marked as outside
+ */
+/**
+ * @swagger
+ * /access/kiosk/presence:
+ *   post:
+ *     summary: Mark patron as present via Kiosk interaction
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - patron_id
+ *               - student_code
+ *               - device_id
+ *             properties:
+ *               patron_id:
+ *                 type: string
+ *               student_code:
+ *                 type: string
+ *               device_id:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Presence recorded
+ *       400:
+ *         description: Missing required fields
+ *       403:
+ *         description: Unknown kiosk device
+ */
+router.post('/kiosk/presence', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
+  try {
+    const body = z.object({
+      patron_id: z.string().min(1, 'patron_id là bắt buộc'),
+      student_code: z.string().min(1, 'student_code là bắt buộc'),
+      device_id: z.string().min(1, 'device_id là bắt buộc'),
+    }).parse(req.body || {});
+
+    const device = await accessService.findKioskDevice(body.device_id);
+    if (!device) {
+      res.status(403).json({ error: 'Thiết bị Kiosk không hợp lệ' });
+      return;
+    }
+
+    const result = await accessService.recordKioskPresence(body.patron_id, body.student_code, body.device_id);
+    res.json(result);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      res.status(400).json({ error: error.errors.map(e => e.message).join(', ') });
+      return;
+    }
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/kiosk/approval-request:
+ *   post:
+ *     summary: Create a kiosk approval request (when face recognition fails)
+ *     tags: [Access]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - device_id
+ *               - patron_id
+ *               - student_code
+ *             properties:
+ *               device_id:
+ *                 type: string
+ *               patron_id:
+ *                 type: string
+ *               student_code:
+ *                 type: string
+ *               fail_image_url:
+ *                 type: string
+ *               isbns:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Approval request created
+ *       400:
+ *         description: Validation error
+ *       403:
+ *         description: Unknown kiosk device
+ */
+router.post('/kiosk/approval-request', async (req, res, next) => {
+  try {
+    const body = z.object({
+      device_id: z.string().min(1),
+      patron_id: z.string().min(1),
+      student_code: z.string().min(1),
+      fail_image_url: z.string().optional(),
+      isbns: z.string().optional(),
+    }).parse(req.body || {});
+
+    const device = await accessService.findKioskDevice(body.device_id);
+    if (!device) {
+      res.status(403).json({ error: 'Thiết bị Kiosk không hợp lệ' });
+      return;
+    }
+
+    const result = await accessService.createApprovalRequest({
+      kioskDeviceId: body.device_id,
+      patronId: body.patron_id,
+      patronStudentCode: body.student_code,
+      failImageUrl: body.fail_image_url || null,
+      isbns: body.isbns || null,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      res.status(400).json({ error: error.errors.map(e => e.message).join(', ') });
+      return;
+    }
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/kiosk/approval-requests/pending:
+ *   get:
+ *     summary: Get pending approval requests for staff dashboard
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of pending requests
+ */
+router.get('/kiosk/approval-requests/pending', auth, requireRole(['admin', 'staff']), async (_req, res, next) => {
+  try {
+    res.json(await accessService.getPendingApprovalRequests());
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/kiosk/approval-requests/{code}:
+ *   get:
+ *     summary: Get approval request status (polled by kiosk)
+ *     tags: [Access]
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Approval request status
+ *       404:
+ *         description: Not found
+ */
+router.get('/kiosk/approval-requests/:code', async (req, res, next) => {
+  try {
+    const result = await accessService.getApprovalRequest(req.params.code);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/kiosk/approval-requests/{code}/approve:
+ *   post:
+ *     summary: Approve a kiosk approval request
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - approved_by
+ *             properties:
+ *               approved_by:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Request approved
+ */
+router.post('/kiosk/approval-requests/:code/approve', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
+  try {
+    const body = z.object({ approved_by: z.string().min(1) }).parse(req.body || {});
+    const result = await accessService.approveRequest(req.params.code, body.approved_by);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/kiosk/approval-requests/{code}/reject:
+ *   post:
+ *     summary: Reject a kiosk approval request
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - approved_by
+ *             properties:
+ *               approved_by:
+ *                 type: string
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Request rejected
+ */
+router.post('/kiosk/approval-requests/:code/reject', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
+  try {
+    const body = z.object({ approved_by: z.string().min(1), reason: z.string().optional() }).parse(req.body || {});
+    const result = await accessService.rejectRequest(req.params.code, body.approved_by, body.reason);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/force-exit', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
+  try {
+    const body = z.object({
+      patron_id: z.string(),
+    }).parse(req.body || {});
+    await accessService.setStatus(body.patron_id, 'outside', 'manual_override');
+    res.json({ ok: true, message: 'Đã đánh dấu độc giả đã ra khỏi thư viện' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+export default router;
 </file>
 
 <file path="ai-service/package.json">
@@ -67272,482 +67272,6 @@ RABBITMQ_PASS=guest
 RABBITMQ_URL=amqp://${RABBITMQ_USER}:${RABBITMQ_PASS}@rabbitmq:5672
 </file>
 
-<file path="access-service/src/services/AccessService.ts">
-import { Between, In, IsNull, LessThan, MoreThanOrEqual } from 'typeorm';
-import { randomUUID } from 'crypto';
-import * as jwt from 'jsonwebtoken';
-import { AppDataSource } from '../data-source';
-import { AccessLog } from '../entities/AccessLog';
-import { KioskDevice } from '../entities/KioskDevice';
-import { KioskApprovalRequest } from '../entities/KioskApprovalRequest';
-import { PatronAccessState } from '../entities/PatronAccessState';
-import {
-  AccessRealtimeEvent,
-  AccessRealtimeEventSchema,
-  AccessStatus,
-  AccessType,
-  ACTIVE_CAMERA_IDS,
-  ACCESS_STATUSES,
-  RecognitionEventInputSchema,
-} from '../contracts';
-import { UserServiceClient } from '../clients/UserServiceClient';
-import { realtimeHub } from '../realtime/RealtimeHub';
-import { HttpError } from '../../../shared';
-import { config } from '../config';
-
-const logRepo = () => AppDataSource.getRepository(AccessLog);
-const stateRepo = () => AppDataSource.getRepository(PatronAccessState);
-const users = new UserServiceClient();
-
-function toIso(value: Date | string | undefined | null) {
-  if (!value) return new Date().toISOString();
-  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-}
-
-function normalizeStatus(status: unknown): AccessStatus {
-  if (status === 'success') return 'granted';
-  if (status === 'unknown') return 'no_match';
-  if (typeof status === 'string' && (ACCESS_STATUSES as readonly string[]).includes(status)) return status as AccessStatus;
-  return 'error';
-}
-
-function publicStatus(log: AccessLog) {
-  return log.status === 'success' ? 'granted' : log.status;
-}
-
-async function enrichLogs(logs: AccessLog[]) {
-  const userMap = await users.getUsers(logs.map((log) => log.patronId || '').filter(Boolean));
-  return logs.map((log) => {
-    const user = log.patronId ? userMap.get(log.patronId) : null;
-    return {
-      id: log.id,
-      patron_id: log.patronId,
-      access_type: log.accessType,
-      verify_method: log.verifyMethod,
-      confidence: log.confidence,
-      camera_id: log.cameraId,
-      image_url: log.imageUrl,
-      status: publicStatus(log),
-      access_time: log.accessTime,
-      created_at: log.accessTime,
-      event_id: log.eventId,
-      source: log.source,
-      user: user
-        ? {
-            id: user.id,
-            full_name: user.fullName,
-            fullName: user.fullName,
-            email: user.email,
-            student_code: user.studentCode,
-            studentCode: user.studentCode,
-            card_number: user.cardNumber,
-            cardNumber: user.cardNumber,
-          }
-        : null,
-      full_name: user?.fullName || null,
-      student_code: user?.studentCode || null,
-    };
-  });
-}
-
-export class AccessService {
-  async recordRecognitionEvent(input: any): Promise<AccessRealtimeEvent> {
-    const parsedInput = RecognitionEventInputSchema.parse(input || {});
-    const status = normalizeStatus(parsedInput.status);
-    const cameraId = String(parsedInput.camera_id || 'unknown');
-    const patronId = parsedInput.patron_id ? String(parsedInput.patron_id) : null;
-    let accessType = parsedInput.access_type ? String(parsedInput.access_type) as AccessType : null;
-    const occurredAt = toIso(parsedInput.occurred_at);
-
-    if (!accessType && cameraId === 'entry_gate') accessType = 'entry';
-    if (!accessType && cameraId === 'exit_gate') accessType = 'exit';
-    if (!accessType && cameraId === 'kiosk' && patronId) {
-      const state = await stateRepo().findOne({ where: { patronId } });
-      accessType = state?.currentStatus === 'inside' ? 'exit' : 'entry';
-    }
-
-    const event: AccessRealtimeEvent = {
-      event_id: String(parsedInput.event_id || randomUUID()),
-      event_type: 'camera_event',
-      camera_id: cameraId,
-      access_type: accessType,
-      status,
-      patron_id: patronId,
-      student_code: parsedInput.student_code || null,
-      full_name: parsedInput.full_name || null,
-      score: typeof parsedInput.score === 'number' ? parsedInput.score : parsedInput.confidence ?? null,
-      bbox: parsedInput.bbox ?? null,
-      landmarks: parsedInput.landmarks ?? null,
-      occurred_at: occurredAt,
-      source: parsedInput.source || 'face-recognition-service',
-      image_url: parsedInput.image_url || null,
-    };
-
-    const realtimeEvent = AccessRealtimeEventSchema.parse(event);
-
-    if (status === 'granted' && patronId && accessType) {
-      await logRepo().save(logRepo().create({
-        id: parsedInput.log_id || undefined,
-        patronId,
-        accessType,
-        verifyMethod: parsedInput.verify_method || 'face',
-        confidence: realtimeEvent.score ?? null,
-        cameraId,
-        imageUrl: realtimeEvent.image_url || null,
-        status: 'success',
-        eventId: realtimeEvent.event_id,
-        source: realtimeEvent.source,
-        accessTime: new Date(occurredAt),
-      }));
-      await this.upsertState(patronId, accessType, cameraId, new Date(occurredAt));
-    }
-
-    await realtimeHub.publish(realtimeEvent);
-    return realtimeEvent;
-  }
-
-  async getRecent(limit = 20) {
-    const logs = await logRepo().find({
-      where: { cameraId: In([...ACTIVE_CAMERA_IDS]) },
-      order: { accessTime: 'DESC' },
-      take: Math.min(limit, 100),
-    });
-    return enrichLogs(logs);
-  }
-
-  async getLogs(query: { patronId?: string; dateFrom?: string; dateTo?: string; limit?: number }) {
-    const where: any = { cameraId: In([...ACTIVE_CAMERA_IDS]) };
-    if (query.patronId) {
-      where.patronId = query.patronId;
-    }
-    if (query.dateFrom || query.dateTo) {
-      const from = query.dateFrom ? new Date(query.dateFrom) : new Date('1970-01-01T00:00:00Z');
-      const to = query.dateTo ? new Date(query.dateTo) : new Date();
-      where.accessTime = Between(from, to);
-    }
-    const logs = await logRepo().find({
-      where,
-      order: { accessTime: 'DESC' },
-      take: Math.min(query.limit || 200, 1000),
-    });
-    return enrichLogs(logs);
-  }
-
-  async getActive() {
-    const MAX_INSIDE_HOURS = 24;
-    const states = await stateRepo().find({
-      where: { currentStatus: 'inside' },
-      order: { lastEntryAt: 'DESC' },
-    });
-
-    const userMap = await users.getUsers(states.map((state) => state.patronId));
-
-    const now = Date.now();
-    const results: any[] = [];
-    const staleIds: string[] = [];
-
-    for (const state of states) {
-      const user = userMap.get(state.patronId);
-
-      if (!user || user.status === 'deleted') {
-        staleIds.push(state.patronId);
-        continue;
-      }
-
-      const entryTime = state.lastEntryAt ? new Date(state.lastEntryAt).getTime() : 0;
-      const hoursInside = (now - entryTime) / (1000 * 60 * 60);
-      if (hoursInside > MAX_INSIDE_HOURS) {
-        staleIds.push(state.patronId);
-        continue;
-      }
-
-      if (state.lastEntryCamera && !ACTIVE_CAMERA_IDS.includes(state.lastEntryCamera as any)) {
-        continue;
-      }
-
-      results.push({
-        id: state.patronId,
-        patron_id: state.patronId,
-        full_name: user.fullName || null,
-        fullName: user.fullName || null,
-        email: user.email || null,
-        student_code: user.studentCode || null,
-        studentCode: user.studentCode || null,
-        current_status: state.currentStatus,
-        currentStatus: state.currentStatus,
-        last_entry_at: state.lastEntryAt,
-        lastEntryAt: state.lastEntryAt,
-        last_entry_camera: state.lastEntryCamera,
-        lastEntryCamera: state.lastEntryCamera,
-      });
-    }
-
-    if (staleIds.length > 0) {
-      stateRepo().update(staleIds, { currentStatus: 'outside' }).catch(err => {
-        console.error('[AccessService] Stale patron cleanup failed:', err);
-      });
-    }
-
-    return results;
-  }
-
-  async getFrequency(days = 7) {
-    const since = new Date();
-    since.setDate(since.getDate() - Math.max(1, Math.min(days, 31)));
-    const rows = await logRepo()
-      .createQueryBuilder('log')
-      .select(`DATE_TRUNC('day', log.accessTime)`, 'date')
-      .addSelect('log.accessType', 'access_type')
-      .addSelect('COUNT(*)', 'count')
-      .where('log.accessTime >= :since', { since })
-      .andWhere('log.cameraId IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
-      .groupBy('date')
-      .addGroupBy('log.accessType')
-      .orderBy('date', 'ASC')
-      .getRawMany();
-    return rows.map((row) => ({
-      date: row.date,
-      access_type: row.access_type,
-      count: Number(row.count),
-    }));
-  }
-
-  async getStats() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const activeList = await this.getActive();
-    const activeCount = activeList.length;
-
-    const entryExitCounts = await logRepo()
-      .createQueryBuilder('log')
-      .select('log.access_type', 'accessType')
-      .addSelect('COUNT(*)', 'count')
-      .where('log.access_time >= :today', { today })
-      .andWhere('log.camera_id IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
-      .groupBy('log.access_type')
-      .getRawMany();
-
-    const todayEntries = Number(entryExitCounts.find(c => c.accessType === 'entry')?.count || 0);
-    const todayExits = Number(entryExitCounts.find(c => c.accessType === 'exit')?.count || 0);
-
-    return {
-      active_inside: activeCount,
-      activeInside: activeCount,
-      today_entries: todayEntries,
-      todayEntries,
-      today_exits: todayExits,
-      todayExits,
-      today_total: todayEntries + todayExits,
-      todayTotal: todayEntries + todayExits,
-    };
-  }
-
-  async getStatus(patronId: string) {
-    let state = await stateRepo().findOne({ where: { patronId } });
-    if (!state) {
-      state = stateRepo().create({ patronId, currentStatus: 'outside', lastEntryAt: null, lastEntryCamera: null });
-      await stateRepo().save(state);
-    }
-    return {
-      patron_id: patronId,
-      current_status: state.currentStatus,
-      currentStatus: state.currentStatus,
-      last_entry_at: state.lastEntryAt,
-      lastEntryAt: state.lastEntryAt,
-      last_entry_camera: state.lastEntryCamera,
-      lastEntryCamera: state.lastEntryCamera,
-    };
-  }
-
-  async setStatus(patronId: string, currentStatus: 'inside' | 'outside', cameraId?: string | null) {
-    if (!['inside', 'outside'].includes(currentStatus)) {
-      throw new HttpError(400, 'Invalid current_status');
-    }
-    const accessType: AccessType = currentStatus === 'inside' ? 'entry' : 'exit';
-    await this.upsertState(patronId, accessType, cameraId || 'manual', new Date());
-    return this.getStatus(patronId);
-  }
-
-  async findKioskDevice(deviceId: string): Promise<KioskDevice | null> {
-    const repo = AppDataSource.getRepository(KioskDevice);
-    return repo.findOne({ where: { id: deviceId, isActive: true } });
-  }
-
-  async verifyKioskIp(ip: string): Promise<boolean> {
-    const repo = AppDataSource.getRepository(KioskDevice);
-    const device = await repo.findOne({ where: { ipAddress: ip, isActive: true } });
-    return !!device;
-  }
-
-  async recordKioskPresence(patronId: string, studentCode: string, deviceId: string): Promise<any> {
-    const state = await this.getStatus(patronId);
-    if (state.currentStatus === 'inside') {
-      return { ...state, message: 'Độc giả đã có mặt trong thư viện', skipped: true };
-    }
-    await this.setStatus(patronId, 'inside', 'kiosk');
-    return { ...await this.getStatus(patronId), message: 'Đã ghi nhận hiện diện qua Kiosk', skipped: false };
-  }
-
-  private async generateEventCode(): Promise<string> {
-    const repo = AppDataSource.getRepository(KioskApprovalRequest);
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-      const code = letters[Math.floor(Math.random() * 26)] + String(Math.floor(Math.random() * 900) + 100);
-      const existing = await repo.findOne({ where: { eventCode: code } });
-      if (!existing) return code;
-    }
-    const latest = await repo.find({ order: { createdAt: 'DESC' }, take: 1 });
-    const lastCode = latest.length > 0 ? latest[0].eventCode : 'A000';
-    const num = parseInt(lastCode.substring(1), 10) + 1;
-    return lastCode[0] + String(num).padStart(3, '0');
-  }
-
-  async createApprovalRequest(input: {
-    kioskDeviceId: string;
-    patronId?: string | null;
-    patronStudentCode?: string | null;
-    failImageUrl?: string | null;
-    isbns?: string | null;
-  }) {
-    const repo = AppDataSource.getRepository(KioskApprovalRequest);
-    const eventCode = await this.generateEventCode();
-    const deviceAuthToken = jwt.sign(
-      {
-        sub: eventCode,
-        event_code: eventCode,
-        patron_id: input.patronId,
-        student_code: input.patronStudentCode,
-        isbns: input.isbns || null,
-        fail_image_url: input.failImageUrl || null,
-      },
-      config.serviceJwtSecret,
-      { expiresIn: 300 }
-    );
-    const expiresAt = new Date(Date.now() + 300000);
-    const entity = repo.create({
-      eventCode,
-      kioskDeviceId: input.kioskDeviceId,
-      patronId: input.patronId || null,
-      patronStudentCode: input.patronStudentCode || null,
-      failImageUrl: input.failImageUrl || null,
-      isbns: input.isbns || null,
-      deviceAuthToken,
-      status: 'pending',
-      expiresAt,
-    });
-    const saved = await repo.save(entity);
-    return {
-      id: saved.id,
-      event_code: saved.eventCode,
-      device_auth_token: saved.deviceAuthToken,
-      status: saved.status,
-      expires_at: saved.expiresAt.toISOString(),
-    };
-  }
-
-  async getPendingApprovalRequests() {
-    const repo = AppDataSource.getRepository(KioskApprovalRequest);
-    const rows = await repo.find({
-      where: { status: 'pending', expiresAt: MoreThanOrEqual(new Date()) },
-      order: { createdAt: 'DESC' },
-    });
-    return rows.map(r => ({
-      id: r.id,
-      event_code: r.eventCode,
-      kiosk_device_id: r.kioskDeviceId,
-      patron_id: r.patronId,
-      patron_student_code: r.patronStudentCode,
-      fail_image_url: r.failImageUrl,
-      isbns: r.isbns,
-      status: r.status,
-      created_at: r.createdAt.toISOString(),
-      expires_at: r.expiresAt.toISOString(),
-    }));
-  }
-
-  async getApprovalRequest(eventCode: string) {
-    const repo = AppDataSource.getRepository(KioskApprovalRequest);
-    const record = await repo.findOne({ where: { eventCode } });
-    if (!record) throw new HttpError(404, 'Approval request not found');
-    return {
-      id: record.id,
-      event_code: record.eventCode,
-      kiosk_device_id: record.kioskDeviceId,
-      patron_id: record.patronId,
-      patron_student_code: record.patronStudentCode,
-      fail_image_url: record.failImageUrl,
-      isbns: record.isbns,
-      status: record.status,
-      created_at: record.createdAt.toISOString(),
-      expires_at: record.expiresAt.toISOString(),
-      approved_by: record.approvedBy,
-      approved_at: record.approvedAt?.toISOString() || null,
-      reject_reason: record.rejectReason,
-    };
-  }
-
-  async approveRequest(eventCode: string, approvedBy: string) {
-    const repo = AppDataSource.getRepository(KioskApprovalRequest);
-    const record = await repo.findOne({ where: { eventCode } });
-    if (!record) throw new HttpError(404, 'Approval request not found');
-    if (record.status !== 'pending') throw new HttpError(400, `Request is already ${record.status}`);
-    if (record.expiresAt < new Date()) throw new HttpError(400, 'Approval request has expired');
-
-    record.status = 'approved';
-    record.approvedBy = approvedBy;
-    record.approvedAt = new Date();
-    await repo.save(record);
-
-    return { status: 'approved', event_code: record.eventCode };
-  }
-
-  async rejectRequest(eventCode: string, approvedBy: string, reason?: string) {
-    const repo = AppDataSource.getRepository(KioskApprovalRequest);
-    const record = await repo.findOne({ where: { eventCode } });
-    if (!record) throw new HttpError(404, 'Approval request not found');
-    if (record.status !== 'pending') throw new HttpError(400, `Request is already ${record.status}`);
-    if (record.expiresAt < new Date()) throw new HttpError(400, 'Approval request has expired');
-
-    record.status = 'rejected';
-    record.approvedBy = approvedBy;
-    record.rejectReason = reason || null;
-    await repo.save(record);
-
-    return { status: 'rejected', event_code: record.eventCode };
-  }
-
-  private async upsertState(patronId: string, accessType: AccessType, cameraId: string, at: Date) {
-    let state = await stateRepo().findOne({ where: { patronId } });
-    if (!state) {
-      state = stateRepo().create({ patronId, currentStatus: 'outside' });
-    }
-    if (accessType === 'entry') {
-      state.currentStatus = 'inside';
-      state.lastEntryAt = at;
-      state.lastEntryCamera = cameraId;
-    } else {
-      state.currentStatus = 'outside';
-      state.lastExitAt = at;
-      state.lastExitCamera = cameraId;
-    }
-    await stateRepo().save(state);
-
-    const { amqpClient } = require('../clients/AmqpClient');
-    amqpClient.publish('user.access.status_changed', {
-      patronId,
-      currentStatus: state.currentStatus,
-      lastEntryAt: state.lastEntryAt ? state.lastEntryAt.toISOString() : null,
-      lastEntryCamera: state.lastEntryCamera || null,
-      lastExitAt: state.lastExitAt ? state.lastExitAt.toISOString() : null,
-      lastExitCamera: state.lastExitCamera || null,
-    }).catch((err: any) => console.error('[AMQP] Failed to publish status changed event:', err.message));
-  }
-}
-
-export const accessService = new AccessService();
-</file>
-
 <file path="ai-service/src/index.ts">
 import 'reflect-metadata';
 import express from 'express';
@@ -68434,6 +67958,482 @@ export function verifyUserDeletedEvent(
     return false;
   }
 }
+</file>
+
+<file path="access-service/src/services/AccessService.ts">
+import { Between, In, IsNull, LessThan, MoreThanOrEqual } from 'typeorm';
+import { randomUUID } from 'crypto';
+import * as jwt from 'jsonwebtoken';
+import { AppDataSource } from '../data-source';
+import { AccessLog } from '../entities/AccessLog';
+import { KioskDevice } from '../entities/KioskDevice';
+import { KioskApprovalRequest } from '../entities/KioskApprovalRequest';
+import { PatronAccessState } from '../entities/PatronAccessState';
+import {
+  AccessRealtimeEvent,
+  AccessRealtimeEventSchema,
+  AccessStatus,
+  AccessType,
+  ACTIVE_CAMERA_IDS,
+  ACCESS_STATUSES,
+  RecognitionEventInputSchema,
+} from '../contracts';
+import { UserServiceClient } from '../clients/UserServiceClient';
+import { realtimeHub } from '../realtime/RealtimeHub';
+import { HttpError } from '../../../shared';
+import { config } from '../config';
+
+const logRepo = () => AppDataSource.getRepository(AccessLog);
+const stateRepo = () => AppDataSource.getRepository(PatronAccessState);
+const users = new UserServiceClient();
+
+function toIso(value: Date | string | undefined | null) {
+  if (!value) return new Date().toISOString();
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function normalizeStatus(status: unknown): AccessStatus {
+  if (status === 'success') return 'granted';
+  if (status === 'unknown') return 'no_match';
+  if (typeof status === 'string' && (ACCESS_STATUSES as readonly string[]).includes(status)) return status as AccessStatus;
+  return 'error';
+}
+
+function publicStatus(log: AccessLog) {
+  return log.status === 'success' ? 'granted' : log.status;
+}
+
+async function enrichLogs(logs: AccessLog[]) {
+  const userMap = await users.getUsers(logs.map((log) => log.patronId || '').filter(Boolean));
+  return logs.map((log) => {
+    const user = log.patronId ? userMap.get(log.patronId) : null;
+    return {
+      id: log.id,
+      patron_id: log.patronId,
+      access_type: log.accessType,
+      verify_method: log.verifyMethod,
+      confidence: log.confidence,
+      camera_id: log.cameraId,
+      image_url: log.imageUrl,
+      status: publicStatus(log),
+      access_time: log.accessTime,
+      created_at: log.accessTime,
+      event_id: log.eventId,
+      source: log.source,
+      user: user
+        ? {
+            id: user.id,
+            full_name: user.fullName,
+            fullName: user.fullName,
+            email: user.email,
+            student_code: user.studentCode,
+            studentCode: user.studentCode,
+            card_number: user.cardNumber,
+            cardNumber: user.cardNumber,
+          }
+        : null,
+      full_name: user?.fullName || null,
+      student_code: user?.studentCode || null,
+    };
+  });
+}
+
+export class AccessService {
+  async recordRecognitionEvent(input: any): Promise<AccessRealtimeEvent> {
+    const parsedInput = RecognitionEventInputSchema.parse(input || {});
+    const status = normalizeStatus(parsedInput.status);
+    const cameraId = String(parsedInput.camera_id || 'unknown');
+    const patronId = parsedInput.patron_id ? String(parsedInput.patron_id) : null;
+    let accessType = parsedInput.access_type ? String(parsedInput.access_type) as AccessType : null;
+    const occurredAt = toIso(parsedInput.occurred_at);
+
+    if (!accessType && cameraId === 'entry_gate') accessType = 'entry';
+    if (!accessType && cameraId === 'exit_gate') accessType = 'exit';
+    if (!accessType && cameraId === 'kiosk' && patronId) {
+      const state = await stateRepo().findOne({ where: { patronId } });
+      accessType = state?.currentStatus === 'inside' ? 'exit' : 'entry';
+    }
+
+    const event: AccessRealtimeEvent = {
+      event_id: String(parsedInput.event_id || randomUUID()),
+      event_type: 'camera_event',
+      camera_id: cameraId,
+      access_type: accessType,
+      status,
+      patron_id: patronId,
+      student_code: parsedInput.student_code || null,
+      full_name: parsedInput.full_name || null,
+      score: typeof parsedInput.score === 'number' ? parsedInput.score : parsedInput.confidence ?? null,
+      bbox: parsedInput.bbox ?? null,
+      landmarks: parsedInput.landmarks ?? null,
+      occurred_at: occurredAt,
+      source: parsedInput.source || 'face-recognition-service',
+      image_url: parsedInput.image_url || null,
+    };
+
+    const realtimeEvent = AccessRealtimeEventSchema.parse(event);
+
+    if (status === 'granted' && patronId && accessType) {
+      await logRepo().save(logRepo().create({
+        id: parsedInput.log_id || undefined,
+        patronId,
+        accessType,
+        verifyMethod: parsedInput.verify_method || 'face',
+        confidence: realtimeEvent.score ?? null,
+        cameraId,
+        imageUrl: realtimeEvent.image_url || null,
+        status: 'success',
+        eventId: realtimeEvent.event_id,
+        source: realtimeEvent.source,
+        accessTime: new Date(occurredAt),
+      }));
+      await this.upsertState(patronId, accessType, cameraId, new Date(occurredAt));
+    }
+
+    await realtimeHub.publish(realtimeEvent);
+    return realtimeEvent;
+  }
+
+  async getRecent(limit = 20) {
+    const logs = await logRepo().find({
+      where: { cameraId: In([...ACTIVE_CAMERA_IDS]) },
+      order: { accessTime: 'DESC' },
+      take: Math.min(limit, 100),
+    });
+    return enrichLogs(logs);
+  }
+
+  async getLogs(query: { patronId?: string; dateFrom?: string; dateTo?: string; limit?: number }) {
+    const where: any = { cameraId: In([...ACTIVE_CAMERA_IDS]) };
+    if (query.patronId) {
+      where.patronId = query.patronId;
+    }
+    if (query.dateFrom || query.dateTo) {
+      const from = query.dateFrom ? new Date(query.dateFrom) : new Date('1970-01-01T00:00:00Z');
+      const to = query.dateTo ? new Date(query.dateTo) : new Date();
+      where.accessTime = Between(from, to);
+    }
+    const logs = await logRepo().find({
+      where,
+      order: { accessTime: 'DESC' },
+      take: Math.min(query.limit || 200, 1000),
+    });
+    return enrichLogs(logs);
+  }
+
+  async getActive() {
+    const MAX_INSIDE_HOURS = 24;
+    const states = await stateRepo().find({
+      where: { currentStatus: 'inside' },
+      order: { lastEntryAt: 'DESC' },
+    });
+
+    const userMap = await users.getUsers(states.map((state) => state.patronId));
+
+    const now = Date.now();
+    const results: any[] = [];
+    const staleIds: string[] = [];
+
+    for (const state of states) {
+      const user = userMap.get(state.patronId);
+
+      if (!user || user.status === 'deleted') {
+        staleIds.push(state.patronId);
+        continue;
+      }
+
+      const entryTime = state.lastEntryAt ? new Date(state.lastEntryAt).getTime() : 0;
+      const hoursInside = (now - entryTime) / (1000 * 60 * 60);
+      if (hoursInside > MAX_INSIDE_HOURS) {
+        staleIds.push(state.patronId);
+        continue;
+      }
+
+      if (state.lastEntryCamera && !ACTIVE_CAMERA_IDS.includes(state.lastEntryCamera as any)) {
+        continue;
+      }
+
+      results.push({
+        id: state.patronId,
+        patron_id: state.patronId,
+        full_name: user.fullName || null,
+        fullName: user.fullName || null,
+        email: user.email || null,
+        student_code: user.studentCode || null,
+        studentCode: user.studentCode || null,
+        current_status: state.currentStatus,
+        currentStatus: state.currentStatus,
+        last_entry_at: state.lastEntryAt,
+        lastEntryAt: state.lastEntryAt,
+        last_entry_camera: state.lastEntryCamera,
+        lastEntryCamera: state.lastEntryCamera,
+      });
+    }
+
+    if (staleIds.length > 0) {
+      stateRepo().update(staleIds, { currentStatus: 'outside' }).catch(err => {
+        console.error('[AccessService] Stale patron cleanup failed:', err);
+      });
+    }
+
+    return results;
+  }
+
+  async getFrequency(days = 7) {
+    const since = new Date();
+    since.setDate(since.getDate() - Math.max(1, Math.min(days, 31)));
+    const rows = await logRepo()
+      .createQueryBuilder('log')
+      .select(`DATE_TRUNC('day', log.accessTime)`, 'date')
+      .addSelect('log.accessType', 'access_type')
+      .addSelect('COUNT(*)', 'count')
+      .where('log.accessTime >= :since', { since })
+      .andWhere('log.cameraId IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
+      .groupBy('date')
+      .addGroupBy('log.accessType')
+      .orderBy('date', 'ASC')
+      .getRawMany();
+    return rows.map((row) => ({
+      date: row.date,
+      access_type: row.access_type,
+      count: Number(row.count),
+    }));
+  }
+
+  async getStats() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const activeList = await this.getActive();
+    const activeCount = activeList.length;
+
+    const entryExitCounts = await logRepo()
+      .createQueryBuilder('log')
+      .select('log.access_type', 'accessType')
+      .addSelect('COUNT(*)', 'count')
+      .where('log.access_time >= :today', { today })
+      .andWhere('log.camera_id IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
+      .groupBy('log.access_type')
+      .getRawMany();
+
+    const todayEntries = Number(entryExitCounts.find(c => c.accessType === 'entry')?.count || 0);
+    const todayExits = Number(entryExitCounts.find(c => c.accessType === 'exit')?.count || 0);
+
+    return {
+      active_inside: activeCount,
+      activeInside: activeCount,
+      today_entries: todayEntries,
+      todayEntries,
+      today_exits: todayExits,
+      todayExits,
+      today_total: todayEntries + todayExits,
+      todayTotal: todayEntries + todayExits,
+    };
+  }
+
+  async getStatus(patronId: string) {
+    let state = await stateRepo().findOne({ where: { patronId } });
+    if (!state) {
+      state = stateRepo().create({ patronId, currentStatus: 'outside', lastEntryAt: null, lastEntryCamera: null });
+      await stateRepo().save(state);
+    }
+    return {
+      patron_id: patronId,
+      current_status: state.currentStatus,
+      currentStatus: state.currentStatus,
+      last_entry_at: state.lastEntryAt,
+      lastEntryAt: state.lastEntryAt,
+      last_entry_camera: state.lastEntryCamera,
+      lastEntryCamera: state.lastEntryCamera,
+    };
+  }
+
+  async setStatus(patronId: string, currentStatus: 'inside' | 'outside', cameraId?: string | null) {
+    if (!['inside', 'outside'].includes(currentStatus)) {
+      throw new HttpError(400, 'Invalid current_status');
+    }
+    const accessType: AccessType = currentStatus === 'inside' ? 'entry' : 'exit';
+    await this.upsertState(patronId, accessType, cameraId || 'manual', new Date());
+    return this.getStatus(patronId);
+  }
+
+  async findKioskDevice(deviceId: string): Promise<KioskDevice | null> {
+    const repo = AppDataSource.getRepository(KioskDevice);
+    return repo.findOne({ where: { id: deviceId, isActive: true } });
+  }
+
+  async verifyKioskIp(ip: string): Promise<boolean> {
+    const repo = AppDataSource.getRepository(KioskDevice);
+    const device = await repo.findOne({ where: { ipAddress: ip, isActive: true } });
+    return !!device;
+  }
+
+  async recordKioskPresence(patronId: string, studentCode: string, deviceId: string): Promise<any> {
+    const state = await this.getStatus(patronId);
+    if (state.currentStatus === 'inside') {
+      return { ...state, message: 'Độc giả đã có mặt trong thư viện', skipped: true };
+    }
+    await this.setStatus(patronId, 'inside', 'kiosk');
+    return { ...await this.getStatus(patronId), message: 'Đã ghi nhận hiện diện qua Kiosk', skipped: false };
+  }
+
+  private async generateEventCode(): Promise<string> {
+    const repo = AppDataSource.getRepository(KioskApprovalRequest);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      const code = letters[Math.floor(Math.random() * 26)] + String(Math.floor(Math.random() * 900) + 100);
+      const existing = await repo.findOne({ where: { eventCode: code } });
+      if (!existing) return code;
+    }
+    const latest = await repo.find({ order: { createdAt: 'DESC' }, take: 1 });
+    const lastCode = latest.length > 0 ? latest[0].eventCode : 'A000';
+    const num = parseInt(lastCode.substring(1), 10) + 1;
+    return lastCode[0] + String(num).padStart(3, '0');
+  }
+
+  async createApprovalRequest(input: {
+    kioskDeviceId: string;
+    patronId?: string | null;
+    patronStudentCode?: string | null;
+    failImageUrl?: string | null;
+    isbns?: string | null;
+  }) {
+    const repo = AppDataSource.getRepository(KioskApprovalRequest);
+    const eventCode = await this.generateEventCode();
+    const deviceAuthToken = jwt.sign(
+      {
+        sub: eventCode,
+        event_code: eventCode,
+        patron_id: input.patronId,
+        student_code: input.patronStudentCode,
+        isbns: input.isbns || null,
+        fail_image_url: input.failImageUrl || null,
+      },
+      config.serviceJwtSecret,
+      { expiresIn: 300 }
+    );
+    const expiresAt = new Date(Date.now() + 300000);
+    const entity = repo.create({
+      eventCode,
+      kioskDeviceId: input.kioskDeviceId,
+      patronId: input.patronId || null,
+      patronStudentCode: input.patronStudentCode || null,
+      failImageUrl: input.failImageUrl || null,
+      isbns: input.isbns || null,
+      deviceAuthToken,
+      status: 'pending',
+      expiresAt,
+    });
+    const saved = await repo.save(entity);
+    return {
+      id: saved.id,
+      event_code: saved.eventCode,
+      device_auth_token: saved.deviceAuthToken,
+      status: saved.status,
+      expires_at: saved.expiresAt.toISOString(),
+    };
+  }
+
+  async getPendingApprovalRequests() {
+    const repo = AppDataSource.getRepository(KioskApprovalRequest);
+    const rows = await repo.find({
+      where: { status: 'pending', expiresAt: MoreThanOrEqual(new Date()) },
+      order: { createdAt: 'DESC' },
+    });
+    return rows.map(r => ({
+      id: r.id,
+      event_code: r.eventCode,
+      kiosk_device_id: r.kioskDeviceId,
+      patron_id: r.patronId,
+      patron_student_code: r.patronStudentCode,
+      fail_image_url: r.failImageUrl,
+      isbns: r.isbns,
+      status: r.status,
+      created_at: r.createdAt.toISOString(),
+      expires_at: r.expiresAt.toISOString(),
+    }));
+  }
+
+  async getApprovalRequest(eventCode: string) {
+    const repo = AppDataSource.getRepository(KioskApprovalRequest);
+    const record = await repo.findOne({ where: { eventCode } });
+    if (!record) throw new HttpError(404, 'Approval request not found');
+    return {
+      id: record.id,
+      event_code: record.eventCode,
+      kiosk_device_id: record.kioskDeviceId,
+      patron_id: record.patronId,
+      patron_student_code: record.patronStudentCode,
+      fail_image_url: record.failImageUrl,
+      isbns: record.isbns,
+      status: record.status,
+      created_at: record.createdAt.toISOString(),
+      expires_at: record.expiresAt.toISOString(),
+      approved_by: record.approvedBy,
+      approved_at: record.approvedAt?.toISOString() || null,
+      reject_reason: record.rejectReason,
+    };
+  }
+
+  async approveRequest(eventCode: string, approvedBy: string) {
+    const repo = AppDataSource.getRepository(KioskApprovalRequest);
+    const record = await repo.findOne({ where: { eventCode } });
+    if (!record) throw new HttpError(404, 'Approval request not found');
+    if (record.status !== 'pending') throw new HttpError(400, `Request is already ${record.status}`);
+    if (record.expiresAt < new Date()) throw new HttpError(400, 'Approval request has expired');
+
+    record.status = 'approved';
+    record.approvedBy = approvedBy;
+    record.approvedAt = new Date();
+    await repo.save(record);
+
+    return { status: 'approved', event_code: record.eventCode };
+  }
+
+  async rejectRequest(eventCode: string, approvedBy: string, reason?: string) {
+    const repo = AppDataSource.getRepository(KioskApprovalRequest);
+    const record = await repo.findOne({ where: { eventCode } });
+    if (!record) throw new HttpError(404, 'Approval request not found');
+    if (record.status !== 'pending') throw new HttpError(400, `Request is already ${record.status}`);
+    if (record.expiresAt < new Date()) throw new HttpError(400, 'Approval request has expired');
+
+    record.status = 'rejected';
+    record.approvedBy = approvedBy;
+    record.rejectReason = reason || null;
+    await repo.save(record);
+
+    return { status: 'rejected', event_code: record.eventCode };
+  }
+
+  private async upsertState(patronId: string, accessType: AccessType, cameraId: string, at: Date) {
+    let state = await stateRepo().findOne({ where: { patronId } });
+    if (!state) {
+      state = stateRepo().create({ patronId, currentStatus: 'outside' });
+    }
+    if (accessType === 'entry') {
+      state.currentStatus = 'inside';
+      state.lastEntryAt = at;
+      state.lastEntryCamera = cameraId;
+    } else {
+      state.currentStatus = 'outside';
+      state.lastExitAt = at;
+      state.lastExitCamera = cameraId;
+    }
+    await stateRepo().save(state);
+
+    const { amqpClient } = require('../clients/AmqpClient');
+    amqpClient.publish('user.access.status_changed', {
+      patronId,
+      currentStatus: state.currentStatus,
+      lastEntryAt: state.lastEntryAt ? state.lastEntryAt.toISOString() : null,
+      lastEntryCamera: state.lastEntryCamera || null,
+      lastExitAt: state.lastExitAt ? state.lastExitAt.toISOString() : null,
+      lastExitCamera: state.lastExitCamera || null,
+    }).catch((err: any) => console.error('[AMQP] Failed to publish status changed event:', err.message));
+  }
+}
+
+export const accessService = new AccessService();
 </file>
 
 <file path="ai-service/src/routes/chat.ts">

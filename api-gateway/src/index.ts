@@ -389,6 +389,10 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'api-gateway', timestamp: new Date().toISOString() });
 });
 
+app.get('/api/healthz', (_req, res) => {
+  res.json({ status: 'ok', gateway: 'Node.js-API-Gateway', timestamp: new Date().toISOString() });
+});
+
 // ---- Swagger docs (dev only) — setup swagger.json endpoint early ----
 if (config.nodeEnv !== 'production') {
   // ---- /api-docs/swagger.json: fetch specs on demand (with 10s cache) ----

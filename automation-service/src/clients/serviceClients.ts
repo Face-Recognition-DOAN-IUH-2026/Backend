@@ -132,6 +132,16 @@ export const borrowClient = {
   async getBooks(skip = 0, limit = 100) {
     return request(`${config.services.borrowService}/borrow/books?skip=${skip}&limit=${limit}`);
   },
+
+  async getExpiredWaitlist(hours: number) {
+    return request(`${config.services.borrowService}/borrow/internal/waitlist/expired?hours=${hours}`);
+  },
+
+  async advanceWaitlist(id: string) {
+    return request(`${config.services.borrowService}/borrow/internal/waitlist/advance/${id}`, {
+      method: 'POST',
+    });
+  },
 };
 
 export const scheduleClient = {

@@ -1,3 +1,7 @@
+﻿---
+roles: patron, staff, admin
+---
+
 # Giờ mở cửa Thư viện IUH
 
 ## Giờ làm việc

@@ -33,7 +33,7 @@ app.get('/health', async (_req, res) => {
   let chromaOk = false;
   let chromaCount = 0;
   try {
-    const collection = await getCollection();
+    const collection = await getCollection('patron');
     chromaCount = await collection.count();
     chromaOk = true;
   } catch {}
@@ -49,7 +49,7 @@ app.get('/ai/health', async (_req, res) => {
   let chromaOk = false;
   let chromaCount = 0;
   try {
-    const collection = await getCollection();
+    const collection = await getCollection('patron');
     chromaCount = await collection.count();
     chromaOk = true;
   } catch {}
@@ -111,7 +111,7 @@ async function start() {
     // Initialize ChromaDB
     console.log('Connecting to ChromaDB...');
     try {
-      const collection = await getCollection();
+      const collection = await getCollection('patron');
       const count = await collection.count();
       console.log(`ChromaDB connected. Collection "${config.chromaCollection}" has ${count} documents.`);
     } catch (error) {
