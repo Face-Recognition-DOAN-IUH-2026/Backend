@@ -1,9 +1,86 @@
 import { Router, Request, Response } from 'express';
 import { sessionStore } from '../sessions';
-import { tools } from '../tools/tools';
+import { patronToolDefs, staffToolDefs, adminToolDefs } from '../tools/registry';
 
 const router = Router();
 
+const allToolDefs = [...patronToolDefs, ...staffToolDefs, ...adminToolDefs];
+
+/**
+ * @swagger
+ * /ai/confirm:
+ *   post:
+ *     summary: Confirm or reject a pending AI action
+ *     description: |
+ *       When the AI assistant proposes a destructive or important action (e.g. extending a borrow period),
+ *       it sets requiresConfirmation true in the chat response. The frontend should show a confirmation
+ *       dialog and then call this endpoint with either approve or reject.
+ *
+ *       Workflow:
+ *       1. User sends a message to POST /api/ai/chat
+ *       2. Response has requiresConfirmation true and pendingAction with action details
+ *       3. Frontend shows confirmation dialog
+ *       4. User approves or rejects - call POST /api/ai/confirm
+ *     tags: [AI Assistant]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - sessionId
+ *               - action
+ *             properties:
+ *               sessionId:
+ *                 type: string
+ *                 description: "The session ID from the chat response that had requiresConfirmation true"
+ *                 example: "sess_abc123xyz"
+ *               action:
+ *                 type: string
+ *                 enum:
+ *                   - approve
+ *                   - reject
+ *                 description: "Whether to approve or reject the pending action"
+ *                 example: "approve"
+ *     responses:
+ *       200:
+ *         description: Action approved and executed, or rejected
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                   example: "Hanh dong da duoc thuc hien thanh cong."
+ *                 result:
+ *                   type: object
+ *                   nullable: true
+ *                   description: "Result data from executing the approved action"
+ *       400:
+ *         description: Missing fields, invalid action value, or no pending confirmation
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Session not found or confirmation expired
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 router.post('/', async (req: Request, res: Response) => {
   try {
     const { sessionId, action } = req.body as {
@@ -44,7 +121,7 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     try {
-      const tool = tools.find(t => t.name === pendingAction.toolName);
+      const tool = allToolDefs.find(t => t.name === pendingAction.toolName);
 
       if (tool) {
         const argValues = Object.values(pendingAction.toolArgs || {});

@@ -1,8 +1,8 @@
 import crypto from 'crypto';
-import Redis from 'ioredis';
 import { config } from '../config';
 import { AppDataSource } from '../data-source';
 import { Notification } from '../entities/Notification';
+import { amqpClient } from '../clients/AmqpClient';
 
 interface UserDeletedMessage {
   event: 'USER_DELETED';
@@ -18,7 +18,7 @@ function signPayload(payload: object, secret: string): string {
 
 function verifySignature(msg: UserDeletedMessage): boolean {
   const { signature, ...rest } = msg;
-  const expected = signPayload(rest, config.internalApiKey);
+  const expected = signPayload(rest, config.serviceJwtSecret);
   try {
     return crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'));
   } catch {
@@ -27,40 +27,29 @@ function verifySignature(msg: UserDeletedMessage): boolean {
 }
 
 export async function startUserEventSubscriber(): Promise<void> {
-  const redis = new Redis(config.redisUrl, {
-    retryStrategy: (times) => Math.min(times * 50, 2000),
-    maxRetriesPerRequest: 3,
-  });
+  try {
+    await amqpClient.connect();
+    await amqpClient.subscribeFanoutReliable('user.events.fanout', async (payload: any) => {
+      try {
+        const msg: UserDeletedMessage = payload;
+        if (msg.event !== 'USER_DELETED') return;
 
-  redis.on('error', (err) => {
-    console.error('[UserEventSubscriber] Redis error:', err.message);
-  });
+        if (!verifySignature(msg)) {
+          console.warn('[UserEventSubscriber] Invalid signature, ignoring event');
+          return;
+        }
 
-  await redis.subscribe('user.events', (err) => {
-    if (err) {
-      console.error('[UserEventSubscriber] Subscribe error:', err.message);
-      return;
-    }
-    console.log('[UserEventSubscriber] Subscribed to user.events');
-  });
+        console.log(`[UserEventSubscriber] Processing USER_DELETED for ${msg.user_id}`);
 
-  redis.on('message', async (_channel, raw) => {
-    try {
-      const msg: UserDeletedMessage = JSON.parse(raw);
-      if (msg.event !== 'USER_DELETED') return;
-
-      if (!verifySignature(msg)) {
-        console.warn('[UserEventSubscriber] Invalid signature, ignoring event');
-        return;
+        const repo = AppDataSource.getRepository(Notification);
+        const result = await repo.delete({ userId: msg.user_id });
+        console.log(`[UserEventSubscriber] Deleted ${result.affected ?? 0} notifications for user ${msg.user_id}`);
+      } catch (e) {
+        console.error('[UserEventSubscriber] Error processing event:', e);
       }
-
-      console.log(`[UserEventSubscriber] Processing USER_DELETED for ${msg.user_id}`);
-
-      const repo = AppDataSource.getRepository(Notification);
-      const result = await repo.delete({ userId: msg.user_id });
-      console.log(`[UserEventSubscriber] Deleted ${result.affected ?? 0} notifications for user ${msg.user_id}`);
-    } catch (e) {
-      console.error('[UserEventSubscriber] Error processing event:', e);
-    }
-  });
+    });
+    console.log('[UserEventSubscriber] Subscribed to user.events.fanout');
+  } catch (err: any) {
+    console.error('[UserEventSubscriber] RabbitMQ connection failed:', err.message);
+  }
 }

@@ -1,6 +1,14 @@
 import { Router } from 'express';
 import { patronController } from '../controllers';
-import { auth, requireRole } from '../middlewares';
+import { createAuth } from '../../shared';
+import { requireRole } from '../middlewares/requireRole';
+import { config } from '../config';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
 
 const router = Router();
 
@@ -21,7 +29,6 @@ const router = Router();
  *               - email
  *               - password
  *               - studentCode
- *               - className
  *             properties:
  *               fullName:
  *                 type: string
@@ -58,12 +65,11 @@ router.post('/register', (req, res) => patronController.register(req, res));
  *           schema:
  *             type: object
  *             required:
- *               - email
+ *               - student_code
  *               - password
  *             properties:
- *               email:
+ *               student_code:
  *                 type: string
- *                 format: email
  *               password:
  *                 type: string
  *                 format: password
@@ -152,6 +158,48 @@ router.get('/search', auth, (req, res) => patronController.search(req, res));
  *         description: Patron not found
  */
 router.get('/lookup', (req, res) => patronController.lookup(req, res));
+
+/**
+ * @swagger
+ * /patrons/check-exists:
+ *   post:
+ *     summary: Check if student code or email already exists
+ *     tags: [Patrons]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               student_code:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: 'Returns { student_code_exists, email_exists }'
+ */
+router.post('/check-exists', (req, res) => patronController.checkExists(req, res));
+
+/**
+ * @swagger
+ * /patrons/check-code/{code}:
+ *   get:
+ *     summary: Check if a student code already exists
+ *     tags: [Patrons]
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Student code to check
+ *     responses:
+ *       200:
+ *         description: Returns { exists: boolean }
+ */
+router.get('/check-code/:code', (req, res) => patronController.checkStudentCode(req, res));
 
 /**
  * @swagger

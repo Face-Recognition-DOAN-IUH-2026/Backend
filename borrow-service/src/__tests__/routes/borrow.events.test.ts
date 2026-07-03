@@ -1,6 +1,6 @@
 import express, { Express } from 'express';
 import request from 'supertest';
-import { HttpError } from '../../middlewares/errorHandler';
+import { HttpError } from '../../../../shared';
 import { AppDataSource } from '../../data-source';
 import * as AccessServiceClient from '../../clients/AccessServiceClient';
 import * as UserServiceClient from '../../clients/UserServiceClient';
@@ -18,6 +18,20 @@ jest.mock('../../repositories/BorrowRepository', () => {
 jest.mock('../../clients/AccessServiceClient');
 jest.mock('../../clients/UserServiceClient');
 jest.mock('../../utils/eventPublisher');
+jest.mock('../../../shared', () => {
+  const actual = jest.requireActual('../../../shared');
+  return {
+    ...actual,
+    createInternalAuth: (config: any) => (req: any, res: any, next: any) => {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        next();
+        return;
+      }
+      res.status(403).json({ error: 'Missing Authorization header' });
+    },
+  };
+});
 jest.mock('../../middlewares/auth', () => {
   return {
     auth: (req: any, _res: any, next: any) => {
@@ -37,11 +51,11 @@ jest.mock('../../middlewares/auth', () => {
       next();
     },
     internalAuth: (req: any, res: any, next: any) => {
-      const apiKey = req.headers['x-internal-api-key'];
-      if (apiKey === 'test-internal-key') {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
         next();
       } else {
-        res.status(401).json({ detail: 'Invalid API key' });
+        res.status(401).json({ detail: 'Invalid token' });
       }
     },
   };
@@ -293,7 +307,7 @@ describe('Borrow Event Publishing', () => {
 
       const res = await request(app)
         .post('/borrow/internal/return')
-        .set('x-internal-api-key', 'test-internal-key')
+        .set('Authorization', 'Bearer test-service-token')
         .send({ barcode: 'LIB-001' });
 
       expect(mockPublishEvent).toHaveBeenCalledWith('fine.incurred', expect.objectContaining({
@@ -323,7 +337,7 @@ describe('Borrow Event Publishing', () => {
 
       await request(app)
         .post('/borrow/internal/return')
-        .set('x-internal-api-key', 'test-internal-key')
+        .set('Authorization', 'Bearer test-service-token')
         .send({ barcode: 'LIB-001' });
 
       const fineCalls = mockPublishEvent.mock.calls.filter(c => c[0] === 'fine.incurred');
@@ -351,7 +365,7 @@ describe('Borrow Event Publishing', () => {
 
       const res = await request(app)
         .get('/borrow/internal/due-soon?days_before=3')
-        .set('x-internal-api-key', 'test-internal-key');
+        .set('Authorization', 'Bearer test-service-token');
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body)).toBe(true);
@@ -371,7 +385,7 @@ describe('Borrow Event Publishing', () => {
 
       const res = await request(app)
         .get('/borrow/internal/due-soon')
-        .set('x-internal-api-key', 'test-internal-key');
+        .set('Authorization', 'Bearer test-service-token');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual([]);

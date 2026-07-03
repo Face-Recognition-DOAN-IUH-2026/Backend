@@ -42,52 +42,10 @@ FROM (
 ) sub
 WHERE p.id = sub.patron_id;
 
--- Step 3: Create partitioned access_logs table (for new deployments)
--- For existing deployments, use pg_partman or manual partitioning
-
--- Option A: Using PostgreSQL native partitioning (requires new table)
--- CREATE TABLE access_logs_new (
---   id UUID NOT NULL,
---   patron_id UUID,
---   access_type VARCHAR(10) NOT NULL,
---   verify_method VARCHAR(20) NOT NULL,
---   confidence FLOAT,
---   camera_id VARCHAR(50) NOT NULL,
---   image_url TEXT,
---   access_time TIMESTAMP NOT NULL DEFAULT NOW(),
---   status VARCHAR(20) NOT NULL,
---   PRIMARY KEY (id, access_time)
--- ) PARTITION BY RANGE (access_time);
-
--- CREATE TABLE access_logs_2026_01 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
--- CREATE TABLE access_logs_2026_02 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
--- CREATE TABLE access_logs_2026_03 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-03-01') TO ('2026-04-01');
--- CREATE TABLE access_logs_2026_04 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-04-01') TO ('2026-05-01');
--- CREATE TABLE access_logs_2026_05 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
--- CREATE TABLE access_logs_2026_06 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
--- CREATE TABLE access_logs_2026_07 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
--- CREATE TABLE access_logs_2026_08 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
--- CREATE TABLE access_logs_2026_09 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-09-01') TO ('2026-10-01');
--- CREATE TABLE access_logs_2026_10 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
--- CREATE TABLE access_logs_2026_11 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');
--- CREATE TABLE access_logs_2026_12 PARTITION OF access_logs_new
---   FOR VALUES FROM ('2026-12-01') TO ('2027-01-01');
--- CREATE TABLE access_logs_future PARTITION OF access_logs_new
---   FOR VALUES FROM ('2027-01-01') TO ('9999-12-31');
-
--- Create local indexes on each partition
--- CREATE INDEX idx_access_logs_patron_id ON access_logs_new (patron_id, access_time DESC);
+-- Step 3: Create partitioned access_logs table
+-- See access-service/scripts/partition_access_logs.sql for the full migration
+-- This script creates the partitioned table and migrates existing data
+\i '../../../access-service/scripts/partition_access_logs.sql'
 
 -- Option B: Auto-create partitions monthly via pg_partman
 -- CREATE EXTENSION IF NOT EXISTS pg_partman;

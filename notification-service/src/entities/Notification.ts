@@ -1,5 +1,4 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
-import { config } from '../config';
 
 @Entity({ name: 'notifications' })
 @Index(['userId', 'createdAt'])

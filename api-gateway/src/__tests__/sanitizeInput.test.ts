@@ -1,13 +1,23 @@
 import { sanitizeInput } from '../index';
 
 describe('sanitizeInput', () => {
-  it('should escape HTML tags', () => {
-    expect(sanitizeInput('<script>alert("xss")</script>')).toBe('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
+  it('should strip script tags and content', () => {
+    expect(sanitizeInput('<script>alert("xss")</script>')).toBe('');
   });
 
-  it('should escape quotes', () => {
-    expect(sanitizeInput('test"value')).toBe('test&quot;value');
-    expect(sanitizeInput("test'value")).toBe("test&#x27;value");
+  it('should strip HTML tags but keep text content', () => {
+    expect(sanitizeInput('Hello <b>World</b>')).toBe('Hello World');
+    expect(sanitizeInput('Hello <b onmouseover="alert(1)">World</b>')).toBe('Hello World');
+  });
+
+  it('should strip event handler attributes', () => {
+    expect(sanitizeInput('<img src=x onerror=alert(1)>')).toBe('');
+    expect(sanitizeInput('<div onmouseover="alert(1)">test</div>')).toBe('test');
+  });
+
+  it('should keep safe characters like quotes intact', () => {
+    expect(sanitizeInput('test"value')).toBe('test"value');
+    expect(sanitizeInput("test'value")).toBe("test'value");
   });
 
   it('should handle empty string', () => {

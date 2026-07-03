@@ -4,10 +4,18 @@ import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowRepository } from '../repositories/BorrowRepository';
-import { internalAuth } from '../middlewares/internal-auth';
+import { WaitlistRepository } from '../repositories/WaitlistRepository';
+import { createInternalAuth } from '../../shared';
 import { publishEvent } from '../utils/eventPublisher';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
+import { In } from 'typeorm';
 import { calculateOverdueFine } from '../utils/fineCalculator';
+import { lookupPatronByStudentCode, lookupPatronById, PatronSummary } from '../clients/UserServiceClient';
+
+const internalAuth = createInternalAuth({
+  serviceName: 'borrow-service',
+  jwtSecret: config.serviceJwtSecret,
+});
 
 const router = Router();
 router.use(internalAuth);
@@ -157,6 +165,113 @@ router.get('/patron/:patronId', async (req: Request, res: Response) => {
     res.json(serialized);
   } catch (error) {
     console.error('Error fetching patron borrows:', error);
+    res.status(500).json({ detail: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /borrow-internal/patrons/:studentCode/history:
+ *   get:
+ *     summary: Get borrow history by student code (internal, no role check)
+ *     tags: [Borrow Internal]
+ *     parameters:
+ *       - in: path
+ *         name: studentCode
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Borrow history
+ */
+router.get('/patrons/:studentCode/history', async (req: Request, res: Response) => {
+  try {
+    const raw = await lookupPatronByStudentCode(req.params.studentCode);
+    const patronId = raw.id;
+    const statusFilter = req.query.status_filter as string | undefined;
+    const borrowRecords = await new BorrowRepository().getBorrowsByPatron(patronId, statusFilter);
+
+    const serialized = borrowRecords.map((r: any) => ({
+      id: r.id,
+      patron_id: r.patronId,
+      patron_name: raw.full_name || raw.fullName || null,
+      book_id: r.bookId,
+      isbn: r.book?.isbn || '',
+      borrow_at: r.borrowAt,
+      due_at: r.dueAt,
+      return_at: r.returnAt,
+      status: r.status,
+      shelf_location: r.shelfLocation,
+      book: r.book ? {
+        id: r.book.id,
+        title: r.book.title,
+        author: r.book.author,
+        isbn: r.book.isbn,
+        category: r.book.categories,
+        cover_url: r.book.coverUrl,
+      } : undefined,
+    }));
+
+    res.json(serialized);
+  } catch (error) {
+    console.error('Error fetching patron history:', error);
+    res.status(500).json({ detail: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /borrow-internal/patrons/id/:patronId/history:
+ *   get:
+ *     summary: Get borrow history by patron UUID (internal, no role check)
+ *     tags: [Borrow Internal]
+ *     parameters:
+ *       - in: path
+ *         name: patronId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Borrow history
+ */
+router.get('/patrons/id/:patronId/history', async (req: Request, res: Response) => {
+  try {
+    const patron = await lookupPatronById(req.params.patronId);
+    if (!patron) {
+      res.status(404).json({ detail: 'Patron not found' });
+      return;
+    }
+    const statusFilter = req.query.status_filter as string | undefined;
+    const borrowRecords = await new BorrowRepository().getBorrowsByPatron(req.params.patronId, statusFilter);
+
+    const serialized = borrowRecords.map((r: any) => ({
+      id: r.id,
+      patron_id: r.patronId,
+      patron_name: patron.full_name || patron.fullName || null,
+      student_code: patron.student_code || patron.studentCode || null,
+      book_id: r.bookId,
+      isbn: r.book?.isbn || '',
+      borrow_at: r.borrowAt,
+      due_at: r.dueAt,
+      return_at: r.returnAt,
+      status: r.status,
+      shelf_location: r.shelfLocation,
+      book: r.book ? {
+        id: r.book.id,
+        title: r.book.title,
+        author: r.book.author,
+        isbn: r.book.isbn,
+        category: r.book.categories,
+        cover_url: r.book.coverUrl,
+      } : undefined,
+    }));
+
+    res.json(serialized);
+  } catch (error) {
+    console.error('Error fetching patron history by ID:', error);
     res.status(500).json({ detail: 'Internal server error' });
   }
 });
@@ -534,50 +649,73 @@ router.post('/batch-return', async (req: Request, res: Response) => {
     }
 
     const results: any[] = [];
-    for (const barcode of barcodes) {
-      const record = await records().findOne({
-        where: { copy: { barcode } as any, status: 'borrowed' as any },
-        relations: { book: true, copy: true },
-      });
 
-      if (!record) {
-        results.push({ barcode, success: false, detail: 'Không tìm thấy phiếu mượn' });
-        continue;
+    await AppDataSource.transaction(async (manager) => {
+      const matchedRecords = await manager.createQueryBuilder(BorrowRecord, 'record')
+        .innerJoinAndSelect('record.copy', 'copy')
+        .leftJoinAndSelect('record.book', 'book')
+        .where('record.status = :status', { status: 'borrowed' })
+        .andWhere('copy.barcode IN (:...barcodes)', { barcodes })
+        .getMany();
+
+      const barcodeToRecord = new Map<string, BorrowRecord>();
+      for (const r of matchedRecords) {
+        if (r.copy?.barcode) {
+          barcodeToRecord.set(r.copy.barcode, r);
+        }
       }
-
-      record.returnAt = new Date();
-      record.status = 'returned';
 
       const now = new Date();
-      if (record.dueAt && now > new Date(record.dueAt)) {
-        const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
-        const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
-        record.fineAmount = calculateOverdueFine(overdueDays);
+      const recordsToSave: BorrowRecord[] = [];
+      const copiesToSave: any[] = [];
+
+      for (const barcode of barcodes) {
+        const record = barcodeToRecord.get(barcode);
+
+        if (!record) {
+          results.push({ barcode, success: false, detail: 'Không tìm thấy phiếu mượn' });
+          continue;
+        }
+
+        record.returnAt = now;
+        record.status = 'returned';
+
+        if (record.dueAt && now > new Date(record.dueAt)) {
+          const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
+          const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
+          record.fineAmount = calculateOverdueFine(overdueDays);
+        }
+
+        recordsToSave.push(record);
+
+        if (record.copy) {
+          record.copy.isAvailable = true;
+          copiesToSave.push(record.copy);
+        }
+
+        publishEvent('book.returned', {
+          bookId: record.bookId,
+          title: record.book?.title,
+          patronId: record.patronId,
+          barcode,
+        });
+
+        results.push({
+          barcode,
+          success: true,
+          record_id: record.id,
+          book_title: record.book?.title,
+          returned_at: record.returnAt,
+        });
       }
 
-      await records().save(record);
-
-      if (record.copy) {
-        record.copy.isAvailable = true;
-        await AppDataSource.getRepository('BookCopy').save(record.copy);
+      if (recordsToSave.length > 0) {
+        await manager.save(recordsToSave);
       }
-
-      // Publish book.returned event for automation-service
-      publishEvent('book.returned', {
-        bookId: record.bookId,
-        title: record.book?.title,
-        patronId: record.patronId,
-        barcode,
-      });
-
-      results.push({
-        barcode,
-        success: true,
-        record_id: record.id,
-        book_title: record.book?.title,
-        returned_at: record.returnAt,
-      });
-    }
+      if (copiesToSave.length > 0) {
+        await manager.save(copiesToSave);
+      }
+    });
 
     res.json({
       success: true,
@@ -804,6 +942,200 @@ router.get('/active-borrowers', async (_req: Request, res: Response) => {
     res.json({ items, total: items.length });
   } catch (error) {
     console.error('Error fetching active borrowers:', error);
+    res.status(500).json({ detail: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /borrow/internal/create:
+ *   post:
+ *     summary: Create borrow slip (internal, for AI agent)
+ *     tags: [Borrow Internal]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [patronId, bookCopies]
+ *             properties:
+ *               patronId:
+ *                 type: string
+ *               bookCopies:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     bookCopyId:
+ *                       type: string
+ *                     dueDate:
+ *                       type: string
+ *     responses:
+ *       200:
+ *         description: Slip created
+ */
+router.post('/create', async (req: Request, res: Response) => {
+  try {
+    const { patronId, bookCopies } = req.body;
+
+    if (!patronId || !bookCopies || !Array.isArray(bookCopies) || bookCopies.length === 0) {
+      res.status(400).json({ success: false, detail: 'patronId and bookCopies are required' });
+      return;
+    }
+
+    const repo = new BorrowRepository();
+    const bookIds: string[] = [];
+    const copyIds: (string | null)[] = [];
+    const shelfLocations: (string | null)[] = [];
+
+    for (const item of bookCopies) {
+      const copyId = item.bookCopyId;
+      if (!copyId) continue;
+
+      const copy = await repo.getCopyById(copyId);
+      if (!copy) {
+        res.status(404).json({ success: false, detail: `Book copy ${copyId} not found` });
+        return;
+      }
+      if (!copy.isAvailable) {
+        res.status(409).json({ success: false, detail: `Book copy ${copyId} is already borrowed` });
+        return;
+      }
+
+      const book = copy.book || await repo.getBookById(copy.bookId);
+      if (!book) {
+        res.status(404).json({ success: false, detail: 'Book not found for copy' });
+        return;
+      }
+
+      const active = await repo.getActiveBorrowsByPatron(patronId);
+      if (active.some((r) => r.bookId === book.id)) {
+        res.status(409).json({ success: false, detail: `Book "${book.title}" is already borrowed by this patron` });
+        return;
+      }
+
+      bookIds.push(book.id);
+      copyIds.push(copy.id);
+      shelfLocations.push(copy.shelfLocation || book.shelfLocation);
+    }
+
+    const overdue = await repo.getOverdueBorrows(patronId);
+    if (overdue.length) {
+      res.status(409).json({ success: false, detail: 'Patron has overdue borrows. Return them first.' });
+      return;
+    }
+
+    const activeCount = await repo.countActiveBorrows(patronId);
+    if (activeCount + bookIds.length > config.maxBorrowBooks) {
+      res.status(409).json({ success: false, detail: `Exceeds max borrow limit (${config.maxBorrowBooks})` });
+      return;
+    }
+
+    for (const copyId of copyIds) {
+      if (copyId) {
+        const copy = await repo.getCopyById(copyId);
+        if (copy) await repo.setCopyAvailable(copy, false);
+      }
+    }
+
+    const { slip, records } = await repo.createSlip(patronId, bookIds, copyIds, shelfLocations);
+
+    for (let i = 0; i < records.length; i += 1) {
+      records[i].book = (await repo.getBookById(bookIds[i]))!;
+      records[i].copy = copyIds[i] ? await repo.getCopyById(copyIds[i]!) : null;
+    }
+
+    for (const record of records) {
+      publishEvent('book.borrowed', {
+        bookId: record.bookId,
+        title: record.book?.title,
+        patronId: record.patronId,
+        borrowRecordId: record.id,
+        dueAt: record.dueAt,
+      });
+    }
+
+    res.json({
+      success: true,
+      slip,
+      records,
+    });
+  } catch (error: any) {
+    console.error('Error creating borrow slip:', error);
+    if (error.statusCode) {
+      res.status(error.statusCode).json({ success: false, detail: error.message });
+    } else {
+      res.status(500).json({ success: false, detail: 'Internal server error' });
+    }
+  }
+});
+
+router.get('/book/:bookId/waitlist', async (req: Request, res: Response) => {
+  try {
+    const { bookId } = req.params;
+    const entries = await new WaitlistRepository().getWaitlistByBook(bookId);
+    res.json(entries.map(e => ({
+      id: e.id,
+      book_id: e.bookId,
+      patron_id: e.patronId,
+      status: e.status,
+      notified_at: e.notifiedAt,
+      created_at: e.createdAt,
+    })));
+  } catch (error) {
+    console.error('Error fetching waitlist:', error);
+    res.status(500).json({ detail: 'Internal server error' });
+  }
+});
+
+router.patch('/waitlist/batch-notify', async (req: Request, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ detail: 'ids array is required' });
+      return;
+    }
+    await new WaitlistRepository().markNotified(ids);
+    res.json({ success: true, notified: ids.length });
+  } catch (error) {
+    console.error('Error marking waitlist notified:', error);
+    res.status(500).json({ detail: 'Internal server error' });
+  }
+});
+
+router.get('/waitlist/expired', async (req: Request, res: Response) => {
+  try {
+    const hours = parseInt(req.query.hours as string) || 24;
+    const entries = await new WaitlistRepository().getExpiredNotifications(hours);
+    res.json(entries.map(e => ({
+      id: e.id,
+      book_id: e.bookId,
+      patron_id: e.patronId,
+      status: e.status,
+      notified_at: e.notifiedAt,
+      created_at: e.createdAt,
+    })));
+  } catch (error) {
+    console.error('Error fetching expired waitlist:', error);
+    res.status(500).json({ detail: 'Internal server error' });
+  }
+});
+
+router.post('/waitlist/advance/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const repo = new WaitlistRepository();
+    const entry = await repo.getWaitlistById(id);
+    if (!entry) {
+      res.status(404).json({ detail: 'Waitlist entry not found' });
+      return;
+    }
+    await repo.markExpired(id);
+    const next = await repo.getNextInQueue(entry.bookId);
+    res.json({ expired: id, next: next ? { id: next.id, patron_id: next.patronId, book_id: next.bookId } : null });
+  } catch (error) {
+    console.error('Error advancing waitlist:', error);
     res.status(500).json({ detail: 'Internal server error' });
   }
 });

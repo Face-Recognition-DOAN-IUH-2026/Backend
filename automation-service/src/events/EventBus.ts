@@ -1,7 +1,7 @@
-import Redis from 'ioredis';
 import { config } from '../config';
+import { amqpClient } from '../clients/AmqpClient';
 
-const CHANNEL = 'automation.events';
+const EXCHANGE = 'user.events.fanout';
 
 export type AutomationEvent = {
   type: string;
@@ -12,24 +12,45 @@ export type AutomationEvent = {
 type EventHandler = (event: AutomationEvent) => Promise<void>;
 
 export class EventBus {
-  private publisher?: Redis;
-  private subscriber?: Redis;
   private handlers = new Map<string, EventHandler[]>();
 
   async connect() {
-    if (!config.redisUrl) return;
-    this.publisher = new Redis(config.redisUrl);
-    this.subscriber = new Redis(config.redisUrl);
-    await this.subscriber.subscribe(CHANNEL);
-    this.subscriber.on('message', async (_channel, raw) => {
-      try {
-        const event: AutomationEvent = JSON.parse(raw);
+    // RabbitMQ fanout for user events
+    try {
+      await amqpClient.connect();
+      await amqpClient.subscribeFanout(EXCHANGE, async (payload: any) => {
+        const event: AutomationEvent = {
+          type: payload.event || payload.type,
+          payload: payload,
+          timestamp: payload.timestamp || new Date().toISOString(),
+        };
         await this.dispatch(event);
-      } catch {
-        // Ignore malformed messages
-      }
-    });
-    console.log('EventBus connected to Redis');
+      });
+      console.log('[EventBus] Subscribed to user.events.fanout');
+    } catch (err: any) {
+      console.error('[EventBus] RabbitMQ fanout init failed:', err.message);
+    }
+
+    // RabbitMQ topic for book events
+    try {
+      await amqpClient.connect();
+      await amqpClient.consume(
+        'automation_service_queue',
+        ['book.borrowed', 'book.returned', 'schedule.changed', 'fine.incurred'],
+        async (envelope: any) => {
+          console.log(`[AMQP] Automation EventBus received: ${envelope.eventType}`);
+          const event: AutomationEvent = {
+            type: envelope.eventType,
+            payload: envelope.payload,
+            timestamp: envelope.occurredAt,
+          };
+          await this.dispatch(event);
+        }
+      );
+      console.log('[EventBus] Connected to RabbitMQ topic exchange');
+    } catch (err: any) {
+      console.error('[EventBus] RabbitMQ topic init failed:', err.message);
+    }
   }
 
   on(eventType: string, handler: EventHandler) {
@@ -40,11 +61,11 @@ export class EventBus {
   }
 
   async publish(event: AutomationEvent) {
-    // Local dispatch
     await this.dispatch(event);
-    // Redis fan-out
-    if (this.publisher) {
-      await this.publisher.publish(CHANNEL, JSON.stringify(event));
+    try {
+      await amqpClient.publish(event.type, event.payload);
+    } catch (err: any) {
+      console.error('[EventBus] Failed to publish to RabbitMQ:', err.message);
     }
   }
 
@@ -57,7 +78,7 @@ export class EventBus {
       try {
         await handler(event);
       } catch (error) {
-        console.error(`EventBus handler error for ${event.type}:`, error);
+        console.error(`[EventBus] handler error for ${event.type}:`, error);
       }
     }
   }

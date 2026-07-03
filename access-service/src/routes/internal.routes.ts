@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { internalAuth } from '../middlewares/internalAuth';
+import { createInternalAuth } from '../../shared';
+import { config } from '../config';
+
+const internalAuth = createInternalAuth({
+  serviceName: 'access-service',
+  jwtSecret: config.serviceJwtSecret,
+});
 import { accessService } from '../services/AccessService';
 
 const router = Router();

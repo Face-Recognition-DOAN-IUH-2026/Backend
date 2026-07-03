@@ -35,8 +35,9 @@ class Settings(BaseSettings):
     max_image_height: int = 1280
     max_image_pixels: int = 2073600
 
-    celery_broker_url: str
-    celery_result_backend: str
+    celery_broker_url: str = "amqp://guest:guest@rabbitmq:5672"
+    celery_result_backend: str = ""
+    rabbitmq_url: str = "amqp://guest:guest@rabbitmq:5672"
 
     data_encryption_key: str
 
@@ -57,8 +58,7 @@ class Settings(BaseSettings):
 
     user_service_url: str = "http://user-service:3001"
     access_service_url: str = "http://access-service:3003"
-    internal_api_key: str = ""
-    user_service_jwt_secret: str = ""
+    service_jwt_secret: str = ""
 
 
 settings = Settings()

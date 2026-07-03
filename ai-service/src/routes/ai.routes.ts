@@ -1,8 +1,14 @@
 import { Router, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { auth, AuthRequest } from '../middlewares/auth';
-import { requireRole } from '../middlewares/requireRole';
+import { createAuth, AuthRequest, requireRole } from '../../../shared';
+import { config } from '../config';
 import { aiService } from '../services/AiService';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
 
 const router = Router();
 
@@ -12,7 +18,7 @@ const asyncHandler = (
   fn(req, res, next).catch(next);
 };
 
-router.use(auth, requireRole(['admin', 'staff']));
+router.use(auth);
 
 /**
  * @swagger
@@ -26,8 +32,8 @@ router.use(auth, requireRole(['admin', 'staff']));
  *       200:
  *         description: Successfully retrieved AI summary
  */
-router.get('/command-center/summary', asyncHandler(async (req, res) => {
-  res.json(await aiService.getSummary(req.user!.token, false));
+router.get('/command-center/summary', requireRole(['admin', 'staff']), asyncHandler(async (req, res) => {
+  res.json(await aiService.getSummary(req.user!.token || '', false));
 }));
 
 /**
@@ -42,8 +48,8 @@ router.get('/command-center/summary', asyncHandler(async (req, res) => {
  *       200:
  *         description: Successfully refreshed AI summary
  */
-router.post('/command-center/refresh', asyncHandler(async (req, res) => {
-  res.json(await aiService.getSummary(req.user!.token, true));
+router.post('/command-center/refresh', requireRole(['admin', 'staff']), asyncHandler(async (req, res) => {
+  res.json(await aiService.getSummary(req.user!.token || '', true));
 }));
 
 /**
@@ -74,7 +80,7 @@ router.post('/command-center/refresh', asyncHandler(async (req, res) => {
  *       200:
  *         description: Successfully retrieved insights list
  */
-router.get('/insights', asyncHandler(async (req, res) => {
+router.get('/insights', requireRole(['admin', 'staff']), asyncHandler(async (req, res) => {
   res.json(await aiService.listInsights({
     status: typeof req.query.status === 'string' ? req.query.status : undefined,
     category: typeof req.query.category === 'string' ? req.query.category : undefined,
@@ -102,7 +108,7 @@ router.get('/insights', asyncHandler(async (req, res) => {
  *       200:
  *         description: Successfully dismissed insight
  */
-router.post('/insights/:id/dismiss', asyncHandler(async (req, res) => {
+router.post('/insights/:id/dismiss', requireRole(['admin', 'staff']), asyncHandler(async (req, res) => {
   const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
   res.json(await aiService.dismissInsight(id));
 }));
@@ -127,7 +133,7 @@ router.post('/insights/:id/dismiss', asyncHandler(async (req, res) => {
  *       200:
  *         description: Successfully retrieved insight explanation
  */
-router.get('/insights/:id/explain', asyncHandler(async (req, res) => {
+router.get('/insights/:id/explain', requireRole(['admin', 'staff']), asyncHandler(async (req, res) => {
   const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
   res.json(await aiService.explainInsight(id));
 }));
@@ -146,13 +152,13 @@ router.get('/insights/:id/explain', asyncHandler(async (req, res) => {
  *         application/json:
  *           schema:
  *             type: object
- *             description: Chat message payload
+ *             description: "Chat message payload"
  *     responses:
  *       200:
  *         description: Successfully received AI chat response
  */
-router.post('/command-center/chat', asyncHandler(async (req, res) => {
-  res.json(await aiService.chat(req.user!.token, req.body));
+router.post('/command-center/chat', requireRole(['admin', 'staff']), asyncHandler(async (req, res) => {
+  res.json(await aiService.chat(req.user!.token || '', req.body));
 }));
 
 /**
@@ -175,7 +181,7 @@ router.post('/command-center/chat', asyncHandler(async (req, res) => {
  *         description: Successfully retrieved book recommendations
  */
 router.get('/recommendations/patron/:studentCode', asyncHandler(async (req, res) => {
-  res.json(await aiService.recommendBooks(req.user!.token, req.params.studentCode));
+  res.json(await aiService.recommendBooks(req.user!.token || '', req.params.studentCode));
 }));
 
 export default router;

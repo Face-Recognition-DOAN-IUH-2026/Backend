@@ -39,11 +39,19 @@ _storage: MinioStorage | None = None
 _USER_SERVICE_URL = settings.user_service_url
 _ACCESS_SERVICE_URL = settings.access_service_url
 
+def _get_service_auth_headers() -> dict:
+    """Get Authorization headers with service JWT token."""
+    from core.service_token import get_auth_headers
+    return get_auth_headers(
+        service_name="face-recognition-service",
+        scopes=["users:read", "users:write", "access:read", "access:write"],
+        secret=settings.jwt_access_secret,
+    )
+
 def _call_user_service(method: str, path: str, **kwargs) -> dict | None:
     try:
         headers = kwargs.pop("headers", {})
-        if settings.internal_api_key:
-            headers["x-internal-api-key"] = settings.internal_api_key
+        headers.update(_get_service_auth_headers())
         with httpx.Client(base_url=_USER_SERVICE_URL, timeout=5.0) as client:
             resp = client.request(method, path, headers=headers, **kwargs)
             if resp.status_code == 200:
@@ -64,7 +72,7 @@ def _get_user_via_api(user_id: str) -> dict | None:
             return json.loads(cached)
     except Exception:
         pass
-    result = _call_user_service("GET", f"/users/{user_id}")
+    result = _call_user_service("GET", f"/internal/users/{user_id}")
     if result:
         try:
             from infra.redis_cache import redis_client as _rc
@@ -80,8 +88,7 @@ def _get_user_via_api(user_id: str) -> dict | None:
 def _call_access_service(method: str, path: str, **kwargs) -> dict | None:
     try:
         headers = kwargs.pop("headers", {})
-        if settings.internal_api_key:
-            headers["x-internal-api-key"] = settings.internal_api_key
+        headers.update(_get_service_auth_headers())
         with httpx.Client(base_url=_ACCESS_SERVICE_URL, timeout=5.0) as client:
             resp = client.request(method, path, headers=headers, **kwargs)
             if resp.status_code < 300:
@@ -505,6 +512,8 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
         img = safe_read_image_from_bytes(raw_bytes)
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
 
+        img = enhance_illumination(img)
+
         face_data = detect_face_once(img)
         if not face_data.get("valid"):
             return {"status": "error", "error": "Không phát hiện khuôn mặt", "detail": face_data.get("error")}
@@ -515,7 +524,12 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
         results = _get_milvus().search(embedding=norm_vec, top_k=10)
         best = _resolve_best_match(results, settings.face_match_threshold)
         if not best:
-            return {"status": "error", "error": "Khuôn mặt không khớp với tài khoản nào"}
+            top_score = max((r["score"] for r in results), default=0.0)
+            return {
+                "status": "error",
+                "error": "Khuôn mặt không khớp với tài khoản nào",
+                "detail": f"top_score={round(top_score, 4)}, threshold={settings.face_match_threshold}, candidates={len(results)}",
+            }
 
         matched_user_id = best["user_id"]
         score = round(best["score"], 4)
@@ -532,7 +546,7 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
 
         try:
             import redis as _redis
-            r = _redis.Redis.from_url(settings.celery_broker_url)
+            r = _redis.Redis.from_url(settings.redis_url)
             lockout_key = f"face_login_lockout:{user_id}"
             locked = r.get(lockout_key)
             if locked:
@@ -549,7 +563,7 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
             logger.warning("Spoof attempt detected for user %s (%s)", user_email, user_id)
             try:
                 import redis as _redis
-                r = _redis.Redis.from_url(settings.celery_broker_url)
+                r = _redis.Redis.from_url(settings.redis_url)
                 fail_key = f"face_login_fail:{user_id}"
                 fail_count = r.incr(fail_key)
                 if fail_count == 1:
@@ -592,7 +606,7 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
 
         try:
             import redis as _redis
-            r = _redis.Redis.from_url(settings.celery_broker_url)
+            r = _redis.Redis.from_url(settings.redis_url)
             r.delete(f"face_login_fail:{user_id}")
             r.close()
         except Exception:
@@ -891,7 +905,7 @@ def _get_redis_throttle():
     try:
         from infra.config import settings
         import redis as _redis
-        return _redis.Redis.from_url(settings.celery_broker_url)
+        return _redis.Redis.from_url(settings.redis_url)
     except Exception as e:
         logger.warning("Redis throttle unavailable: %s", e)
         return None
@@ -912,7 +926,7 @@ def _check_redis_cooldown(patron_id: str, access_type: str) -> bool:
     """Check Redis cooldown — returns True if still in cooldown (skip)."""
     try:
         import redis as _redis
-        r = _redis.Redis.from_url(settings.celery_broker_url)
+        r = _redis.Redis.from_url(settings.redis_url)
         try:
             key = f"cooldown:{access_type}:{patron_id}"
             if r.get(key):
@@ -1111,7 +1125,7 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
     # Decrement backpressure counter (Phase 3)
     try:
         import redis as _redis
-        r = _redis.Redis.from_url(settings.celery_broker_url)
+        r = _redis.Redis.from_url(settings.redis_url)
         try:
             r.decr(f"camera_queue:{camera_id}")
         finally:

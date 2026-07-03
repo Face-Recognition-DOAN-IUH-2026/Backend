@@ -3,7 +3,7 @@ import { config } from '../config';
 import { hashEmbeddingFn } from './embedding';
 
 let chromaClient: ChromaClient | null = null;
-let collection: Collection | null = null;
+const collections = new Map<string, Collection>();
 
 export function getChromaClient(): ChromaClient {
   if (!chromaClient) {
@@ -14,35 +14,52 @@ export function getChromaClient(): ChromaClient {
   return chromaClient;
 }
 
-export async function getCollection(): Promise<Collection> {
-  if (!collection) {
+function getCollectionName(role: string): string {
+  return `${config.chromaCollection}-${role}`;
+}
+
+export async function getCollection(role: string): Promise<Collection> {
+  const key = role || 'patron';
+  let col = collections.get(key);
+  if (!col) {
     const client = getChromaClient();
+    const name = getCollectionName(key);
     try {
-      collection = await client.getCollection({
-        name: config.chromaCollection,
+      col = await client.getCollection({
+        name,
         embeddingFunction: hashEmbeddingFn as any,
       });
     } catch {
-      collection = await client.createCollection({
-        name: config.chromaCollection,
+      col = await client.createCollection({
+        name,
         embeddingFunction: hashEmbeddingFn as any,
       });
     }
+    collections.set(key, col);
   }
-  return collection;
+  return col;
 }
 
-export async function resetCollection(): Promise<Collection> {
+export async function resetCollection(role: string): Promise<Collection> {
   const client = getChromaClient();
+  const name = getCollectionName(role);
   try {
-    await client.deleteCollection({ name: config.chromaCollection });
+    await client.deleteCollection({ name });
   } catch {
   }
-  collection = await client.createCollection({
-    name: config.chromaCollection,
+  collections.delete(role);
+  const col = await client.createCollection({
+    name,
     embeddingFunction: hashEmbeddingFn as any,
   });
-  return collection;
+  collections.set(role, col);
+  return col;
 }
 
-export default { getChromaClient, getCollection, resetCollection };
+export async function resetAllCollections(): Promise<void> {
+  for (const role of ['patron', 'staff', 'admin']) {
+    await resetCollection(role);
+  }
+}
+
+export default { getChromaClient, getCollection, resetCollection, resetAllCollections };

@@ -11,12 +11,6 @@ export const AppDataSource = new DataSource({
   username: config.db.user,
   password: config.db.password,
   entities: [Notification],
-  migrations: ['dist/migrations/*.{ts,js}'],
-  synchronize: false,
+  synchronize: true,
   logging: process.env.TYPEORM_LOGGING === 'true',
-  extra: {
-    max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
-  },
 });

@@ -7,6 +7,7 @@ import { AppDataSource } from '../data-source';
 import { auth, AuthRequest, requireRole } from '../middlewares/auth';
 import { HttpError } from '../middlewares/errorHandler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
+import { WaitlistRepository } from '../repositories/WaitlistRepository';
 import { isPatronInside, getPatronAccessStatus, getPatronRawAccessStatus } from '../clients/AccessServiceClient';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { lookupPatronById, lookupPatronByStudentCode, lookupPatronsByIds, PatronSummary } from '../clients/UserServiceClient';
@@ -1488,17 +1489,17 @@ router.post('/books/import', upload.single('file'), async (req, res, next) => {
 
 const ImportFilteredRowSchema = z.object({
   isbn: z.string(),
-  quantity: z.number().int().positive(),
+  quantity: z.coerce.number().int().positive(),
   title: z.string().nullable().optional(),
   subtitle: z.string().nullable().optional(),
   author: z.string().nullable().optional(),
   publisher: z.string().nullable().optional(),
   published_date: z.string().nullable().optional(),
-  page_count: z.number().int().nullable().optional(),
+  page_count: z.coerce.number().int().nullable().optional(),
   categories: z.string().nullable().optional(),
   cover_url: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
-  average_rating: z.number().nullable().optional(),
+  average_rating: z.coerce.number().nullable().optional(),
   language: z.string().nullable().optional(),
   isbn10: z.string().nullable().optional(),
   isbn13: z.string().nullable().optional(),
@@ -1543,18 +1544,44 @@ router.post('/books/import/filtered', requireRole(['admin', 'staff'], 'Chi quan 
     if (!rows.length) throw new HttpError(400, 'Khong co du lieu de import');
     const repo = new BorrowRepository();
     const isbns = rows.map((r) => r.isbn);
-    const existing = await repo.getBooksByIsbns(isbns);
-    const offsets = await repo.getBarcodeOffsetsByBooks(isbns);
+    const existingRaw = await repo.getBooksByIsbns(isbns);
+
+    // Key by normalized ISBN for reliable lookup
+    const existing = new Map<string, Book>();
+    for (const [isbn, book] of existingRaw) {
+      existing.set(isbn.replace(/[-\s]/g, ''), book);
+    }
+
+    // Use DB ISBN keys (normalized) for offset query — same pattern as /import
+    const offsetsRaw = await repo.getBarcodeOffsetsByBooks([...existingRaw.keys()]);
+    const offsets = new Map<string, number>();
+    for (const [isbn, offset] of offsetsRaw) {
+      offsets.set(isbn.replace(/[-\s]/g, ''), offset);
+    }
+
+    // Aggregate duplicate ISBNs: sum quantities, merge metadata (first non-null wins)
+    type AggregatedRow = typeof rows[0] & { totalQuantity: number };
+    const aggregated = new Map<string, AggregatedRow>();
+    for (const row of rows) {
+      const key = row.isbn.replace(/[-\s]/g, '');
+      const existingAgg = aggregated.get(key);
+      if (existingAgg) {
+        existingAgg.totalQuantity += row.quantity;
+      } else {
+        aggregated.set(key, { ...row, totalQuantity: row.quantity });
+      }
+    }
+
     const results = [];
     let imported = 0;
     let skipped = 0;
     let errors = 0;
-    for (const row of rows) {
+    for (const [isbnKey, row] of aggregated) {
       try {
-        let book = existing.get(row.isbn);
+        let book = existing.get(isbnKey);
         let created = false;
         if (!book) {
-          const title = row.title || `ISBN: ${row.isbn}`;
+          const title = row.title || `ISBN: ${isbnKey}`;
           const author = row.author || null;
           const coverUrl = row.cover_url || null;
           const upserted = await repo.upsertBook(row.isbn, title, author, coverUrl, {
@@ -1571,19 +1598,19 @@ router.post('/books/import/filtered', requireRole(['admin', 'staff'], 'Chi quan 
           });
           book = upserted.book;
           created = upserted.created;
-          existing.set(row.isbn, book);
-          offsets.set(row.isbn, 0);
+          existing.set(isbnKey, book);
+          offsets.set(isbnKey, 0);
         }
-        const offset = offsets.get(row.isbn) || 0;
-        const barcodes = Array.from({ length: row.quantity }, (_, i) => `LIB-${row.isbn}-${String(offset + i + 1).padStart(3, '0')}`);
-        offsets.set(row.isbn, offset + row.quantity);
+        const offset = offsets.get(isbnKey) || 0;
+        const barcodes = Array.from({ length: row.totalQuantity }, (_, i) => `LIB-${isbnKey}-${String(offset + i + 1).padStart(3, '0')}`);
+        offsets.set(isbnKey, offset + row.totalQuantity);
         const copies = await repo.createCopiesBatchWithSkip(book.id, barcodes, book.shelfLocation);
         const status = created ? 'imported' : copies.length ? 'updated' : 'skipped';
         if (status === 'skipped') skipped += 1; else imported += 1;
-        results.push({ isbn: row.isbn, title: book.title, quantity: row.quantity, barcodes, status, message: `Them ${copies.length} ban sao` });
+        results.push({ isbn: row.isbn, title: book.title, quantity: row.totalQuantity, barcodes, status, message: `Them ${copies.length} ban sao` });
       } catch (error) {
         errors += 1;
-        results.push({ isbn: row.isbn, title: '', quantity: row.quantity, barcodes: [], status: 'error', message: error instanceof Error ? error.message : 'Loi import' });
+        results.push({ isbn: row.isbn, title: '', quantity: row.totalQuantity, barcodes: [], status: 'error', message: error instanceof Error ? error.message : 'Loi import' });
       }
     }
     res.json({ success: errors === 0, total_rows: rows.length, imported, skipped, errors, results });
@@ -1835,124 +1862,78 @@ router.put('/books/:book_id/quantity', async (req, res, next) => {
 
 /**
  * @swagger
- * /borrow/reserve:
- *   post:
- *     summary: Reserve a book
+ * /borrow/books/{book_id}:
+ *   put:
+ *     summary: Update book metadata
  *     tags: [Borrow]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: book_id
+ *         required: true
+ *         schema:
+ *           type: string
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [book_id]
  *             properties:
- *               book_id:
- *                 type: string
- *                 format: uuid
+ *               title: { type: string }
+ *               subtitle: { type: string }
+ *               author: { type: string }
+ *               publisher: { type: string }
+ *               published_date: { type: string }
+ *               description: { type: string }
+ *               page_count: { type: integer }
+ *               categories: { type: string }
+ *               average_rating: { type: number }
+ *               language: { type: string }
+ *               shelf_location: { type: string }
+ *               cover_url: { type: string }
  *     responses:
  *       200:
- *         description: Reservation created
+ *         description: Updated book
  */
-router.post('/reserve', auth, async (req: AuthRequest, res, next) => {
+router.put('/books/:book_id', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the sua sach'), async (req: AuthRequest, res, next) => {
   try {
-    const body = z.object({ book_id: z.string().uuid() }).parse(req.body);
-    const userId = patronIdFrom(req.user);
+    const body = z.object({
+      title: z.string().min(1).optional(),
+      subtitle: z.string().nullable().optional(),
+      author: z.string().nullable().optional(),
+      publisher: z.string().nullable().optional(),
+      published_date: z.string().nullable().optional(),
+      description: z.string().nullable().optional(),
+      page_count: z.coerce.number().int().nullable().optional(),
+      categories: z.string().nullable().optional(),
+      average_rating: z.coerce.number().min(0).max(5).nullable().optional(),
+      language: z.string().nullable().optional(),
+      shelf_location: z.string().nullable().optional(),
+      cover_url: z.string().nullable().optional(),
+    }).parse(req.body);
     const repo = new BorrowRepository();
-    const book = await repo.getBookById(body.book_id);
+    const book = await repo.getBookById(req.params.book_id);
     if (!book) throw new HttpError(404, 'Khong tim thay sach');
-
-    const availableCopies = await repo.countCopies(book.id, true);
-    if (availableCopies > 0) {
-      throw new HttpError(409, 'Sach nay con ban, ban co the muon truc tiep');
-    }
-
-    const reservationRepo = AppDataSource.getRepository('BookReservation');
-    const existing = await reservationRepo.findOne({
-      where: { patronId: userId, bookId: book.id, status: 'pending' },
-    });
-    if (existing) throw new HttpError(409, 'Ban da dat sach nay roi');
-
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + config.reservationExpiryHours);
-
-    const reservation = reservationRepo.create({
-      patronId: userId,
-      bookId: book.id,
-      expiresAt,
-      status: 'pending',
-    });
-    await reservationRepo.save(reservation);
-
-    const queuePosition = await reservationRepo.count({ where: { bookId: book.id, status: 'pending' as any } });
-    res.json({
-      status: 'success',
-      message: `Dat sach thanh cong. Hang doi: #${queuePosition}. Sach se duoc giu ${config.reservationExpiryHours} gio.`,
-      reservation,
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /borrow/reservations:
- *   get:
- *     summary: Get patron reservations
- *     tags: [Borrow]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of reservations
- */
-router.get('/reservations', auth, async (req: AuthRequest, res, next) => {
-  try {
-    const userId = patronIdFrom(req.user);
-    const reservationRepo = AppDataSource.getRepository('BookReservation');
-    const reservations = await reservationRepo.find({
-      where: { patronId: userId, status: 'pending' as any },
-      relations: { book: true },
-      order: { reservedAt: 'ASC' },
-    });
-    res.json({ items: reservations, total: reservations.length });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @swagger
- * /borrow/reservations/{id}:
- *   delete:
- *     summary: Cancel a reservation
- *     tags: [Borrow]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Reservation cancelled
- */
-router.delete('/reservations/:id', auth, async (req: AuthRequest, res, next) => {
-  try {
-    const userId = patronIdFrom(req.user);
-    const reservationRepo = AppDataSource.getRepository('BookReservation');
-    const reservation = await reservationRepo.findOne({
-      where: { id: req.params.id, patronId: userId },
-    });
-    if (!reservation) throw new HttpError(404, 'Khong tim thay dat hang');
-    await reservationRepo.remove(reservation);
-    res.json({ status: 'success', message: 'Huy dat hang thanh cong' });
+    const fields: Record<string, any> = {};
+    if (body.title !== undefined) fields.title = body.title;
+    if (body.subtitle !== undefined) fields.subtitle = body.subtitle;
+    if (body.author !== undefined) fields.author = body.author;
+    if (body.publisher !== undefined) fields.publisher = body.publisher;
+    if (body.published_date !== undefined) fields.publishedDate = body.published_date;
+    if (body.description !== undefined) fields.description = body.description;
+    if (body.page_count !== undefined) fields.pageCount = body.page_count;
+    if (body.categories !== undefined) fields.categories = body.categories;
+    if (body.average_rating !== undefined) fields.averageRating = body.average_rating;
+    if (body.language !== undefined) fields.language = body.language;
+    if (body.shelf_location !== undefined) fields.shelfLocation = body.shelf_location;
+    if (body.cover_url !== undefined) fields.coverUrl = body.cover_url;
+    const updated = await repo.updateBook(book.id, fields);
+    if (!updated) throw new HttpError(500, 'Cap nhat sach that bai');
+    const total = await repo.countCopies(book.id);
+    const available = await repo.countCopies(book.id, true);
+    res.json(serializeBookWithStats(updated, total, available));
   } catch (error) {
     next(error);
   }
@@ -2011,6 +1992,75 @@ router.post('/renew', auth, async (req: AuthRequest, res, next) => {
       status: 'success',
       message: `Gia han thanh cong. Han tra moi: ${newDueAt.toLocaleDateString('vi-VN')}`,
       record: serializeBorrowRecord(record),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/waitlist', requireRole(['patron', 'admin', 'staff'], 'Chỉ độc giả, admin, nhân viên mới được vào danh sách chờ'), async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({ book_id: z.string().uuid() }).parse(req.body);
+    const userId = patronIdFrom(req.user);
+    const repo = new WaitlistRepository();
+    const entry = await repo.joinWaitlist(body.book_id, userId);
+    res.status(201).json({
+      id: entry.id,
+      book_id: entry.bookId,
+      patron_id: entry.patronId,
+      status: entry.status,
+      created_at: entry.createdAt,
+    });
+  } catch (error: any) {
+    if (error.statusCode === 409) {
+      res.status(409).json({ detail: error.message });
+      return;
+    }
+    if (error.statusCode === 404) {
+      res.status(404).json({ detail: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+router.delete('/waitlist/:id', requireRole(['patron', 'admin', 'staff'], 'Chỉ độc giả, admin, nhân viên mới được hủy danh sách chờ'), async (req: AuthRequest, res, next) => {
+  try {
+    const userId = patronIdFrom(req.user);
+    const repo = new WaitlistRepository();
+    await repo.cancelWaitlist(req.params.id, userId);
+    res.status(204).end();
+  } catch (error: any) {
+    if (error.statusCode === 403) {
+      res.status(403).json({ detail: error.message });
+      return;
+    }
+    if (error.statusCode === 404) {
+      res.status(404).json({ detail: error.message });
+      return;
+    }
+    next(error);
+  }
+});
+
+router.get('/waitlist', async (req: AuthRequest, res, next) => {
+  try {
+    const userId = patronIdFrom(req.user);
+    const waitlistRepo = AppDataSource.getRepository('Waitlist');
+    const entries = await waitlistRepo.find({
+      where: { patronId: userId, status: 'waiting' as any },
+      relations: { book: true },
+      order: { createdAt: 'ASC' },
+    });
+    res.json({
+      items: entries.map((e: any) => ({
+        id: e.id,
+        book_id: e.bookId,
+        status: e.status,
+        created_at: e.createdAt,
+        book: e.book ? serializeBook(e.book) : null,
+      })),
+      total: entries.length,
     });
   } catch (error) {
     next(error);

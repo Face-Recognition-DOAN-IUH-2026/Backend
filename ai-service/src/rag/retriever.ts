@@ -8,8 +8,8 @@ export interface RetrievedDocument {
   distance?: number;
 }
 
-export async function retrieve(query: string, topK: number = 5): Promise<RetrievedDocument[]> {
-  const collection = await getCollection();
+export async function retrieve(query: string, topK: number = 5, role?: string): Promise<RetrievedDocument[]> {
+  const collection = await getCollection(role || 'patron');
 
   try {
     const results = await collection.query({

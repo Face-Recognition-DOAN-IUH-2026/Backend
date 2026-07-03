@@ -1,3 +1,7 @@
+﻿---
+roles: staff, admin
+---
+
 # Chính sách phạt - Thư viện IUH
 
 ## Phạt quá hạn

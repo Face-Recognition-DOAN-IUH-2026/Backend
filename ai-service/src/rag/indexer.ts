@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 interface DocMetadata {
   source: string;
   doc_title: string;
+  roles: string;
 }
 
 function getDocTitle(filePath: string): string {
@@ -19,6 +20,8 @@ function getDocTitle(filePath: string): string {
     'the-loai-sach': 'Thể Loại Sách',
     'quy-dinh-the': 'Quy Định Thẻ',
     'chinh-sach-phat': 'Chính Sách Phạt',
+    'quy-dinh-nhan-vien': 'Quy Định Nhân Viên',
+    'bao-cao-tai-chinh': 'Báo Cáo Tài Chính',
   };
   return titles[fileName] || fileName;
 }
@@ -38,7 +41,14 @@ function extractFrontmatter(content: string): { metadata: Record<string, string>
     }
     return { metadata, body: frontmatterMatch[2] };
   }
-  return { metadata: {}, body: content };
+  return { metadata: { roles: 'patron' }, body: content };
+}
+
+function parseRoles(rolesStr: string): string[] {
+  return rolesStr
+    .split(',')
+    .map(r => r.trim())
+    .filter(r => r.length > 0 && ['patron', 'staff', 'admin'].includes(r));
 }
 
 export async function indexDocuments(): Promise<void> {
@@ -54,24 +64,40 @@ export async function indexDocuments(): Promise<void> {
 
   console.log(`Found ${files.length} documents to index`);
 
-  const collection = await resetCollection();
+  const roleCollections = ['patron', 'staff', 'admin'];
+
+  for (const role of roleCollections) {
+    await resetCollection(role);
+  }
 
   let totalChunks = 0;
 
   for (const file of files) {
     const filePath = path.join(docsPath, file);
     const content = fs.readFileSync(filePath, 'utf-8');
-    const { body } = extractFrontmatter(content);
+    const { metadata, body } = extractFrontmatter(content);
     const docTitle = getDocTitle(filePath);
+    const roles = parseRoles(metadata.roles || '');
+
+    console.log(`Processing "${docTitle}": roles=${roles.join(', ') || 'none'}`);
+
+    if (roles.length === 0) {
+      console.log(`  => Skipped (no roles assigned)`);
+      continue;
+    }
+
     const chunks = chunkText(body);
+    console.log(`  => ${chunks.length} chunks`);
 
-    console.log(`Processing "${docTitle}": ${chunks.length} chunks`);
+    if (chunks.length === 0) continue;
 
-    if (chunks.length > 0) {
+    for (const role of roles) {
+      const collection = await getCollection(role);
       const ids = chunks.map(() => uuidv4());
       const metadatas: DocMetadata[] = chunks.map(() => ({
         source: file,
         doc_title: docTitle,
+        roles: roles.join(', '),
       }));
 
       await collection.add({
@@ -80,11 +106,12 @@ export async function indexDocuments(): Promise<void> {
         metadatas: metadatas as any,
       });
 
+      console.log(`  => Indexed into "${role}_kb": ${chunks.length} chunks`);
       totalChunks += chunks.length;
     }
   }
 
-  console.log(`Indexing complete: ${totalChunks} total chunks from ${files.length} documents`);
+  console.log(`Indexing complete: ${totalChunks} total chunks indexed across ${roleCollections.length} collections`);
 }
 
 export default { indexDocuments };

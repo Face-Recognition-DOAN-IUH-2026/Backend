@@ -1,28 +1,17 @@
 import { Router, Request, Response } from 'express';
 import { scheduleService } from '../services/ScheduleService';
 import { config } from '../config';
+import { createInternalAuth } from '../../../shared';
+
+const internalAuth = createInternalAuth({
+  serviceName: 'schedule-service',
+  jwtSecret: config.serviceJwtSecret,
+});
 
 const router = Router();
+router.use(internalAuth);
 
-function logInternalAccess(serviceName: string, endpoint: string, key: string, success: boolean) {
-  const fingerprint = key ? `${key.substring(0, 4)}...${key.substring(key.length - 4)}` : 'none';
-  const timestamp = new Date().toISOString();
-  const status = success ? 'SUCCESS' : 'FAILED';
-  console.log(`[InternalAudit] ${timestamp} ${serviceName} ${endpoint} key=${fingerprint} status=${status}`);
-}
-
-function internalAuth(req: Request, res: Response, next: any) {
-  const apiKey = req.headers['x-internal-api-key'] as string;
-  if (!apiKey || apiKey !== config.internalApiKey) {
-    logInternalAccess('schedule-service', req.path, apiKey || '', false);
-    res.status(403).json({ error: 'Invalid or missing internal API key' });
-    return;
-  }
-  logInternalAccess('schedule-service', req.path, apiKey, true);
-  next();
-}
-
-router.get('/today', internalAuth, async (req: Request, res: Response) => {
+router.get('/today', async (req: Request, res: Response) => {
   try {
     const today = new Date();
     const yyyy = today.getFullYear();
@@ -58,6 +47,16 @@ router.get('/upcoming', internalAuth, async (req: Request, res: Response) => {
     res.json(assignments);
   } catch (error) {
     console.error('Error fetching upcoming schedule:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/auto-checkout', internalAuth, async (req: Request, res: Response) => {
+  try {
+    const result = await scheduleService.autoCheckoutStaleAssignments();
+    res.json(result);
+  } catch (error) {
+    console.error('Error auto-checking out stale assignments:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

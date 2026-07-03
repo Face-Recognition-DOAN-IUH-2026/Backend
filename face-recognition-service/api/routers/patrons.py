@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user, get_db_session, require_role
 from core.schemas import PatronCreate, PatronPublic, PatronUpdate, PatronRegisterRequest, PatronLoginRequest, PatronAuthResponse
+from core.service_token import get_auth_headers
 from infra.config import settings
 from infra.patron_repository import PatronRepository
 from worker.tasks import _upload_temp_frame, batch_enroll_task
@@ -18,7 +19,14 @@ from worker.tasks import _upload_temp_frame, batch_enroll_task
 router = APIRouter(prefix="/patrons", tags=["patrons"])
 
 USER_SERVICE = settings.user_service_url
-INTERNAL_KEY = settings.internal_api_key
+
+
+def _internal_headers() -> dict[str, str]:
+    return get_auth_headers(
+        service_name="face-recognition-service",
+        scopes=["patrons:read"],
+        secret=settings.service_jwt_secret,
+    )
 
 
 def _camel_to_snake(name: str) -> str:
@@ -46,9 +54,7 @@ def _required_date(value: object, fallback: str = "2099-12-31") -> object:
 
 async def _proxy_to_user_service(method: str, path: str, body: dict | None = None) -> dict:
     async with httpx.AsyncClient(timeout=10.0) as client:
-        headers = {}
-        if INTERNAL_KEY:
-            headers["X-Internal-Api-Key"] = INTERNAL_KEY
+        headers = _internal_headers()
         resp = await client.request(method, f"{USER_SERVICE}{path}", json=body, headers=headers)
         if resp.status_code >= 400:
             try:

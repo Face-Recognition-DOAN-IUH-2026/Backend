@@ -4,11 +4,6 @@ describe('borrow config', () => {
     expect(config.maxRenewals).toBe(1);
   });
 
-  it('reservationExpiryHours defaults to 24', () => {
-    const { config } = require('../../config');
-    expect(config.reservationExpiryHours).toBe(24);
-  });
-
   it('maxBorrowDays defaults to 14', () => {
     const { config } = require('../../config');
     expect(config.maxBorrowDays).toBe(14);

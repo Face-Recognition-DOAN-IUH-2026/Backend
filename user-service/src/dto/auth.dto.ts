@@ -11,6 +11,8 @@ export interface RegisterDto {
   permanentAddress?: string;
   membershipExpiry?: string;
   phone?: string;
+  skipVerification?: boolean;
+  verificationToken?: string;
 }
 
 export interface LoginDto {

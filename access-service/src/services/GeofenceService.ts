@@ -10,12 +10,23 @@ const DEFAULT_GEOFENCE: GeofenceConfig = {
   radiusMeters: 100,
 };
 
+const distanceCache = new Map<string, number>();
+const CACHE_MAX = 5000;
+
+function cacheKey(lat1: number, lng1: number, lat2: number, lng2: number): string {
+  return `${lat1.toFixed(6)},${lng1.toFixed(6)}|${lat2.toFixed(6)},${lng2.toFixed(6)}`;
+}
+
 export function calculateDistance(
   lat1: number,
   lng1: number,
   lat2: number,
   lng2: number
 ): number {
+  const key = cacheKey(lat1, lng1, lat2, lng2);
+  const cached = distanceCache.get(key);
+  if (cached !== undefined) return cached;
+
   const R = 6371e3;
   const phi1 = (lat1 * Math.PI) / 180;
   const phi2 = (lat2 * Math.PI) / 180;
@@ -27,7 +38,15 @@ export function calculateDistance(
     Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-  return R * c;
+  const distance = R * c;
+
+  if (distanceCache.size >= CACHE_MAX) {
+    const firstKey = distanceCache.keys().next().value;
+    if (firstKey) distanceCache.delete(firstKey);
+  }
+  distanceCache.set(key, distance);
+
+  return distance;
 }
 
 export function isWithinGeofence(

@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import http from 'http';
 import { WebSocketServer } from 'ws';
 import { config } from './config';
@@ -10,13 +11,15 @@ import internalRoutes from './routes/internal.routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
-import { decodeToken } from './middlewares/auth';
+import { decodeToken } from '../../shared';
 import { realtimeHub } from './realtime/RealtimeHub';
 import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
+import { amqpClient } from './clients/AmqpClient';
 
 const app = express();
 
 app.use(cors({ origin: config.corsOrigins.includes('*') ? true : config.corsOrigins, credentials: true }));
+app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 
 app.use('/access', accessRoutes);
@@ -35,8 +38,9 @@ app.use(errorHandler);
 async function start() {
   try {
     await AppDataSource.initialize();
-    await realtimeHub.connectRedis();
+    await realtimeHub.connectBroker();
     await startUserEventSubscriber();
+    await amqpClient.connect().catch((e) => console.error('[AMQP] Init failed:', e.message));
 
     const server = http.createServer(app);
     const wss = new WebSocketServer({ noServer: true });
@@ -47,14 +51,19 @@ async function start() {
         socket.destroy();
         return;
       }
-      const token = url.searchParams.get('token') || request.headers.authorization?.replace(/^Bearer\s+/i, '');
+      const cookieToken = (request.headers.cookie || '').split(';').map(c => c.trim()).find(c => c.startsWith('access_token='))?.split('=')[1];
+      const token = cookieToken || url.searchParams.get('token') || request.headers.authorization?.replace(/^Bearer\s+/i, '');
       if (!token) {
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         return;
       }
       try {
-        decodeToken(token);
+        decodeToken(token, {
+          jwtSecret: config.jwtSecret,
+          jwtIssuer: config.jwtIssuer,
+          jwtAudience: config.jwtAudience,
+        });
         wss.handleUpgrade(request, socket, head, (ws) => realtimeHub.addWsClient(ws));
       } catch {
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');

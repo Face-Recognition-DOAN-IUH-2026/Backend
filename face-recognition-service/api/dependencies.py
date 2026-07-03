@@ -39,8 +39,8 @@ async def get_current_user(
     secrets = [
         (settings.jwt_access_secret, "access"),
     ]
-    if settings.user_service_jwt_secret:
-        secrets.insert(0, (settings.user_service_jwt_secret, "access"))
+    if settings.service_jwt_secret:
+        secrets.insert(0, (settings.service_jwt_secret, "access"))
 
     payload = _try_decode_token(token, secrets)
     if payload is None:

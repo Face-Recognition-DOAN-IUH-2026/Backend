@@ -17,6 +17,9 @@ export class StaffShift {
   @Column({ type: 'int', default: 1, name: 'min_staff' })
   minStaff: number;
 
+  @Column({ type: 'int', nullable: true, name: 'max_staff' })
+  maxStaff: number | null;
+
   @Column({ type: 'boolean', default: true, name: 'is_active' })
   isActive: boolean;
 

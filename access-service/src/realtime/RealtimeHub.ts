@@ -1,33 +1,46 @@
+import crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { Response } from 'express';
-import Redis from 'ioredis';
 import { WebSocket } from 'ws';
+import { amqpClient } from '../clients/AmqpClient';
 import { config } from '../config';
 import { AccessRealtimeEvent } from '../contracts';
 
-const CHANNEL = 'access.events';
+const EXCHANGE = 'access.realtime.fanout';
+
+function signPayload(payload: object, secret: string): string {
+  return crypto.createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
+}
 
 export class RealtimeHub {
   private sseClients = new Set<Response>();
   private wsClients = new Set<WebSocket>();
   private instanceId = randomUUID();
-  private publisher?: Redis;
-  private subscriber?: Redis;
 
-  async connectRedis() {
-    if (!config.redisUrl) return;
-    this.publisher = new Redis(config.redisUrl);
-    this.subscriber = new Redis(config.redisUrl);
-    await this.subscriber.subscribe(CHANNEL);
-    this.subscriber.on('message', (_channel, raw) => {
-      try {
-        const message = JSON.parse(raw);
+  async connectBroker() {
+    try {
+      await amqpClient.connect();
+      await amqpClient.subscribeFanout(EXCHANGE, (message) => {
         if (message.originId === this.instanceId) return;
+        if (message.signature && config.serviceJwtSecret) {
+          const { signature, ...rest } = message;
+          const expected = signPayload(rest, config.serviceJwtSecret);
+          try {
+            if (!crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'))) {
+              console.warn('[RealtimeHub] Invalid signature, ignoring event');
+              return;
+            }
+          } catch {
+            console.warn('[RealtimeHub] Signature verification failed, ignoring event');
+            return;
+          }
+        }
         this.broadcastLocal(message.event as AccessRealtimeEvent);
-      } catch {
-        // Ignore malformed messages from the shared channel.
-      }
-    });
+      });
+      console.log('[RealtimeHub] Connected to RabbitMQ fanout:', EXCHANGE);
+    } catch (err: any) {
+      console.error('[RealtimeHub] RabbitMQ connection failed:', err.message);
+    }
   }
 
   addSseClient(res: Response) {
@@ -49,9 +62,13 @@ export class RealtimeHub {
 
   async publish(event: AccessRealtimeEvent) {
     this.broadcastLocal(event);
-    if (this.publisher) {
-      await this.publisher.publish(CHANNEL, JSON.stringify({ originId: this.instanceId, event }));
-    }
+    const body = {
+      originId: this.instanceId,
+      event,
+      timestamp: new Date().toISOString(),
+    };
+    const signature = config.serviceJwtSecret ? signPayload(body, config.serviceJwtSecret) : '';
+    await amqpClient.publishFanout(EXCHANGE, { ...body, signature });
   }
 
   private broadcastLocal(event: AccessRealtimeEvent) {

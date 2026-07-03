@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, DeleteDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 
 @Index(['scheduleId'])
 @Index(['staffId', 'checkInAt'])
@@ -24,6 +24,12 @@ export class StaffAttendance {
 
   @Column({ type: 'varchar', length: 30, default: 'web' })
   method: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true, name: 'invalidated_reason' })
+  invalidatedReason: string | null;
+
+  @DeleteDateColumn({ name: 'deleted_at', nullable: true })
+  deletedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

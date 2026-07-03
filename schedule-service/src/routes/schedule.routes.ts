@@ -1,10 +1,17 @@
 import { Router, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { scheduleService } from '../services/ScheduleService';
-import { AuthRequest, auth } from '../middlewares/auth';
-import { requireRole } from '../middlewares/requireRole';
+import { createAuth, AuthRequest, requireRole } from '../../../shared';
+import { config } from '../config';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
 
 const router = Router();
+router.use(auth);
 
 const asyncHandler = (
   fn: (req: AuthRequest, res: Response, next: NextFunction) => Promise<void>,
@@ -24,6 +31,7 @@ const shiftSchema = z.object({
   startTime: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
   endTime: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/),
   minStaff: z.number().int().min(1).optional(),
+  maxStaff: z.number().int().min(1).nullable().optional(),
   isActive: z.boolean().optional(),
 });
 const templateSchema = z.object({
@@ -33,6 +41,8 @@ const templateSchema = z.object({
   zoneId: z.string().uuid(),
   staffId: z.string().uuid(),
   isActive: z.boolean().optional(),
+  validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  validTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 const assignmentSchema = z.object({
   staffId: z.string().uuid(),
@@ -43,12 +53,6 @@ const assignmentSchema = z.object({
   status: z.string().optional(),
 });
 const assignmentPatchSchema = assignmentSchema.partial();
-const availabilitySchema = z.object({
-  dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  type: z.string().optional(),
-  reason: z.string().nullable().optional(),
-});
 const rangeSchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -86,7 +90,7 @@ router.get('/health', asyncHandler(async (_req, res) => {
  *       200:
  *         description: Staff options retrieved
  */
-router.get('/staff-options', requireRole('admin'), asyncHandler(async (req, res) => {
+router.get('/staff-options', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
   const ids = typeof req.query.ids === 'string'
     ? req.query.ids.split(',').map((id) => id.trim()).filter(Boolean)
     : undefined;
@@ -451,7 +455,11 @@ router.delete('/templates/:id', requireRole('admin'), asyncHandler(async (req, r
  *         description: Preferences retrieved
  */
 router.get('/preferences', requireRole('admin'), asyncHandler(async (req, res) => {
-  res.json(await scheduleService.listPreferences(req.query.staff_id as string | undefined));
+  res.json(await scheduleService.listPreferences(
+    req.query.staff_id as string | undefined,
+    req.query.page ? parseInt(req.query.page as string, 10) : undefined,
+    req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+  ));
 }));
 /**
  * @swagger
@@ -484,8 +492,9 @@ router.get('/preferences', requireRole('admin'), asyncHandler(async (req, res) =
  *         description: Preference created
  */
 router.post('/preferences', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
+  const isAdmin = req.user!.role === 'admin';
   const body = {
-    staffId: req.body.staffId || req.user!.userId,
+    staffId: isAdmin ? (req.body.staffId || req.user!.userId) : req.user!.userId,
     shiftId: req.body.shiftId,
     zoneId: req.body.zoneId,
     priority: req.body.priority,
@@ -586,7 +595,10 @@ router.get('/assignments', requireRole('admin', 'staff'), asyncHandler(async (re
     to: req.query.to as string | undefined,
     staffId: req.query.staff_id as string | undefined,
     zoneId: req.query.zone_id as string | undefined,
+    shiftId: req.query.shift_id as string | undefined,
     status: req.query.status as string | undefined,
+    page: req.query.page ? parseInt(req.query.page as string, 10) : undefined,
+    limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
   }));
 }));
 /**
@@ -625,8 +637,51 @@ router.get('/assignments', requireRole('admin', 'staff'), asyncHandler(async (re
  *         description: Assignment created
  */
 router.post('/assignments', requireRole('admin'), asyncHandler(async (req, res) => {
-  res.status(201).json(await scheduleService.createAssignment(req.user!.userId, assignmentSchema.parse(req.body)));
+  const force = req.query.force === 'true';
+  res.status(201).json(await scheduleService.createAssignment(req.user!.userId, assignmentSchema.parse(req.body), force));
 }));
+router.post('/assignments/bulk', requireRole('admin'), asyncHandler(async (req, res) => {
+  const force = req.query.force === 'true';
+  res.status(201).json(await scheduleService.createAssignmentsBulk(req.user!.userId, z.array(assignmentSchema).parse(req.body), force));
+}));
+
+/**
+ * @swagger
+ * /schedules/assignments/week:
+ *   delete:
+ *     summary: Cancel all future assignments in a date range (bulk delete week)
+ *     tags: [Schedule]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [from, to]
+ *             properties:
+ *               from:
+ *                 type: string
+ *                 format: date
+ *               to:
+ *                 type: string
+ *                 format: date
+ *               notify:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Assignments cancelled
+ */
+router.delete('/assignments/week', requireRole('admin'), asyncHandler(async (req, res) => {
+  const { from, to, notify } = z.object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    notify: z.boolean().optional().default(false),
+  }).parse(req.body);
+  res.json(await scheduleService.deleteWeekAssignments(req.user!.userId, from, to, notify));
+}));
+
 /**
  * @swagger
  * /schedules/assignments/{id}:
@@ -671,7 +726,8 @@ router.post('/assignments', requireRole('admin'), asyncHandler(async (req, res) 
  */
 router.put('/assignments/:id', requireRole('admin'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
-  res.json(await scheduleService.updateAssignment(req.user!.userId, id, assignmentPatchSchema.parse(req.body)));
+  const force = req.query.force === 'true';
+  res.json(await scheduleService.updateAssignment(req.user!.userId, id, assignmentPatchSchema.parse(req.body), force));
 }));
 /**
  * @swagger
@@ -745,80 +801,6 @@ router.delete('/assignments/:id', requireRole('admin'), asyncHandler(async (req,
 
 /**
  * @swagger
- * /schedules/availability:
- *   get:
- *     summary: List availability records
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: staff_id
- *         schema:
- *           type: string
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Availability records retrieved
- */
-router.get('/availability', requireRole('admin'), asyncHandler(async (req, res) => {
-  res.json(await scheduleService.listAvailability({
-    staffId: req.query.staff_id as string | undefined,
-    status: req.query.status as string | undefined,
-  }));
-}));
-/**
- * @swagger
- * /schedules/availability/{id}/approve:
- *   post:
- *     summary: Approve availability request
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Availability approved
- */
-router.post('/availability/:id/approve', requireRole('admin'), asyncHandler(async (req, res) => {
-  const { id } = idParam.parse(req.params);
-  res.json(await scheduleService.reviewAvailability(req.user!.userId, id, 'approved'));
-}));
-/**
- * @swagger
- * /schedules/availability/{id}/reject:
- *   post:
- *     summary: Reject availability request
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Availability rejected
- */
-router.post('/availability/:id/reject', requireRole('admin'), asyncHandler(async (req, res) => {
-  const { id } = idParam.parse(req.params);
-  res.json(await scheduleService.reviewAvailability(req.user!.userId, id, 'rejected'));
-}));
-
-/**
- * @swagger
  * /schedules/me:
  *   get:
  *     summary: Get current user schedule
@@ -843,294 +825,6 @@ router.post('/availability/:id/reject', requireRole('admin'), asyncHandler(async
 router.get('/me', auth, asyncHandler(async (req, res) => {
   res.json(await scheduleService.listMine(req.user!.userId, req.query.from as string | undefined, req.query.to as string | undefined));
 }));
-/**
- * @swagger
- * /schedules/me/availability:
- *   get:
- *     summary: Get current user availability
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Current user availability retrieved
- */
-router.get('/me/availability', auth, asyncHandler(async (req, res) => {
-  res.json(await scheduleService.listAvailability({ staffId: req.user!.userId }));
-}));
-/**
- * @swagger
- * /schedules/me/availability:
- *   post:
- *     summary: Create current user availability
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               dateFrom:
- *                 type: string
- *                 format: date
- *               dateTo:
- *                 type: string
- *                 format: date
- *               type:
- *                 type: string
- *               reason:
- *                 type: string
- *     responses:
- *       201:
- *         description: Availability created
- */
-router.post('/me/availability', auth, asyncHandler(async (req, res) => {
-  res.status(201).json(await scheduleService.createAvailability(req.user!.userId, availabilitySchema.parse(req.body)));
-}));
-
-/**
- * @swagger
- * /schedules/open-shifts:
- *   get:
- *     summary: List open shifts
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Open shifts retrieved
- */
-router.get('/open-shifts', requireRole('admin', 'staff'), asyncHandler(async (_req, res) => {
-  res.json(await scheduleService.openShifts());
-}));
-
-const bidSchema = z.object({ assignmentId: z.string().uuid(), note: z.string().nullable().optional() });
-/**
- * @swagger
- * /schedules/bids:
- *   post:
- *     summary: Create a bid on an open shift
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               assignmentId:
- *                 type: string
- *                 format: uuid
- *               note:
- *                 type: string
- *     responses:
- *       201:
- *         description: Bid created
- */
-router.post('/bids', auth, asyncHandler(async (req, res) => {
-  const { assignmentId, note } = bidSchema.parse(req.body);
-  res.status(201).json(await scheduleService.createBid(req.user!.userId, assignmentId, note));
-}));
-/**
- * @swagger
- * /schedules/bids:
- *   get:
- *     summary: List bids
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: staff_id
- *         schema:
- *           type: string
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Bids retrieved
- */
-router.get('/bids', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
-  const staffId = req.query.staff_id as string | undefined;
-  const status = req.query.status as string | undefined;
-  res.json(await scheduleService.listBids(staffId, status));
-}));
-/**
- * @swagger
- * /schedules/bids/{id}/cancel:
- *   post:
- *     summary: Cancel a bid
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Bid cancelled
- */
-router.post('/bids/:id/cancel', auth, asyncHandler(async (req, res) => {
-  const { id } = idParam.parse(req.params);
-  res.json(await scheduleService.cancelBid(req.user!.userId, id));
-}));
-/**
- * @swagger
- * /schedules/bids/{id}/approve:
- *   post:
- *     summary: Approve a bid
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Bid approved
- */
-router.post('/bids/:id/approve', requireRole('admin'), asyncHandler(async (req, res) => {
-  const { id } = idParam.parse(req.params);
-  res.json(await scheduleService.reviewBid(req.user!.userId, id, 'approved'));
-}));
-/**
- * @swagger
- * /schedules/bids/{id}/reject:
- *   post:
- *     summary: Reject a bid
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Bid rejected
- */
-router.post('/bids/:id/reject', requireRole('admin'), asyncHandler(async (req, res) => {
-  const { id } = idParam.parse(req.params);
-  res.json(await scheduleService.reviewBid(req.user!.userId, id, 'rejected'));
-}));
-
-const swapSchema = z.object({
-  targetStaffId: z.string().uuid(),
-  requesterAssignmentId: z.string().uuid(),
-  targetAssignmentId: z.string().uuid().nullable().optional(),
-  reason: z.string().nullable().optional(),
-});
-/**
- * @swagger
- * /schedules/swaps:
- *   post:
- *     summary: Request a shift swap
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               targetStaffId:
- *                 type: string
- *                 format: uuid
- *               requesterAssignmentId:
- *                 type: string
- *                 format: uuid
- *               targetAssignmentId:
- *                 type: string
- *                 format: uuid
- *               reason:
- *                 type: string
- *     responses:
- *       201:
- *         description: Swap request created
- */
-router.post('/swaps', auth, asyncHandler(async (req, res) => {
-  res.status(201).json(await scheduleService.createSwap(req.user!.userId, swapSchema.parse(req.body)));
-}));
-/**
- * @swagger
- * /schedules/swaps:
- *   get:
- *     summary: List swap requests for current user
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Swap requests retrieved
- */
-router.get('/swaps', auth, asyncHandler(async (req, res) => {
-  const staffId = req.user!.userId;
-  const status = req.query.status as string | undefined;
-  res.json(await scheduleService.listSwaps(staffId, status));
-}));
-const swapResponseSchema = z.object({ action: z.enum(['accepted', 'rejected']), responseNote: z.string().nullable().optional() });
-/**
- * @swagger
- * /schedules/swaps/{id}/respond:
- *   post:
- *     summary: Respond to a swap request
- *     tags: [Schedule]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               action:
- *                 type: string
- *                 enum: [accepted, rejected]
- *               responseNote:
- *                 type: string
- *     responses:
- *       200:
- *         description: Swap responded
- */
-router.post('/swaps/:id/respond', auth, asyncHandler(async (req, res) => {
-  const { id } = idParam.parse(req.params);
-  const { action, responseNote } = swapResponseSchema.parse(req.body);
-  res.json(await scheduleService.respondSwap(req.user!.userId, id, action, responseNote));
-}));
-
 /**
  * @swagger
  * /schedules/assignments/{id}/confirm:
@@ -1181,6 +875,8 @@ router.post('/assignments/:id/confirm', auth, asyncHandler(async (req, res) => {
  *                 type: number
  *               lng:
  *                 type: number
+ *               wifiSsid:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Checked in
@@ -1189,7 +885,8 @@ router.post('/assignments/:id/check-in', auth, asyncHandler(async (req, res) => 
   const { id } = idParam.parse(req.params);
   const lat = req.body?.lat != null ? Number(req.body.lat) : undefined;
   const lng = req.body?.lng != null ? Number(req.body.lng) : undefined;
-  res.json(await scheduleService.checkIn(req.user!.userId, id, req.body?.method || 'web', lat, lng));
+  const wifiSsid: string | undefined = req.body?.wifiSsid;
+  res.json(await scheduleService.checkIn(req.user!.userId, id, req.body?.method || 'web', lat, lng, wifiSsid));
 }));
 /**
  * @swagger
@@ -1242,6 +939,10 @@ router.post('/assignments/:id/check-out', auth, asyncHandler(async (req, res) =>
  */
 router.post('/auto-schedule', requireRole('admin'), asyncHandler(async (req, res) => {
   const { from, to } = rangeSchema.parse(req.body);
+  if (from > to) {
+    res.status(400).json({ error: 'Ngay bat dau phai nho hon hoac bang ngay ket thuc' });
+    return;
+  }
   res.json(await scheduleService.autoSchedule(req.user!.userId, from, to));
 }));
 
@@ -1251,6 +952,7 @@ const geofenceSchema = z.object({
   longitude: z.number().min(-180).max(180),
   radiusMeters: z.number().int().min(10).max(10000).optional(),
   addressHint: z.string().nullable().optional(),
+  allowedWifiSsids: z.array(z.string()).nullable().optional(),
 });
 /**
  * @swagger
@@ -1293,6 +995,11 @@ router.get('/geofence', requireRole('admin'), asyncHandler(async (_req, res) => 
  *                 type: integer
  *               addressHint:
  *                 type: string
+ *               allowedWifiSsids:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 nullable: true
  *     responses:
  *       200:
  *         description: Geofence set
@@ -1326,6 +1033,114 @@ router.delete('/geofence/:zoneId', requireRole('admin'), asyncHandler(async (req
 
 /**
  * @swagger
+ * /schedules/auto-checkout:
+ *   post:
+ *     summary: Auto-checkout stale assignments
+ *     tags: [Schedule]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Auto-checkout completed
+ */
+router.post('/auto-checkout', requireRole(['admin']), asyncHandler(async (_req, res) => {
+  res.json(await scheduleService.autoCheckoutStaleAssignments());
+}));
+
+/**
+ * @swagger
+ * /schedules/assignments/{id}/admin-confirm:
+ *   post:
+ *     summary: Admin force-confirm an assignment
+ *     tags: [Schedule]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Assignment confirmed
+ */
+router.post('/assignments/:id/admin-confirm', requireRole(['admin']), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.adminConfirmAssignment(req.user!.userId, id));
+}));
+
+const adminAttendanceSchema = z.object({
+  checkInAt: z.string().optional(),
+  checkOutAt: z.string().optional(),
+  status: z.string().optional(),
+});
+/**
+ * @swagger
+ * /schedules/assignments/{id}/attendance:
+ *   put:
+ *     summary: Admin fix attendance for an assignment
+ *     tags: [Schedule]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               checkInAt:
+ *                 type: string
+ *               checkOutAt:
+ *                 type: string
+ *               status:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Attendance fixed
+ */
+router.put('/assignments/:id/attendance', requireRole(['admin']), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.adminFixAttendance(req.user!.userId, id, adminAttendanceSchema.parse(req.body)));
+}));
+
+const manualCheckInSchema = z.object({
+  assignmentId: z.string().uuid(),
+  note: z.string().min(1),
+});
+
+router.post('/attendance/manual-checkin', auth, asyncHandler(async (req, res) => {
+  const { assignmentId, note } = manualCheckInSchema.parse(req.body);
+  res.status(201).json(await scheduleService.requestManualCheckIn(assignmentId, req.user!.userId, note));
+}));
+
+router.put('/attendance/:id/approve-manual', requireRole(['admin']), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  const checkInAt = req.body?.checkInAt ? new Date(req.body.checkInAt) : undefined;
+  res.json(await scheduleService.approveManualCheckIn(req.user!.userId, id, checkInAt));
+}));
+
+router.put('/attendance/:id/reject-manual', requireRole(['admin']), asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  const { reason } = z.object({ reason: z.string().min(1) }).parse(req.body);
+  res.json(await scheduleService.rejectManualCheckIn(req.user!.userId, id, reason));
+}));
+
+router.get('/attendance/manual-checkin-requests', requireRole(['admin']), asyncHandler(async (req, res) => {
+  const status = req.query.status as string | undefined;
+  res.json(await scheduleService.listManualCheckInRequests(status));
+}));
+
+/**
+ * @swagger
  * /schedules/audit-logs:
  *   get:
  *     summary: List audit logs
@@ -1336,8 +1151,25 @@ router.delete('/geofence/:zoneId', requireRole('admin'), asyncHandler(async (req
  *       200:
  *         description: Audit logs retrieved
  */
-router.get('/audit-logs', requireRole('admin'), asyncHandler(async (_req, res) => {
-  res.json(await scheduleService.auditLogs());
+router.get('/audit-logs', requireRole(['admin']), asyncHandler(async (req, res) => {
+  res.json(await scheduleService.auditLogs({
+    page: req.query.page ? parseInt(req.query.page as string, 10) : undefined,
+    limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
+    category: req.query.category as string | undefined,
+    action: req.query.action as string | undefined,
+    entityType: req.query.entityType as string | undefined,
+    actorId: req.query.actorId as string | undefined,
+    fromDate: req.query.fromDate as string | undefined,
+    toDate: req.query.toDate as string | undefined,
+    search: req.query.search as string | undefined,
+  }));
+}));
+
+router.get('/audit-logs/stats', requireRole(['admin']), asyncHandler(async (req, res) => {
+  res.json(await scheduleService.auditStats({
+    fromDate: req.query.fromDate as string | undefined,
+    toDate: req.query.toDate as string | undefined,
+  }));
 }));
 
 export default router;

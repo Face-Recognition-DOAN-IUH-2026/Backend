@@ -192,7 +192,14 @@ export class BorrowRepository {
   async setCopyAvailable(copy: BookCopy, isAvailable: boolean) {
     copy.isAvailable = isAvailable;
     copy.updatedAt = new Date();
-    return this.copies.save(copy);
+    await this.copies.save(copy);
+
+    const availableCount = await this.copies.count({ where: { bookId: copy.bookId, isAvailable: true } });
+    const book = await this.books.findOne({ where: { id: copy.bookId } });
+    if (book) {
+      book.isAvailable = availableCount > 0;
+      await this.books.save(book);
+    }
   }
 
   async getActiveBorrow(patronId: string, bookId: string) {
@@ -294,12 +301,14 @@ export class BorrowRepository {
       .select('book.isbn', 'isbn')
       .addSelect('MAX(copy.barcode)', 'max_barcode')
       .where('book.isbn IN (:...isbns)', { isbns })
-      .andWhere('copy.barcode LIKE :prefix', { prefix: 'LIB-%' })
+      .andWhere('copy.barcode LIKE :prefix', { prefix: 'LIB%' })
       .groupBy('book.isbn')
       .getRawMany();
     const map = new Map<string, number>();
     rows.forEach((row) => {
-      const match = String(row.max_barcode || '').match(/-(\d+)$/);
+      const barcode = String(row.max_barcode || '');
+      const normalized = barcode.replace(/[\s-]+/g, '');
+      const match = normalized.match(/(\d{3})$/);
       if (match) map.set(row.isbn, Number(match[1]));
     });
     return map;
@@ -315,10 +324,19 @@ export class BorrowRepository {
     const row = await this.copies.createQueryBuilder('copy')
       .select('MAX(copy.barcode)', 'max_barcode')
       .where('copy.bookId = :bookId', { bookId: book.id })
-      .andWhere('copy.barcode LIKE :prefix', { prefix: 'LIB-%' })
+      .andWhere('copy.barcode LIKE :prefix', { prefix: 'LIB%' })
       .getRawOne();
-    const match = String(row?.max_barcode || '').match(/-(\d+)$/);
+    const barcode = String(row?.max_barcode || '');
+    const normalized = barcode.replace(/[\s-]+/g, '');
+    const match = normalized.match(/(\d{3})$/);
     return match ? Number(match[1]) : 0;
+  }
+
+  async updateBook(bookId: string, fields: Partial<Pick<Book, 'title' | 'subtitle' | 'author' | 'coverUrl' | 'publisher' | 'publishedDate' | 'description' | 'pageCount' | 'categories' | 'averageRating' | 'language' | 'shelfLocation'>>): Promise<Book | null> {
+    const book = await this.books.findOne({ where: { id: bookId } });
+    if (!book) return null;
+    Object.assign(book, fields, { updatedAt: new Date() });
+    return this.books.save(book);
   }
 
   async getAvailableCopiesByBarcodeDesc(bookId: string) {

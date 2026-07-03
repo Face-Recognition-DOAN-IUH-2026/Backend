@@ -12,7 +12,7 @@ export const AppDataSource = new DataSource({
   username: config.db.user,
   password: config.db.password,
   entities: [AutomationTask, AutomationRun],
-  migrations: ['dist/migrations/*.{ts,js}'],
+  migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
   synchronize: false,
   logging: process.env.TYPEORM_LOGGING === 'true',
   extra: {

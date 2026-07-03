@@ -5,7 +5,15 @@ import { PatronRepository } from '../repositories/PatronRepository';
 import { RedisService } from './RedisService';
 import { CloudinaryService } from './CloudinaryService';
 import { UserPublicDto } from '../dto';
-import { NotFoundError, BadRequestError } from '../errors';
+import { NotFoundError, BadRequestError, UnauthorizedError } from '../errors';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { getServiceToken, CircuitBreaker, retryWithBackoff } from '../../../shared';
+import axios from 'axios';
+import { config } from '../config';
+import { accessServiceClient } from '../clients/AccessServiceClient';
+
+const notificationCircuit = new CircuitBreaker(5, 60_000);
 
 export class UserService {
   constructor(
@@ -32,14 +40,19 @@ export class UserService {
       role: user.role,
       student_code: user.studentCode,
       class_name: user.className,
+      course: user.course,
+      identity_number: user.identityNumber,
       phone: user.phone,
+      permanent_address: user.permanentAddress,
       card_number: user.cardNumber,
+      issue_date: user.issueDate,
+      membership_expiry: user.membershipExpiry,
       status: user.status,
       current_status: user.currentStatus,
       last_entry_at: user.lastEntryAt,
       last_entry_camera: user.lastEntryCamera,
-      membership_expiry: user.membershipExpiry,
       avatar_url: user.avatarUrl,
+      suspended_reason: user.suspendedReason,
       created_at: user.createdAt,
     };
   }
@@ -71,6 +84,12 @@ export class UserService {
     const user = await this.userRepo.findById(id);
     if (!user) throw new NotFoundError('User not found');
 
+    try {
+      await accessServiceClient.setPatronStatus(id, currentStatus, cameraId || undefined);
+    } catch (err) {
+      console.error('[UserService] Failed to sync status to access-service:', err);
+    }
+
     const updates: any = { currentStatus };
     if (currentStatus === 'inside') {
       updates.lastEntryAt = new Date();
@@ -90,17 +109,25 @@ export class UserService {
     await queryRunner.startTransaction();
 
     try {
-      await queryRunner.manager.update(User, id, { status: 'deleted' as any });
-      await this.redis.publishUserDeleted(id, user.email);
-      await queryRunner.commitTransaction();
+      if (user.status === 'deleted' || user.role === 'admin' || user.role === 'staff') {
+        // Hard delete for already deleted users, or for admin/staff immediately
+        await queryRunner.manager.delete(User, id);
+        await this.redis.publishUserDeleted(id, user.email);
+        await queryRunner.commitTransaction();
+        return { deleted: true, id, soft: false };
+      } else {
+        // Soft delete for active users
+        await queryRunner.manager.update(User, id, { status: 'deleted' as any });
+        await this.redis.publishUserDeleted(id, user.email);
+        await queryRunner.commitTransaction();
+        return { deleted: true, id, soft: true };
+      }
     } catch (error) {
       await queryRunner.rollbackTransaction();
       throw error;
     } finally {
       await queryRunner.release();
     }
-
-    return { deleted: true, id, soft: true };
   }
 
   async restoreUser(id: string): Promise<UserPublicDto> {
@@ -115,6 +142,169 @@ export class UserService {
     this.redis.publishUserUpdated(id, user.email);
 
     return this.getUserById(id);
+  }
+
+  async adminUpdateUser(id: string, updates: {
+    fullName?: string;
+    phone?: string;
+    studentCode?: string | null;
+    className?: string | null;
+    identityNumber?: string | null;
+    course?: string | null;
+    permanentAddress?: string | null;
+    cardNumber?: string | null;
+    issueDate?: string | null;
+    membershipExpiry?: string | null;
+    role?: string;
+    status?: string;
+    suspendedReason?: string | null;
+    avatarUrl?: string | null;
+  }): Promise<UserPublicDto> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    const updateData: any = {};
+
+    if (updates.fullName !== undefined) updateData.fullName = updates.fullName || null;
+    if (updates.phone !== undefined) updateData.phone = updates.phone || null;
+    if (updates.studentCode !== undefined) updateData.studentCode = updates.studentCode || null;
+    if (updates.className !== undefined) updateData.className = updates.className || null;
+    if (updates.identityNumber !== undefined) updateData.identityNumber = updates.identityNumber || null;
+    if (updates.course !== undefined) updateData.course = updates.course || null;
+    if (updates.permanentAddress !== undefined) updateData.permanentAddress = updates.permanentAddress || null;
+    if (updates.cardNumber !== undefined) updateData.cardNumber = updates.cardNumber || null;
+    if (updates.issueDate !== undefined) updateData.issueDate = updates.issueDate || null;
+    if (updates.membershipExpiry !== undefined) updateData.membershipExpiry = updates.membershipExpiry || null;
+    if (updates.role !== undefined) {
+      if (!['patron', 'staff', 'admin', 'user'].includes(updates.role)) {
+        throw new BadRequestError('Vai trò không hợp lệ');
+      }
+      updateData.role = updates.role;
+    }
+    if (updates.status !== undefined) {
+      if (!['active', 'suspended', 'inactive'].includes(updates.status)) {
+        throw new BadRequestError('Trạng thái không hợp lệ');
+      }
+      updateData.status = updates.status;
+      if (updates.status === 'suspended' && updates.suspendedReason) {
+        updateData.suspendedReason = updates.suspendedReason;
+      } else if (updates.status === 'active') {
+        updateData.suspendedReason = null;
+      }
+    }
+    if (updates.avatarUrl !== undefined) updateData.avatarUrl = updates.avatarUrl || null;
+
+    if (updateData.studentCode !== undefined && updateData.studentCode !== null) {
+      const existing = await this.userRepo.findByStudentCode(updateData.studentCode);
+      if (existing && existing.id !== id) {
+        throw new BadRequestError('Mã sinh viên đã được sử dụng');
+      }
+    }
+
+    if (updateData.cardNumber !== undefined && updateData.cardNumber !== null) {
+      const existing = await this.userRepo.findByCardNumber(updateData.cardNumber);
+      if (existing && existing.id !== id) {
+        throw new BadRequestError('Số thẻ đã được sử dụng');
+      }
+    }
+
+    await this.userRepo.update(id, updateData);
+    this.redis.publishUserUpdated(id, user.email);
+
+    return this.getUserById(id);
+  }
+
+  async updateProfile(id: string, updates: { fullName?: string; phone?: string; permanentAddress?: string }): Promise<UserPublicDto> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    const updateData: any = {};
+    if (updates.fullName !== undefined) updateData.fullName = updates.fullName;
+    if (updates.phone !== undefined) updateData.phone = updates.phone;
+    if (updates.permanentAddress !== undefined) updateData.permanentAddress = updates.permanentAddress;
+
+    await this.userRepo.update(id, updateData);
+    this.redis.publishUserUpdated(id, user.email);
+    
+    const updatedUser = await this.userRepo.findById(id);
+    return this.toPublic(updatedUser!);
+  }
+
+  async changePassword(id: string, oldPass: string, newPass: string): Promise<void> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    const isMatch = await bcrypt.compare(oldPass, user.passwordHash);
+    if (!isMatch) throw new UnauthorizedError('Mat khau hien tai khong dung');
+
+    const passwordHash = await bcrypt.hash(newPass, 10);
+    await this.userRepo.update(id, { passwordHash });
+  }
+
+  async requestEmailChangeOtp(id: string, newEmail: string): Promise<void> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    const normalizedEmail = newEmail.trim().toLowerCase();
+    const existing = await this.userRepo.findByEmail(normalizedEmail);
+    if (existing && existing.id !== id) {
+      throw new BadRequestError('Email nay da duoc su dung');
+    }
+
+    const code = crypto.randomInt(100000, 999999).toString();
+    // Reusing the password reset or verification code logic in Redis, or create a new one.
+    // We'll create a new redis method or use a generic one if possible, but wait, RedisService might not have setEmailChangeCode.
+    // Let's use setEmailVerificationCode but with the newEmail.
+    await this.redis.setEmailVerificationCode(normalizedEmail, code);
+
+    try {
+      await retryWithBackoff(async () => {
+        if (!notificationCircuit.canRequest()) {
+          throw new Error('Notification service temporarily unavailable');
+        }
+        try {
+          const response = await axios.post(
+            `${config.notificationServiceUrl}/internal/send-email-change`,
+            { toEmail: normalizedEmail, code },
+            {
+              headers: { 'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}` },
+              timeout: 5000,
+            }
+          );
+          notificationCircuit.recordSuccess();
+          return response;
+        } catch (err: any) {
+          if (err?.response?.status >= 500 || err?.code === 'ECONNABORTED' || err?.code === 'ECONNREFUSED') {
+            notificationCircuit.recordFailure();
+          }
+          throw err;
+        }
+      }, 2, 500);
+    } catch (e: any) {
+      console.error('[UserService] Failed to send email change OTP:', e.response?.status, e.response?.data || e.message);
+      throw new Error('Khong the gui email, vui long thu lai sau');
+    }
+  }
+
+  async verifyAndChangeEmail(id: string, newEmail: string, code: string): Promise<void> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    const normalizedEmail = newEmail.trim().toLowerCase();
+    const storedCode = await this.redis.getEmailVerificationCode(normalizedEmail);
+    
+    if (!storedCode || storedCode !== code) {
+      throw new BadRequestError('Ma xac thuc khong hop le hoac da het han');
+    }
+
+    const existing = await this.userRepo.findByEmail(normalizedEmail);
+    if (existing && existing.id !== id) {
+      throw new BadRequestError('Email nay da duoc su dung');
+    }
+
+    await this.userRepo.update(id, { email: normalizedEmail });
+    await this.redis.deleteEmailVerificationCode(normalizedEmail);
+    this.redis.publishUserUpdated(id, normalizedEmail);
   }
 
   private toPublic(user: any): UserPublicDto {

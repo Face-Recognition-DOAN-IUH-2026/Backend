@@ -16,8 +16,8 @@
 ## 3. Service-To-Service Communication
 
 - Sync communication uses REST over the internal Docker network.
-- Internal service calls use `x-internal-api-key`.
-- Async work currently uses Redis and Celery.
+- Internal service calls use Service JWT (`Authorization: Bearer <token>`) with the shared `SERVICE_JWT_SECRET`.
+- Async work currently uses RabbitMQ (with fanout exchanges) and Celery (Python).
 - Services should not call each other through the public API Gateway.
 
 ## 4. Data Ownership
@@ -40,11 +40,12 @@
 - `access-service` is the source of truth for access logs and patron inside/outside state.
 - Legacy access routes in `face-recognition-service` are deprecated while gateway `/api/access/*` routes to `access-service`.
 
-## 6. Internal API Key Pattern
+## 6. Service-to-Service JWT
 
-- Service-to-service calls use header `x-internal-api-key`.
-- Do not use end-user JWTs for internal service authority.
-- The key is configured through environment variables and must match across services.
+- Service-to-service calls use header `Authorization: Bearer <service-token>`.
+- Tokens are signed with `SERVICE_JWT_SECRET` (HS256) and include `sub`, `scope`, `typ: 'service'`, `iat`, `exp`.
+- Use `getServiceToken()` from `shared/auth/serviceToken` (Node.js) or `get_service_token()` from `core.service_token` (Python).
+- The secret must be identical across all services.
 
 ## 7. Shared State And Redis
 

@@ -1,3 +1,7 @@
+﻿---
+roles: patron, staff, admin
+---
+
 # Vị trí các tầng Thư viện IUH
 
 Thư viện IUH gồm 3 tầng, mỗi tầng phục vụ các khoa khác nhau:

@@ -4,14 +4,12 @@ import { config } from './config';
 import {
   LibraryZone,
   StaffShift,
-  StaffAvailabilityRequest,
   StaffScheduleTemplate,
   StaffSchedule,
   StaffAttendance,
   ScheduleAuditLog,
-  ShiftBid,
-  ShiftSwap,
   GeofenceConfig,
+  StaffShiftPreference,
 } from './entities';
 
 export const AppDataSource = new DataSource({
@@ -24,16 +22,14 @@ export const AppDataSource = new DataSource({
   entities: [
     LibraryZone,
     StaffShift,
-    StaffAvailabilityRequest,
     StaffScheduleTemplate,
     StaffSchedule,
     StaffAttendance,
     ScheduleAuditLog,
-    ShiftBid,
-    ShiftSwap,
     GeofenceConfig,
+    StaffShiftPreference,
   ],
   migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
-  synchronize: true,
+  synchronize: process.env.NODE_ENV !== 'production',
   logging: process.env.TYPEORM_LOGGING === 'true',
 });

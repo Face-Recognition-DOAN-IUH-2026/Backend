@@ -37,19 +37,6 @@ async def _store_temp_frame(raw: bytes) -> str:
     return object_key
 
 
-@router.post("/enroll", response_model=EnrollmentResult, status_code=status.HTTP_410_GONE)
-async def enroll(
-    file: UploadFile = File(...),
-    consent_given: bool = Form(True),
-    angle: str = Form("frontal"),
-    current_user: dict = Depends(get_current_user),
-):
-    raise HTTPException(
-        status_code=status.HTTP_410_GONE,
-        detail="Single-image enrollment is no longer supported. Use /face/enroll-batch with 4 angles."
-    )
-
-
 @router.post("/enroll-batch", response_model=EnrollmentResult, status_code=status.HTTP_202_ACCEPTED)
 async def enroll_batch(
     frontal: UploadFile = File(...),
@@ -75,6 +62,7 @@ async def enroll_batch(
             _store_temp_frame(raw_down),
         )
     except Exception as exc:
+        print(f"ERROR: enroll-batch _store_temp_frame failed: {type(exc).__name__}: {exc}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to store temp frames: {exc}")
     task = batch_enroll_task.delay(user_id=current_user["id"], object_keys=keys)
     return EnrollmentResult(job_id=task.id)

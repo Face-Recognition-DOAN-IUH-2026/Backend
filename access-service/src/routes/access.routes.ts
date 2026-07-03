@@ -1,8 +1,14 @@
 import { Router } from 'express';
-import { z } from 'zod';
+import { z, ZodError } from 'zod';
 import { accessService } from '../services/AccessService';
-import { auth } from '../middlewares/auth';
-import { requireRole } from '../middlewares/requireRole';
+import { createAuth, requireRole } from '../../shared';
+import { config } from '../config';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
 import { realtimeHub } from '../realtime/RealtimeHub';
 
 const router = Router();
@@ -17,7 +23,7 @@ const router = Router();
  *       200:
  *         description: Event stream (text/event-stream)
  */
-router.get('/events', (_req, res) => {
+router.get('/events', auth, (_req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -235,6 +241,259 @@ router.post('/test-broadcast', auth, requireRole(['admin', 'staff']), async (req
  *       200:
  *         description: Patron marked as outside
  */
+/**
+ * @swagger
+ * /access/kiosk/presence:
+ *   post:
+ *     summary: Mark patron as present via Kiosk interaction
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - patron_id
+ *               - student_code
+ *               - device_id
+ *             properties:
+ *               patron_id:
+ *                 type: string
+ *               student_code:
+ *                 type: string
+ *               device_id:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Presence recorded
+ *       400:
+ *         description: Missing required fields
+ *       403:
+ *         description: Unknown kiosk device
+ */
+router.post('/kiosk/presence', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
+  try {
+    const body = z.object({
+      patron_id: z.string().min(1, 'patron_id là bắt buộc'),
+      student_code: z.string().min(1, 'student_code là bắt buộc'),
+      device_id: z.string().min(1, 'device_id là bắt buộc'),
+    }).parse(req.body || {});
+
+    const device = await accessService.findKioskDevice(body.device_id);
+    if (!device) {
+      res.status(403).json({ error: 'Thiết bị Kiosk không hợp lệ' });
+      return;
+    }
+
+    const result = await accessService.recordKioskPresence(body.patron_id, body.student_code, body.device_id);
+    res.json(result);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      res.status(400).json({ error: error.errors.map(e => e.message).join(', ') });
+      return;
+    }
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/kiosk/approval-request:
+ *   post:
+ *     summary: Create a kiosk approval request (when face recognition fails)
+ *     tags: [Access]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - device_id
+ *               - patron_id
+ *               - student_code
+ *             properties:
+ *               device_id:
+ *                 type: string
+ *               patron_id:
+ *                 type: string
+ *               student_code:
+ *                 type: string
+ *               fail_image_url:
+ *                 type: string
+ *               isbns:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Approval request created
+ *       400:
+ *         description: Validation error
+ *       403:
+ *         description: Unknown kiosk device
+ */
+router.post('/kiosk/approval-request', async (req, res, next) => {
+  try {
+    const body = z.object({
+      device_id: z.string().min(1),
+      patron_id: z.string().min(1),
+      student_code: z.string().min(1),
+      fail_image_url: z.string().optional(),
+      isbns: z.string().optional(),
+    }).parse(req.body || {});
+
+    const device = await accessService.findKioskDevice(body.device_id);
+    if (!device) {
+      res.status(403).json({ error: 'Thiết bị Kiosk không hợp lệ' });
+      return;
+    }
+
+    const result = await accessService.createApprovalRequest({
+      kioskDeviceId: body.device_id,
+      patronId: body.patron_id,
+      patronStudentCode: body.student_code,
+      failImageUrl: body.fail_image_url || null,
+      isbns: body.isbns || null,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      res.status(400).json({ error: error.errors.map(e => e.message).join(', ') });
+      return;
+    }
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/kiosk/approval-requests/pending:
+ *   get:
+ *     summary: Get pending approval requests for staff dashboard
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of pending requests
+ */
+router.get('/kiosk/approval-requests/pending', auth, requireRole(['admin', 'staff']), async (_req, res, next) => {
+  try {
+    res.json(await accessService.getPendingApprovalRequests());
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/kiosk/approval-requests/{code}:
+ *   get:
+ *     summary: Get approval request status (polled by kiosk)
+ *     tags: [Access]
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Approval request status
+ *       404:
+ *         description: Not found
+ */
+router.get('/kiosk/approval-requests/:code', async (req, res, next) => {
+  try {
+    const result = await accessService.getApprovalRequest(req.params.code);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/kiosk/approval-requests/{code}/approve:
+ *   post:
+ *     summary: Approve a kiosk approval request
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - approved_by
+ *             properties:
+ *               approved_by:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Request approved
+ */
+router.post('/kiosk/approval-requests/:code/approve', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
+  try {
+    const body = z.object({ approved_by: z.string().min(1) }).parse(req.body || {});
+    const result = await accessService.approveRequest(req.params.code, body.approved_by);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @swagger
+ * /access/kiosk/approval-requests/{code}/reject:
+ *   post:
+ *     summary: Reject a kiosk approval request
+ *     tags: [Access]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: code
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - approved_by
+ *             properties:
+ *               approved_by:
+ *                 type: string
+ *               reason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Request rejected
+ */
+router.post('/kiosk/approval-requests/:code/reject', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
+  try {
+    const body = z.object({ approved_by: z.string().min(1), reason: z.string().optional() }).parse(req.body || {});
+    const result = await accessService.rejectRequest(req.params.code, body.approved_by, body.reason);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/force-exit', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     const body = z.object({

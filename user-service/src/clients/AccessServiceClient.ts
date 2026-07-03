@@ -1,4 +1,5 @@
 import { config } from '../config';
+import { getServiceToken } from '../../../shared';
 
 interface RequestOptions {
   method?: string;
@@ -16,7 +17,7 @@ async function request(url: string, options: RequestOptions = {}): Promise<any> 
       method,
       headers: {
         'Content-Type': 'application/json',
-        'x-internal-api-key': config.internalApiKey,
+        'Authorization': `Bearer ${getServiceToken('user-service', config.jwtSecret)}`,
       },
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
@@ -35,13 +36,31 @@ async function request(url: string, options: RequestOptions = {}): Promise<any> 
 
 export const accessServiceClient = {
   async getDailyStats(): Promise<{
+    active_inside: number;
     today_entries: number;
     today_exits: number;
   }> {
     const result = await request(`${config.accessServiceUrl}/internal/access/stats`);
     return {
+      active_inside: result.active_inside ?? result.activeInside ?? 0,
       today_entries: result.today_entries || result.todayEntries || 0,
       today_exits: result.today_exits || result.todayExits || 0,
     };
+  },
+
+  async getPatronStatus(patronId: string): Promise<string> {
+    try {
+      const result = await request(`${config.accessServiceUrl}/internal/access/patrons/${encodeURIComponent(patronId)}/status`);
+      return result.currentStatus || result.current_status || 'outside';
+    } catch {
+      return 'outside';
+    }
+  },
+
+  async setPatronStatus(patronId: string, status: 'inside' | 'outside', cameraId?: string): Promise<void> {
+    await request(`${config.accessServiceUrl}/internal/access/patrons/${encodeURIComponent(patronId)}/status`, {
+      method: 'POST',
+      body: { current_status: status, camera_id: cameraId || 'manual' },
+    });
   },
 };

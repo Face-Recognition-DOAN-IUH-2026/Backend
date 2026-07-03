@@ -9,8 +9,8 @@ import notificationRoutes from './routes/notification.routes';
 import internalRoutes from './routes/internal.routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
-import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
-import { decodeToken } from './middlewares/auth';
+import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
+import { decodeToken } from '../../shared';
 import { notificationHub } from './realtime/NotificationHub';
 import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
 
@@ -34,12 +34,14 @@ app.use(errorHandler);
 
 async function start() {
   try {
+    setupProcessErrorHandlers();
     await AppDataSource.initialize();
-    console.log('Database connected, running migrations...');
-    await AppDataSource.runMigrations();
-    console.log('Migrations completed');
-    await notificationHub.connectRedis();
+    console.log('Database connected');
+    await notificationHub.connectBroker();
     await startUserEventSubscriber();
+    
+    const { startAmqpSubscriber } = require('./subscribers/AmqpSubscriber');
+    startAmqpSubscriber().catch((e: any) => console.error('[AMQP] Subscriber error:', e.message));
 
     const server = http.createServer(app);
     const wss = new WebSocketServer({ noServer: true });
@@ -57,7 +59,11 @@ async function start() {
         return;
       }
       try {
-        const user = decodeToken(token);
+        const user = decodeToken(token, {
+          jwtSecret: config.jwtSecret,
+          jwtIssuer: config.jwtIssuer,
+          jwtAudience: config.jwtAudience,
+        });
         wss.handleUpgrade(request, socket, head, (ws) => {
           notificationHub.addWsClient(user.userId, ws);
         });
@@ -67,7 +73,7 @@ async function start() {
       }
     });
 
-    setupProcessErrorHandlers();
+
     server.listen(config.port, () => {
       console.log(`Notification service running on port ${config.port}`);
     });

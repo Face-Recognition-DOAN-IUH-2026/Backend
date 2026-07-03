@@ -1,5 +1,6 @@
 import { config } from '../config';
 import { NotFoundError, ServiceUnavailableError } from '../errors';
+import { getServiceToken, CircuitBreaker, retryWithBackoff } from '../../../shared';
 
 export interface StaffUser {
   id: string;
@@ -9,64 +10,40 @@ export interface StaffUser {
   status: string;
 }
 
-type CircuitState = 'closed' | 'open' | 'half_open';
+const circuit = new CircuitBreaker(5, 30_000);
 
 export class UserServiceClient {
-  private failures = 0;
-  private openedAt = 0;
-  private state: CircuitState = 'closed';
-
-  private canRequest() {
-    if (this.state !== 'open') return true;
-    if (Date.now() - this.openedAt > 30000) {
-      this.state = 'half_open';
-      return true;
-    }
-    return false;
-  }
-
-  private onSuccess() {
-    this.failures = 0;
-    this.state = 'closed';
-  }
-
-  private onFailure() {
-    this.failures += 1;
-    if (this.failures >= 3) {
-      this.state = 'open';
-      this.openedAt = Date.now();
-    }
-  }
-
   private async getJson<T>(path: string): Promise<T> {
-    if (!this.canRequest()) {
+    if (!circuit.canRequest()) {
       throw new ServiceUnavailableError('user-service is temporarily unavailable');
     }
 
-    let lastError: unknown;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4000);
-      try {
-        const response = await fetch(`${config.userServiceUrl}${path}`, {
-          headers: { 'x-internal-api-key': config.internalApiKey },
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        if (!response.ok) {
+    try {
+      return await retryWithBackoff(async () => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 4000);
+        try {
+          const response = await fetch(`${config.userServiceUrl}${path}`, {
+            headers: { 'Authorization': `Bearer ${getServiceToken('schedule-service', config.jwtSecret)}` },
+            signal: controller.signal,
+          });
+          clearTimeout(timeout);
           if (response.status === 404) return null as T;
-          throw new Error(`user-service responded ${response.status}`);
+          if (response.status >= 500) {
+            circuit.recordFailure();
+            throw new Error(`user-service responded ${response.status}`);
+          }
+          if (!response.ok) throw new Error(`user-service responded ${response.status}`);
+          circuit.recordSuccess();
+          return await response.json() as T;
+        } catch (err) {
+          clearTimeout(timeout);
+          throw err;
         }
-        this.onSuccess();
-        return await response.json() as T;
-      } catch (err) {
-        clearTimeout(timeout);
-        lastError = err;
-      }
+      }, 2, 500);
+    } catch (err) {
+      throw new ServiceUnavailableError(`Cannot reach user-service: ${String(err)}`);
     }
-
-    this.onFailure();
-    throw new ServiceUnavailableError(`Cannot reach user-service: ${String(lastError)}`);
   }
 
   async getStaff(id: string): Promise<StaffUser | null> {

@@ -26,7 +26,7 @@ describe('checkOverdueBorrows', () => {
       { id: 'r1', patron_id: 'p1', book_id: 'b1', due_at: pastDate, book: { title: 'Overdue Book' } },
     ];
     mockBorrowClient.getOverdueBorrows = jest.fn().mockResolvedValue(mockRecords);
-    mockUserClient.getUser = jest.fn().mockResolvedValue({ fullName: 'Test Patron' });
+    mockUserClient.getUsers = jest.fn().mockResolvedValue({ p1: { fullName: 'Test Patron' } });
 
     const result = await checkOverdueBorrows({ notify_patrons: true });
 
@@ -43,7 +43,7 @@ describe('checkOverdueBorrows', () => {
       { id: 'r1', patron_id: 'p1', book_id: 'b1', due_at: pastDate, book: { title: 'Late Book' } },
     ];
     mockBorrowClient.getOverdueBorrows = jest.fn().mockResolvedValue(mockRecords);
-    mockUserClient.getUser = jest.fn().mockResolvedValue({ fullName: 'Test', email: 'patron@test.com' });
+    mockUserClient.getUsers = jest.fn().mockResolvedValue({ p1: { fullName: 'Test', email: 'patron@test.com' } });
 
     await checkOverdueBorrows({ notify_patrons: true });
 
@@ -56,7 +56,7 @@ describe('checkOverdueBorrows', () => {
       { id: 'r1', patron_id: 'p1', book_id: 'b1', due_at: pastDate, book: { title: 'Book' } },
     ];
     mockBorrowClient.getOverdueBorrows = jest.fn().mockResolvedValue(mockRecords);
-    mockUserClient.getUser = jest.fn().mockResolvedValue({ fullName: 'Test' });
+    mockUserClient.getUsers = jest.fn().mockResolvedValue({ p1: { fullName: 'Test' } });
 
     await checkOverdueBorrows({ notify_patrons: true });
 
@@ -69,7 +69,7 @@ describe('checkOverdueBorrows', () => {
       { id: 'r1', patron_id: 'p1', book_id: 'b1', due_at: pastDate, book: { title: 'Book' } },
     ];
     mockBorrowClient.getOverdueBorrows = jest.fn().mockResolvedValue(mockRecords);
-    mockUserClient.getUser = jest.fn().mockResolvedValue({ fullName: 'Test', email: 'patron@test.com' });
+    mockUserClient.getUsers = jest.fn().mockResolvedValue({ p1: { fullName: 'Test', email: 'patron@test.com' } });
     mockEmailClient.sendOverdueEmail = jest.fn().mockRejectedValue(new Error('SMTP down'));
 
     const result = await checkOverdueBorrows({ notify_patrons: true });
@@ -83,7 +83,7 @@ describe('checkOverdueBorrows', () => {
       { id: 'r1', patron_id: 'p1', book_id: 'b1', due_at: pastDate, book: { title: 'Book' } },
     ];
     mockBorrowClient.getOverdueBorrows = jest.fn().mockResolvedValue(mockRecords);
-    mockUserClient.getUser = jest.fn().mockRejectedValue(new Error('User service down'));
+    mockUserClient.getUsers = jest.fn().mockRejectedValue(new Error('User service down'));
 
     const result = await checkOverdueBorrows({ notify_patrons: true });
 
@@ -98,7 +98,7 @@ describe('checkOverdueBorrows', () => {
       { id: 'r1', patronId: 'p-camel', bookId: 'b1', dueAt: pastDate, book: { title: 'Book' } },
     ];
     mockBorrowClient.getOverdueBorrows = jest.fn().mockResolvedValue(mockRecords);
-    mockUserClient.getUser = jest.fn().mockResolvedValue({ fullName: 'Test' });
+    mockUserClient.getUsers = jest.fn().mockResolvedValue({ 'p-camel': { fullName: 'Test' } });
 
     await checkOverdueBorrows({ notify_patrons: true });
 

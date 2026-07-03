@@ -23,6 +23,12 @@ export class StaffScheduleTemplate {
   @Column({ type: 'boolean', default: true, name: 'is_active' })
   isActive: boolean;
 
+  @Column({ type: 'date', nullable: true, name: 'valid_from' })
+  validFrom: string | null;
+
+  @Column({ type: 'date', nullable: true, name: 'valid_to' })
+  validTo: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

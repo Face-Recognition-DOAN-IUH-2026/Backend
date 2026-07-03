@@ -1,5 +1,6 @@
 import express from 'express';
 import request from 'supertest';
+import { generateServiceToken } from '../../../../shared';
 import internalRoutes from '../../routes/internal.routes';
 
 jest.mock('../../services/NotificationService');
@@ -14,6 +15,9 @@ jest.mock('../../services/EmailService', () => {
     })),
   };
 });
+
+const TEST_SECRET = 'test-service-jwt-secret';
+const VALID_TOKEN = generateServiceToken('test-service', ['*'], TEST_SECRET);
 
 function createApp(): express.Express {
   const app = express();
@@ -41,7 +45,7 @@ describe('Internal Routes', () => {
     it('should send password reset email', async () => {
       const res = await request(app)
         .post('/internal/send-password-reset')
-        .set('x-internal-api-key', 'test-internal-key')
+        .set('Authorization', `Bearer ${VALID_TOKEN}`)
         .send({ toEmail: 'test@example.com', code: '123456' });
 
       expect(res.status).toBe(200);
@@ -51,7 +55,7 @@ describe('Internal Routes', () => {
     it('should return 400 for invalid email', async () => {
       const res = await request(app)
         .post('/internal/send-password-reset')
-        .set('x-internal-api-key', 'test-internal-key')
+        .set('Authorization', `Bearer ${VALID_TOKEN}`)
         .send({ toEmail: 'not-an-email', code: '123456' });
 
       expect(res.status).toBe(400);
@@ -60,7 +64,7 @@ describe('Internal Routes', () => {
     it('should return 400 for wrong code length', async () => {
       const res = await request(app)
         .post('/internal/send-password-reset')
-        .set('x-internal-api-key', 'test-internal-key')
+        .set('Authorization', `Bearer ${VALID_TOKEN}`)
         .send({ toEmail: 'test@example.com', code: '123' });
 
       expect(res.status).toBe(400);
@@ -71,7 +75,7 @@ describe('Internal Routes', () => {
     it('should send overdue email', async () => {
       const res = await request(app)
         .post('/internal/send-overdue-email')
-        .set('x-internal-api-key', 'test-internal-key')
+        .set('Authorization', `Bearer ${VALID_TOKEN}`)
         .send({ toEmail: 'test@example.com', bookTitle: 'Test Book', daysOverdue: 5 });
 
       expect(res.status).toBe(200);
@@ -81,7 +85,7 @@ describe('Internal Routes', () => {
     it('should return 400 for missing fields', async () => {
       const res = await request(app)
         .post('/internal/send-overdue-email')
-        .set('x-internal-api-key', 'test-internal-key')
+        .set('Authorization', `Bearer ${VALID_TOKEN}`)
         .send({ toEmail: 'test@example.com' });
 
       expect(res.status).toBe(400);
@@ -92,7 +96,7 @@ describe('Internal Routes', () => {
     it('should send fine email', async () => {
       const res = await request(app)
         .post('/internal/send-fine-email')
-        .set('x-internal-api-key', 'test-internal-key')
+        .set('Authorization', `Bearer ${VALID_TOKEN}`)
         .send({ toEmail: 'test@example.com', bookTitle: 'Book', fineAmount: 5000, daysOverdue: 3 });
 
       expect(res.status).toBe(200);
@@ -102,7 +106,7 @@ describe('Internal Routes', () => {
     it('should return 400 for missing fineAmount', async () => {
       const res = await request(app)
         .post('/internal/send-fine-email')
-        .set('x-internal-api-key', 'test-internal-key')
+        .set('Authorization', `Bearer ${VALID_TOKEN}`)
         .send({ toEmail: 'test@example.com', bookTitle: 'Book', daysOverdue: 3 });
 
       expect(res.status).toBe(400);
@@ -113,7 +117,7 @@ describe('Internal Routes', () => {
     it('should send membership expiry email', async () => {
       const res = await request(app)
         .post('/internal/send-membership-expiry-email')
-        .set('x-internal-api-key', 'test-internal-key')
+        .set('Authorization', `Bearer ${VALID_TOKEN}`)
         .send({ toEmail: 'test@example.com', expiryDate: '2026-12-31T00:00:00.000Z' });
 
       expect(res.status).toBe(200);
@@ -123,7 +127,7 @@ describe('Internal Routes', () => {
     it('should return 400 for invalid date', async () => {
       const res = await request(app)
         .post('/internal/send-membership-expiry-email')
-        .set('x-internal-api-key', 'test-internal-key')
+        .set('Authorization', `Bearer ${VALID_TOKEN}`)
         .send({ toEmail: 'test@example.com', expiryDate: 'not-a-date' });
 
       expect(res.status).toBe(400);
@@ -131,7 +135,7 @@ describe('Internal Routes', () => {
   });
 
   describe('Authentication', () => {
-    it('should return 403 when no API key', async () => {
+    it('should return 403 when no Authorization header', async () => {
       const res = await request(app)
         .post('/internal/send-overdue-email')
         .send({ toEmail: 'test@example.com', bookTitle: 'Book', daysOverdue: 1 });
@@ -139,10 +143,10 @@ describe('Internal Routes', () => {
       expect(res.status).toBe(403);
     });
 
-    it('should return 403 for wrong API key', async () => {
+    it('should return 403 for invalid token', async () => {
       const res = await request(app)
         .post('/internal/send-overdue-email')
-        .set('x-internal-api-key', 'wrong-key')
+        .set('Authorization', 'Bearer invalid-token')
         .send({ toEmail: 'test@example.com', bookTitle: 'Book', daysOverdue: 1 });
 
       expect(res.status).toBe(403);

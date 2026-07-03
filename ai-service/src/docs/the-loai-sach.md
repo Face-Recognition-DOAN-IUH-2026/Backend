@@ -1,3 +1,7 @@
+﻿---
+roles: patron, staff
+---
+
 # Thể loại sách trong Thư viện IUH
 
 Thư viện IUH phục vụ nhiều lĩnh vực học thuật:

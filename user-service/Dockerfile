@@ -1,14 +1,15 @@
 FROM node:20-alpine
 
-WORKDIR /app
+WORKDIR /app/user-service
 
 COPY user-service/package*.json ./
 COPY user-service/tsconfig.json ./
-RUN npm install
+COPY user-service/node_modules ./node_modules
 
 COPY user-service/src ./src
 COPY user-service/migrations ./migrations
-COPY shared ./shared
+COPY shared /app/shared
+RUN ln -s /app/shared ./shared
 
 RUN npm run build
 

@@ -5,15 +5,20 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from api.dependencies import get_current_user
+from core.service_token import get_auth_headers
 from infra.config import settings
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 USER_SERVICE_URL = settings.user_service_url or "http://user-service:3001"
 
-_INTERNAL_HEADERS: dict[str, str] = {}
-if settings.internal_api_key:
-    _INTERNAL_HEADERS["x-internal-api-key"] = settings.internal_api_key
+
+def _internal_headers() -> dict[str, str]:
+    return get_auth_headers(
+        service_name="face-recognition-service",
+        scopes=["users:read"],
+        secret=settings.service_jwt_secret,
+    )
 
 
 class UserResponse(BaseModel):
@@ -23,6 +28,8 @@ class UserResponse(BaseModel):
     role: str
     has_face: bool = False
     student_code: str | None = None
+    avatar_url: str | None = None
+    status: str | None = None
 
 
 class UserListResponse(BaseModel):
@@ -65,6 +72,8 @@ async def get_current_user_info(
         role=current_user["role"],
         has_face=has_face,
         student_code=current_user.get("student_code"),
+        avatar_url=current_user.get("avatar_url"),
+        status=current_user.get("status"),
     )
 
 
@@ -79,7 +88,7 @@ async def list_users(
         )
 
     async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
-        resp = await client.get("/internal/users", headers=_INTERNAL_HEADERS)
+        resp = await client.get("/internal/users", headers=_internal_headers())
         if resp.status_code != 200:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -97,6 +106,8 @@ async def list_users(
                 full_name=u.get("full_name") or u.get("fullName"),
                 role=u["role"],
                 has_face=str(u["id"]) in face_user_ids,
+                avatar_url=u.get("avatar_url") or u.get("avatarUrl"),
+                status=u.get("status"),
             )
             for u in users_data
         ],
@@ -116,7 +127,7 @@ async def delete_user(
         )
 
     async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
-        resp = await client.delete(f"/internal/patrons/{user_id}", headers=_INTERNAL_HEADERS)
+        resp = await client.delete(f"/internal/users/{user_id}", headers=_internal_headers())
         if resp.status_code == 404:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

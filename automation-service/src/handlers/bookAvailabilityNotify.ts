@@ -1,6 +1,7 @@
 import { notificationClient } from '../clients/serviceClients';
 import { config } from '../config';
 import { AutomationEvent } from '../events/EventBus';
+import { getServiceToken } from '../../../shared';
 
 export async function bookAvailabilityNotify(
   _cfg: Record<string, any>,
@@ -16,14 +17,12 @@ export async function bookAvailabilityNotify(
     return { notified: 0, message: 'No bookId in event payload' };
   }
 
-  // Check if there are patrons waiting for this book
-  // Waitlist feature not yet implemented — return gracefully
   try {
     const response = await fetch(
       `${config.services.borrowService}/borrow/internal/book/${bookId}/waitlist`,
       {
         headers: {
-          'x-internal-api-key': config.internalApiKey,
+          'Authorization': `Bearer ${getServiceToken('automation-service', config.jwtSecret)}`,
           'Content-Type': 'application/json',
         },
       }
@@ -39,17 +38,31 @@ export async function bookAvailabilityNotify(
       return { notified: 0, message: 'No patrons waiting for this book' };
     }
 
-    const notifications = waitlist.map((entry: any) => ({
-      userId: entry.patron_id || entry.patronId,
+    // Only notify the first patron in FIFO order
+    const first = waitlist[0];
+    await notificationClient.createNotification({
+      userId: first.patron_id || first.patronId,
       type: 'book_available',
       title: 'Sách đã có sẵn',
       body: `Cuốn "${bookTitle || 'Sách'}" đã được trả. Bạn có thể mượn ngay bây giờ!`,
       data: { bookId, title: bookTitle },
-    }));
+    });
 
-    await notificationClient.createBulkNotifications(notifications);
+    try {
+      await fetch(
+        `${config.services.borrowService}/borrow/internal/waitlist/batch-notify`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${getServiceToken('automation-service', config.jwtSecret)}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ids: [first.id] }),
+        }
+      );
+    } catch {}
 
-    return { notified: notifications.length };
+    return { notified: 1, patronId: first.patron_id || first.patronId };
   } catch {
     return { notified: 0, message: 'Waitlist feature not available' };
   }

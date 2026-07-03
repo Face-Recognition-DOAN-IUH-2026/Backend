@@ -1,17 +1,16 @@
 import { Router } from 'express';
 import { config } from '../config';
-import { patronService, userRepo } from '../services';
+import { patronService, userService, userRepo } from '../services';
+import { createInternalAuth } from '../../../shared';
+
+const internalAuth = createInternalAuth({
+  serviceName: 'user-service',
+  jwtSecret: config.serviceJwtSecret,
+});
 
 const router = Router();
 
-router.use((req, _res, next) => {
-  const key = req.headers['x-internal-api-key'];
-  if (!key || key !== config.internalApiKey) {
-    _res.status(403).json({ error: 'Invalid internal API key' });
-    return;
-  }
-  next();
-});
+router.use(internalAuth);
 
 router.get('/users', async (req, res) => {
   const role = typeof req.query.role === 'string' ? req.query.role : undefined;
@@ -26,6 +25,7 @@ router.get('/users', async (req, res) => {
       status: u.status,
       studentCode: u.studentCode,
       cardNumber: u.cardNumber,
+      avatarUrl: u.avatarUrl,
       currentStatus: u.currentStatus,
       lastEntryAt: u.lastEntryAt,
       lastEntryCamera: u.lastEntryCamera,
@@ -41,6 +41,7 @@ router.get('/users', async (req, res) => {
       status: u.status,
       studentCode: u.studentCode,
       cardNumber: u.cardNumber,
+      avatarUrl: u.avatarUrl,
       currentStatus: u.currentStatus,
       lastEntryAt: u.lastEntryAt,
       lastEntryCamera: u.lastEntryCamera,
@@ -86,6 +87,7 @@ router.get('/users/:id', async (req, res) => {
     status: user.status,
     studentCode: user.studentCode,
     cardNumber: user.cardNumber,
+    avatarUrl: user.avatarUrl,
     currentStatus: user.currentStatus,
     lastEntryAt: user.lastEntryAt,
     lastEntryCamera: user.lastEntryCamera,
@@ -100,22 +102,20 @@ router.post('/users/batch', async (req, res) => {
       res.status(400).json({ error: 'ids array is required' });
       return;
     }
+    const users = await userRepo.findByIds(ids);
     const results: Record<string, any> = {};
-    for (const id of ids) {
-      const user = await userRepo.findById(id);
-      if (user) {
-        results[id] = {
-          id: user.id,
-          fullName: user.fullName,
-          studentCode: user.studentCode,
-          cardNumber: user.cardNumber,
-          email: user.email,
-          role: user.role,
-          status: user.status,
-          currentStatus: user.currentStatus,
-          membershipExpiry: user.membershipExpiry,
-        };
-      }
+    for (const user of users) {
+      results[user.id] = {
+        id: user.id,
+        fullName: user.fullName,
+        studentCode: user.studentCode,
+        cardNumber: user.cardNumber,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        currentStatus: user.currentStatus,
+        membershipExpiry: user.membershipExpiry,
+      };
     }
     res.json(results);
   } catch (error: any) {
@@ -208,6 +208,14 @@ router.delete('/patrons/:id', async (req, res) => {
     res.json(await patronService.deletePatron(req.params.id));
   } catch (error: any) {
     res.status(error.statusCode || 404).json({ error: error.message || 'Failed to delete patron' });
+  }
+});
+
+router.delete('/users/:id', async (req, res) => {
+  try {
+    res.json(await userService.deleteUser(req.params.id));
+  } catch (error: any) {
+    res.status(error.statusCode || 404).json({ error: error.message || 'Failed to delete user' });
   }
 });
 

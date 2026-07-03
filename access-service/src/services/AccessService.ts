@@ -1,7 +1,10 @@
-import { Between, In, MoreThanOrEqual } from 'typeorm';
+import { Between, In, IsNull, LessThan, MoreThanOrEqual } from 'typeorm';
 import { randomUUID } from 'crypto';
+import * as jwt from 'jsonwebtoken';
 import { AppDataSource } from '../data-source';
 import { AccessLog } from '../entities/AccessLog';
+import { KioskDevice } from '../entities/KioskDevice';
+import { KioskApprovalRequest } from '../entities/KioskApprovalRequest';
 import { PatronAccessState } from '../entities/PatronAccessState';
 import {
   AccessRealtimeEvent,
@@ -14,7 +17,8 @@ import {
 } from '../contracts';
 import { UserServiceClient } from '../clients/UserServiceClient';
 import { realtimeHub } from '../realtime/RealtimeHub';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared';
+import { config } from '../config';
 
 const logRepo = () => AppDataSource.getRepository(AccessLog);
 const stateRepo = () => AppDataSource.getRepository(PatronAccessState);
@@ -237,17 +241,17 @@ export class AccessService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const [activeCount, entryExitCounts] = await Promise.all([
-      stateRepo().count({ where: { currentStatus: 'inside' } }),
-      logRepo()
-        .createQueryBuilder('log')
-        .select('log.access_type', 'accessType')
-        .addSelect('COUNT(*)', 'count')
-        .where('log.access_time >= :today', { today })
-        .andWhere('log.camera_id IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
-        .groupBy('log.access_type')
-        .getRawMany(),
-    ]);
+    const activeList = await this.getActive();
+    const activeCount = activeList.length;
+
+    const entryExitCounts = await logRepo()
+      .createQueryBuilder('log')
+      .select('log.access_type', 'accessType')
+      .addSelect('COUNT(*)', 'count')
+      .where('log.access_time >= :today', { today })
+      .andWhere('log.camera_id IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
+      .groupBy('log.access_type')
+      .getRawMany();
 
     const todayEntries = Number(entryExitCounts.find(c => c.accessType === 'entry')?.count || 0);
     const todayExits = Number(entryExitCounts.find(c => c.accessType === 'exit')?.count || 0);
@@ -267,7 +271,7 @@ export class AccessService {
   async getStatus(patronId: string) {
     let state = await stateRepo().findOne({ where: { patronId } });
     if (!state) {
-      state = stateRepo().create({ patronId, currentStatus: 'inside', lastEntryAt: new Date(), lastEntryCamera: 'auto_created' });
+      state = stateRepo().create({ patronId, currentStatus: 'outside', lastEntryAt: null, lastEntryCamera: null });
       await stateRepo().save(state);
     }
     return {
@@ -290,6 +294,154 @@ export class AccessService {
     return this.getStatus(patronId);
   }
 
+  async findKioskDevice(deviceId: string): Promise<KioskDevice | null> {
+    const repo = AppDataSource.getRepository(KioskDevice);
+    return repo.findOne({ where: { id: deviceId, isActive: true } });
+  }
+
+  async verifyKioskIp(ip: string): Promise<boolean> {
+    const repo = AppDataSource.getRepository(KioskDevice);
+    const device = await repo.findOne({ where: { ipAddress: ip, isActive: true } });
+    return !!device;
+  }
+
+  async recordKioskPresence(patronId: string, studentCode: string, deviceId: string): Promise<any> {
+    const state = await this.getStatus(patronId);
+    if (state.currentStatus === 'inside') {
+      return { ...state, message: 'Độc giả đã có mặt trong thư viện', skipped: true };
+    }
+    await this.setStatus(patronId, 'inside', 'kiosk');
+    return { ...await this.getStatus(patronId), message: 'Đã ghi nhận hiện diện qua Kiosk', skipped: false };
+  }
+
+  private async generateEventCode(): Promise<string> {
+    const repo = AppDataSource.getRepository(KioskApprovalRequest);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      const code = letters[Math.floor(Math.random() * 26)] + String(Math.floor(Math.random() * 900) + 100);
+      const existing = await repo.findOne({ where: { eventCode: code } });
+      if (!existing) return code;
+    }
+    const latest = await repo.find({ order: { createdAt: 'DESC' }, take: 1 });
+    const lastCode = latest.length > 0 ? latest[0].eventCode : 'A000';
+    const num = parseInt(lastCode.substring(1), 10) + 1;
+    return lastCode[0] + String(num).padStart(3, '0');
+  }
+
+  async createApprovalRequest(input: {
+    kioskDeviceId: string;
+    patronId?: string | null;
+    patronStudentCode?: string | null;
+    failImageUrl?: string | null;
+    isbns?: string | null;
+  }) {
+    const repo = AppDataSource.getRepository(KioskApprovalRequest);
+    const eventCode = await this.generateEventCode();
+    const deviceAuthToken = jwt.sign(
+      {
+        sub: eventCode,
+        event_code: eventCode,
+        patron_id: input.patronId,
+        student_code: input.patronStudentCode,
+        isbns: input.isbns || null,
+        fail_image_url: input.failImageUrl || null,
+      },
+      config.serviceJwtSecret,
+      { expiresIn: 300 }
+    );
+    const expiresAt = new Date(Date.now() + 300000);
+    const entity = repo.create({
+      eventCode,
+      kioskDeviceId: input.kioskDeviceId,
+      patronId: input.patronId || null,
+      patronStudentCode: input.patronStudentCode || null,
+      failImageUrl: input.failImageUrl || null,
+      isbns: input.isbns || null,
+      deviceAuthToken,
+      status: 'pending',
+      expiresAt,
+    });
+    const saved = await repo.save(entity);
+    return {
+      id: saved.id,
+      event_code: saved.eventCode,
+      device_auth_token: saved.deviceAuthToken,
+      status: saved.status,
+      expires_at: saved.expiresAt.toISOString(),
+    };
+  }
+
+  async getPendingApprovalRequests() {
+    const repo = AppDataSource.getRepository(KioskApprovalRequest);
+    const rows = await repo.find({
+      where: { status: 'pending', expiresAt: MoreThanOrEqual(new Date()) },
+      order: { createdAt: 'DESC' },
+    });
+    return rows.map(r => ({
+      id: r.id,
+      event_code: r.eventCode,
+      kiosk_device_id: r.kioskDeviceId,
+      patron_id: r.patronId,
+      patron_student_code: r.patronStudentCode,
+      fail_image_url: r.failImageUrl,
+      isbns: r.isbns,
+      status: r.status,
+      created_at: r.createdAt.toISOString(),
+      expires_at: r.expiresAt.toISOString(),
+    }));
+  }
+
+  async getApprovalRequest(eventCode: string) {
+    const repo = AppDataSource.getRepository(KioskApprovalRequest);
+    const record = await repo.findOne({ where: { eventCode } });
+    if (!record) throw new HttpError(404, 'Approval request not found');
+    return {
+      id: record.id,
+      event_code: record.eventCode,
+      kiosk_device_id: record.kioskDeviceId,
+      patron_id: record.patronId,
+      patron_student_code: record.patronStudentCode,
+      fail_image_url: record.failImageUrl,
+      isbns: record.isbns,
+      status: record.status,
+      created_at: record.createdAt.toISOString(),
+      expires_at: record.expiresAt.toISOString(),
+      approved_by: record.approvedBy,
+      approved_at: record.approvedAt?.toISOString() || null,
+      reject_reason: record.rejectReason,
+    };
+  }
+
+  async approveRequest(eventCode: string, approvedBy: string) {
+    const repo = AppDataSource.getRepository(KioskApprovalRequest);
+    const record = await repo.findOne({ where: { eventCode } });
+    if (!record) throw new HttpError(404, 'Approval request not found');
+    if (record.status !== 'pending') throw new HttpError(400, `Request is already ${record.status}`);
+    if (record.expiresAt < new Date()) throw new HttpError(400, 'Approval request has expired');
+
+    record.status = 'approved';
+    record.approvedBy = approvedBy;
+    record.approvedAt = new Date();
+    await repo.save(record);
+
+    return { status: 'approved', event_code: record.eventCode };
+  }
+
+  async rejectRequest(eventCode: string, approvedBy: string, reason?: string) {
+    const repo = AppDataSource.getRepository(KioskApprovalRequest);
+    const record = await repo.findOne({ where: { eventCode } });
+    if (!record) throw new HttpError(404, 'Approval request not found');
+    if (record.status !== 'pending') throw new HttpError(400, `Request is already ${record.status}`);
+    if (record.expiresAt < new Date()) throw new HttpError(400, 'Approval request has expired');
+
+    record.status = 'rejected';
+    record.approvedBy = approvedBy;
+    record.rejectReason = reason || null;
+    await repo.save(record);
+
+    return { status: 'rejected', event_code: record.eventCode };
+  }
+
   private async upsertState(patronId: string, accessType: AccessType, cameraId: string, at: Date) {
     let state = await stateRepo().findOne({ where: { patronId } });
     if (!state) {
@@ -305,6 +457,16 @@ export class AccessService {
       state.lastExitCamera = cameraId;
     }
     await stateRepo().save(state);
+
+    const { amqpClient } = require('../clients/AmqpClient');
+    amqpClient.publish('user.access.status_changed', {
+      patronId,
+      currentStatus: state.currentStatus,
+      lastEntryAt: state.lastEntryAt ? state.lastEntryAt.toISOString() : null,
+      lastEntryCamera: state.lastEntryCamera || null,
+      lastExitAt: state.lastExitAt ? state.lastExitAt.toISOString() : null,
+      lastExitCamera: state.lastExitCamera || null,
+    }).catch((err: any) => console.error('[AMQP] Failed to publish status changed event:', err.message));
   }
 }
 

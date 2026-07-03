@@ -9,13 +9,15 @@ import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
 import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
+import { auditContextMiddleware } from './middlewares/auditContext';
 
 const app = express();
 
 app.use(cors({ origin: config.corsOrigins.includes('*') ? true : config.corsOrigins, credentials: true }));
 app.use(express.json());
+app.use(auditContextMiddleware);
 
-app.use('/schedules', scheduleInternalRoutes);
+app.use('/schedules/internal', scheduleInternalRoutes);
 app.use('/schedules', scheduleRoutes);
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'schedule-service' }));
 

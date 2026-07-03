@@ -1,10 +1,11 @@
 import { Request, Response } from 'express';
 import { authService } from '../services';
+import { setAuthCookie, clearAuthCookie } from '../../shared';
 
 export class AuthController {
   async register(req: Request, res: Response) {
     try {
-      const { email, password, full_name, role, student_code } = req.body;
+      const { email, password, full_name, role, student_code, skip_verification } = req.body;
       if (!email || !password) {
         res.status(400).json({ error: 'Email and password are required' });
         return;
@@ -15,7 +16,9 @@ export class AuthController {
         fullName: full_name,
         role: role || 'user',
         studentCode: student_code,
+        skipVerification: skip_verification,
       });
+      if (result.access_token) setAuthCookie(res, result.access_token);
       res.status(201).json(result);
     } catch (error: any) {
       res.status(error.statusCode || 400).json({ error: error.message || 'Registration failed' });
@@ -34,6 +37,7 @@ export class AuthController {
         studentCode: student_code,
         password,
       });
+      if (result.access_token) setAuthCookie(res, result.access_token);
       res.json(result);
     } catch (error: any) {
       res.status(error.statusCode || 401).json({ error: error.message || 'Login failed' });
@@ -64,10 +68,16 @@ export class AuthController {
         return;
       }
       const result = await authService.refreshToken(refresh_token);
+      if (result.access_token) setAuthCookie(res, result.access_token);
       res.json(result);
     } catch (error: any) {
       res.status(401).json({ error: 'Invalid refresh token' });
     }
+  }
+
+  async logout(_req: Request, res: Response) {
+    clearAuthCookie(res);
+    res.json({ message: 'Logged out' });
   }
 
   async forgotPassword(req: Request, res: Response) {
@@ -115,6 +125,90 @@ export class AuthController {
       }
       await authService.resetPassword(email, code, new_password);
       res.json({ message: 'Dat lai mat khau thanh cong' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async verifyEmail(req: Request, res: Response) {
+    try {
+      const { email, code } = req.body;
+      if (!email || !code) {
+        res.status(400).json({ error: 'Email va ma xac thuc la bat buoc' });
+        return;
+      }
+      await authService.verifyEmail(email, code);
+      res.json({ message: 'Xac thuc email thanh cong' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async resendVerification(req: Request, res: Response) {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        res.status(400).json({ error: 'Email la bat buoc' });
+        return;
+      }
+      await authService.resendVerificationEmail(email);
+      res.json({ message: 'Da gui ma xac thuc moi' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async requestEmailCorrection(req: Request, res: Response) {
+    try {
+      const { current_email, new_email } = req.body;
+      if (!current_email || !new_email) {
+        res.status(400).json({ error: 'current_email va new_email la bat buoc' });
+        return;
+      }
+      await authService.requestEmailCorrection(current_email, new_email);
+      res.json({ message: 'Da gui ma OTP den email moi' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async verifyEmailCorrection(req: Request, res: Response) {
+    try {
+      const { current_email, new_email, code } = req.body;
+      if (!current_email || !new_email || !code) {
+        res.status(400).json({ error: 'current_email, new_email, va code la bat buoc' });
+        return;
+      }
+      await authService.verifyEmailAndCorrect(current_email, new_email, code);
+      res.json({ message: 'Doi email va xac thuc thanh cong' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async preRegisterOtp(req: Request, res: Response) {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        res.status(400).json({ error: 'Email la bat buoc' });
+        return;
+      }
+      await authService.sendPreRegisterOtp(email);
+      res.json({ message: 'Da gui ma OTP qua email' });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message });
+    }
+  }
+
+  async preRegisterVerify(req: Request, res: Response) {
+    try {
+      const { email, code } = req.body;
+      if (!email || !code) {
+        res.status(400).json({ error: 'Email va ma OTP la bat buoc' });
+        return;
+      }
+      const token = await authService.verifyPreRegisterOtp(email, code);
+      res.json({ verification_token: token });
     } catch (error: any) {
       res.status(error.statusCode || 400).json({ error: error.message });
     }

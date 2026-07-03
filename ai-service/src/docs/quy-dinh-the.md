@@ -1,3 +1,7 @@
+﻿---
+roles: patron, staff
+---
+
 # Quy định thẻ thư viện IUH
 
 ## Đăng ký thẻ
