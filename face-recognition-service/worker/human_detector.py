@@ -71,12 +71,17 @@ def _init():
 
 def has_person_in_frame(img: np.ndarray, min_area: float = MIN_PERSON_AREA) -> bool:
     """Check if frame contains at least one person (COCO class 15).
-    Returns True if model is unavailable (fail-open).
+    Returns False if model is unavailable (fail-closed) — prevents self-DOS
+    from passing every frame through expensive face detection pipeline.
     """
     global _net
     if _net is None:
         if not _init():
-            return True
+            logger.critical(
+                "Human detection model unavailable — returning False (fail-closed). "
+                "Camera processing paused. OPS TEAM ACTION REQUIRED: check model file and container health."
+            )
+            return False
 
     h, w = img.shape[:2]
     blob = cv2.dnn.blobFromImage(img, 0.007843, MODEL_INPUT_SIZE, 127.5)
@@ -97,3 +102,12 @@ def has_person_in_frame(img: np.ndarray, min_area: float = MIN_PERSON_AREA) -> b
             return True
 
     return False
+
+
+def safe_has_person_in_frame(img: np.ndarray, min_area: float = MIN_PERSON_AREA) -> bool:
+    """Wrapper that catches any exception and fails-closed."""
+    try:
+        return has_person_in_frame(img, min_area)
+    except Exception as e:
+        logger.critical("Person detection exception (fail-closed): %s", e)
+        return False

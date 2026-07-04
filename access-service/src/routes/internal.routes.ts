@@ -36,8 +36,8 @@ router.get('/access/patrons/:id/status', async (req, res, next) => {
 router.post('/access/patrons/:id/status', async (req, res, next) => {
   try {
     const body = z.object({
-      current_status: z.enum(['inside', 'outside']).optional(),
-      currentStatus: z.enum(['inside', 'outside']).optional(),
+      current_status: z.enum(['inside', 'outside', 'pending']).optional(),
+      currentStatus: z.enum(['inside', 'outside', 'pending']).optional(),
       camera_id: z.string().optional().nullable(),
       cameraId: z.string().optional().nullable(),
     }).parse(req.body || {});
@@ -47,6 +47,35 @@ router.post('/access/patrons/:id/status', async (req, res, next) => {
       return;
     }
     res.json(await accessService.setStatus(req.params.id, currentStatus, body.camera_id || body.cameraId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/access/patrons/:id/confirm-entry', async (req, res, next) => {
+  try {
+    const result = await accessService.confirmEntry(req.params.id);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/access/patrons/:id/revert-pending', async (req, res, next) => {
+  try {
+    const result = await accessService.revertPending(req.params.id);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/access/cleanup-expired-pending', async (req, res, next) => {
+  try {
+    const seconds = req.body?.seconds ?? 30;
+    const cutoff = new Date(Date.now() - seconds * 1000);
+    const result = await accessService.cleanupExpiredPending(cutoff);
+    res.json(result);
   } catch (error) {
     next(error);
   }

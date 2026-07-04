@@ -18,6 +18,7 @@ import { shiftReminderNotify } from '../handlers/shiftReminderNotify';
 import { stalePatronCleanup } from '../handlers/stalePatronCleanup';
 import { staffScheduleAutoCheckout } from '../handlers/staffScheduleAutoCheckout';
 import { expireWaitlistNotifications } from '../handlers/expireWaitlistNotifications';
+import { cleanupExpiredPending } from '../handlers/cleanupExpiredPending';
 
 const taskRepo = () => AppDataSource.getRepository(AutomationTask);
 const runRepo = () => AppDataSource.getRepository(AutomationRun);
@@ -38,6 +39,7 @@ const handlers: Record<string, HandlerFn> = {
   stale_patron_cleanup: stalePatronCleanup,
   staff_schedule_auto_checkout: staffScheduleAutoCheckout,
   waitlist_expiry_check: expireWaitlistNotifications,
+  cleanup_expired_pending: cleanupExpiredPending,
 };
 
 export class CronScheduler {

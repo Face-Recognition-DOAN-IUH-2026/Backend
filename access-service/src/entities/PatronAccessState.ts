@@ -11,8 +11,8 @@ export class PatronAccessState {
   @Column({ name: 'patron_id', type: 'uuid' })
   patronId!: string;
 
-  @Column({ name: 'current_status', type: 'varchar', length: 10, default: 'outside' })
-  currentStatus!: 'inside' | 'outside';
+  @Column({ name: 'current_status', type: 'varchar', length: 20, default: 'outside' })
+  currentStatus!: 'inside' | 'outside' | 'pending';
 
   @Column({ name: 'last_entry_at', type: 'timestamptz', nullable: true })
   lastEntryAt!: Date | null;

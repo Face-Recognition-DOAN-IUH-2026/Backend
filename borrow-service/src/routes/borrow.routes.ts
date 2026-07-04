@@ -168,7 +168,7 @@ router.get('/patron/inside-status', patronStatusMiddleware, async (req: AuthRequ
  *       200:
  *         description: Borrow successful
  */
-router.post('/', requireRole(['admin', 'staff'], 'Chi nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
+router.post('/', requireRole(['patron', 'admin', 'staff'], 'Chi nguoi dung hop le moi co the muon sach'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ barcode: z.string().min(1), isbn: z.string().optional() }).parse(req.body);
     const userId = patronIdFrom(req.user);
@@ -274,7 +274,7 @@ async function lookupBookAndCopy(repo: BorrowRepository, barcode: string, isbn?:
  *       200:
  *         description: Lookup results
  */
-router.post('/staff/slip/lookup', requireRole(['admin', 'staff', 'patron'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
+router.post('/staff/slip/lookup', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
       patron_id: z.string().min(1),
@@ -402,7 +402,7 @@ router.post('/staff/slip/lookup', requireRole(['admin', 'staff', 'patron'], 'Chi
  *       200:
  *         description: Slip created successfully
  */
-router.post('/staff/slip/confirm', requireRole(['admin', 'staff', 'patron'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
+router.post('/staff/slip/confirm', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
       patron_id: z.string().min(1),
