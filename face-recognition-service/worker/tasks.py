@@ -378,7 +378,12 @@ def batch_enroll_task(self, user_id: str, object_keys: list[str] | None = None) 
     """Enroll user with 4 angles. Atomic all-or-nothing: if any angle fails, rollback all."""
     angles = ["frontal", "right", "left", "down"]
     if not object_keys or len(object_keys) != len(angles):
-        return {"status": "error", "error": "Expected 4 object_keys for frontal/right/left/down"}
+        result = {"status": "error", "error": "Expected 4 object_keys for frontal/right/left/down"}
+        try:
+            _publish_face_result(self.request.id, "enroll", "FAILURE", result)
+        except Exception:
+            pass
+        return result
     results = []
     enrolled_angles: list[str] = []
     patron_id = _get_patron_id_by_user_id(user_id) or user_id
@@ -434,8 +439,14 @@ def batch_enroll_task(self, user_id: str, object_keys: list[str] | None = None) 
         if enrolled_angles:
             logger.warning("Batch enroll failed, rolling back %s enrolled angles: %s", len(enrolled_angles), enrolled_angles)
             _rollback_enrolled_angles(patron_id, enrolled_angles)
-        return {"status": "error", "error": f"{len(errors)} angle(s) failed, all rolled back", "results": results}
-    return {"status": "success", "results": results}
+        result = {"status": "error", "error": f"{len(errors)} angle(s) failed, all rolled back", "results": results}
+    else:
+        result = {"status": "success", "results": results}
+    try:
+        _publish_face_result(self.request.id, "enroll", "SUCCESS" if not errors else "FAILURE", result)
+    except Exception as pub_exc:
+        logger.warning("Failed to publish face_result for batch_enroll: %s", pub_exc)
+    return result
 
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=5)
@@ -449,27 +460,40 @@ def verify_task(self, user_id: str, object_key: str | None = None, image_data: s
         vec_sum = float(np.sum(np.abs(vec_arr)))
         if vec_sum < 0.1:
             logger.error("Verify: extracted embedding is near-zero, sum=%.6f", vec_sum)
-            return {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
-        norm_vec = l2_normalize(vec)
-        norm_vec_arr = np.array(norm_vec, dtype=np.float32)
-        logger.info("Verify query embedding: min=%.4f, max=%.4f, sum_abs=%.4f",
-                    float(np.min(vec_arr)), float(np.max(vec_arr)), vec_sum)
-        enrolled_emb = _get_milvus().get_embedding_by_user_id(patron_id)
-        if not enrolled_emb:
-            return {"status": "success", "verified": False, "score": 0.0, "error": "Face not enrolled"}
-        enrolled_arr = np.array(enrolled_emb, dtype=np.float32)
-        best_score = float(np.dot(norm_vec_arr, enrolled_arr))
-        score = best_score
-        logger.info("Verify best score for patron_id %s (user_id %s): %.4f",
-                    patron_id, user_id, best_score)
-        logger.info("Verify score for patron_id %s (user_id %s): %.4f (query_norm=%.4f, enrolled_norm=%.4f)",
-                    patron_id, user_id, score,
-                    float(np.linalg.norm(vec_arr)),
-                    float(np.linalg.norm(enrolled_arr)))
-        if object_key: _delete_temp_frame(object_key)
-        return {"status": "success", "verified": score > settings.face_match_threshold, "score": score}
+            result = {"status": "error", "error": "FACE_DETECTION_FAILED", "score": 0.0}
+        else:
+            norm_vec = l2_normalize(vec)
+            norm_vec_arr = np.array(norm_vec, dtype=np.float32)
+            logger.info("Verify query embedding: min=%.4f, max=%.4f, sum_abs=%.4f",
+                        float(np.min(vec_arr)), float(np.max(vec_arr)), vec_sum)
+            enrolled_emb = _get_milvus().get_embedding_by_user_id(patron_id)
+            if not enrolled_emb:
+                result = {"status": "success", "verified": False, "score": 0.0, "error": "Face not enrolled"}
+            else:
+                enrolled_arr = np.array(enrolled_emb, dtype=np.float32)
+                best_score = float(np.dot(norm_vec_arr, enrolled_arr))
+                score = best_score
+                logger.info("Verify best score for patron_id %s (user_id %s): %.4f",
+                            patron_id, user_id, best_score)
+                logger.info("Verify score for patron_id %s (user_id %s): %.4f (query_norm=%.4f, enrolled_norm=%.4f)",
+                            patron_id, user_id, score,
+                            float(np.linalg.norm(vec_arr)),
+                            float(np.linalg.norm(enrolled_arr)))
+                if object_key: _delete_temp_frame(object_key)
+                result = {"status": "success", "verified": score > settings.face_match_threshold, "score": score}
+        status = "FAILURE" if result.get("error") else "SUCCESS"
+        try:
+            _publish_face_result(self.request.id, "verify", status, result)
+        except Exception as pub_exc:
+            logger.warning("Failed to publish face_result for verify: %s", pub_exc)
+        return result
     except Exception as exc:
         logger.exception("Verify failed for %s", user_id)
+        if self.request.retries >= (self.max_retries or 0):
+            try:
+                _publish_face_result(self.request.id, "verify", "FAILURE", {"error": str(exc)})
+            except Exception:
+                pass
         raise self.retry(exc=exc)
 
 
@@ -494,10 +518,20 @@ def identify_task(self, object_key: str | None = None, image_data: str | None = 
                 "created_at": user.get("created_at"),
             })
         if object_key: _delete_temp_frame(object_key)
-        return {"status": "success", "matches": matches}
+        result = {"status": "success", "matches": matches}
+        try:
+            _publish_face_result(self.request.id, "identify", "SUCCESS", result)
+        except Exception as pub_exc:
+            logger.warning("Failed to publish face_result for identify: %s", pub_exc)
+        return result
     except Exception as exc:
         # Do NOT delete temp frame here — retry still needs the same MinIO key.
         logger.exception("Identify failed")
+        if self.request.retries >= (self.max_retries or 0):
+            try:
+                _publish_face_result(self.request.id, "identify", "FAILURE", {"error": str(exc)})
+            except Exception:
+                pass
         raise self.retry(exc=exc)
 
 
@@ -636,10 +670,20 @@ def liveness_task(self, object_key: str | None = None, image_data: str | None = 
         _, img = _resolve_image(object_key, image_data)
         result = run_liveness_analysis(img)
         if object_key: _delete_temp_frame(object_key)
-        return {"status": "success", **result}
+        publish_result = {"status": "success", **result}
+        try:
+            _publish_face_result(self.request.id, "liveness", "SUCCESS", publish_result)
+        except Exception as pub_exc:
+            logger.warning("Failed to publish face_result for liveness: %s", pub_exc)
+        return publish_result
     except Exception as exc:
         # Do NOT delete temp frame here — retry still needs the same MinIO key.
         logger.exception("Liveness check failed")
+        if self.request.retries >= (self.max_retries or 0):
+            try:
+                _publish_face_result(self.request.id, "liveness", "FAILURE", {"error": str(exc)})
+            except Exception:
+                pass
         raise self.retry(exc=exc)
 
 
@@ -998,6 +1042,27 @@ def _publish_camera_event(data: dict) -> None:
         logger.error("Failed to submit camera event: %s", e)
 
 
+def _publish_face_result(task_id: str, process_type: str, status: str, result: dict, camera_id: str = "kiosk") -> None:
+    """POST FaceResultEvent to access-service /internal/access/face-results for SSE broadcast.
+
+    This enables the frontend useTaskSSE hook to receive the matching ``face_result``
+    event and transition out of the WAITING state (fixing the gate page spinner bug).
+    """
+    from datetime import datetime, timezone
+    payload = {
+        "event_id": str(_uuid.uuid4()),
+        "event_type": "face_result",
+        "task_id": task_id,
+        "process_type": process_type,
+        "status": status,
+        "result": result,
+        "camera_id": camera_id,
+        "occurred_at": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        "source": "face-recognition-service",
+    }
+    _call_access_service("POST", "/internal/access/face-results", json=payload)
+
+
 def _get_redis_throttle():
     try:
         from infra.config import settings
@@ -1321,6 +1386,7 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
         norm_vec = l2_normalize(vec)
         all_embeddings = _get_milvus().get_embeddings_by_user_id(patron_id)
         if not all_embeddings:
+            _publish_face_result(self.request.id, "face_recognition", "FAILURE", {"error": "Face not enrolled"})
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face not enrolled"}
         score = 0.0
@@ -1332,10 +1398,12 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
                     score = s
         score = round(score, 4)
         if score < settings.face_match_threshold:
+            _publish_face_result(self.request.id, "face_recognition", "FAILURE", {"error": "Face does not match", "score": score})
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Face does not match", "score": score}
         liveness = run_liveness_analysis(img)
         if not liveness.get("is_live", False):
+            _publish_face_result(self.request.id, "face_recognition", "FAILURE", {"error": "Liveness check failed", "is_live": False})
             _delete_temp_frame(object_key)
             return {"status": "error", "error": "Liveness check failed", "is_live": False}
 
@@ -1360,6 +1428,21 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
             "is_live": True,
         }
         _publish_camera_event(result)
+        _publish_face_result(
+            task_id=self.request.id,
+            process_type="face_recognition",
+            status="SUCCESS",
+            result={
+                "status": "success",
+                "access_type": access_type,
+                "score": score,
+                "is_live": True,
+                "liveness_score": liveness.get("liveness_score"),
+                "patron_id": patron_id,
+                "full_name": full_name,
+                "student_code": student_code,
+            },
+        )
         _delete_temp_frame(object_key)
         return {
             "status": "success",
@@ -1372,6 +1455,7 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
             "liveness_score": liveness.get("liveness_score"),
         }
     except Exception as exc:
+        _publish_face_result(self.request.id, "face_recognition", "FAILURE", {"error": str(exc)})
         _delete_temp_frame(object_key)
         logger.exception("Verify face failed for %s", patron_id)
         return {"status": "error", "error": str(exc)}

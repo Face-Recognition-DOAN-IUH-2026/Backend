@@ -11,7 +11,7 @@ export class KioskApprovalRequest {
   @Column({ name: 'event_code', type: 'varchar', length: 10, unique: true })
   eventCode!: string;
 
-  @Column({ name: 'kiosk_device_id', type: 'uuid' })
+  @Column({ name: 'kiosk_device_id', type: 'varchar', length: 50 })
   kioskDeviceId!: string;
 
   @Column({ name: 'patron_id', type: 'uuid', nullable: true })

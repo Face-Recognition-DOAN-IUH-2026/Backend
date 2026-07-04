@@ -38,6 +38,11 @@ app.use(errorHandler);
 async function start() {
   try {
     await AppDataSource.initialize();
+    if (process.env.TYPEORM_MIGRATION_RUN === 'true' && AppDataSource.migrations.length > 0) {
+      console.log('[Migration] Running pending migrations...');
+      await AppDataSource.runMigrations();
+      console.log('[Migration] Migrations completed.');
+    }
     await realtimeHub.connectBroker();
     await startUserEventSubscriber();
     await amqpClient.connect().catch((e) => console.error('[AMQP] Init failed:', e.message));

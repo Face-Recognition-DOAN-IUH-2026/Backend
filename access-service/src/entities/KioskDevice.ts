@@ -1,9 +1,9 @@
-import { Column, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
 import { config } from '../config';
 
 @Entity({ schema: config.db.schema, name: 'kiosk_devices' })
 export class KioskDevice {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryColumn({ type: 'varchar', length: 50 })
   id!: string;
 
   @Column({ name: 'device_name', type: 'varchar', length: 100 })
