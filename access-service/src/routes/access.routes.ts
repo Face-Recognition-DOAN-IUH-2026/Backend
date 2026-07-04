@@ -295,7 +295,21 @@ router.post('/kiosk/presence', auth, requireRole(['admin', 'staff']), async (req
       res.status(400).json({ error: error.errors.map(e => e.message).join(', ') });
       return;
     }
-    next(error);
+    console.error('[kiosk/presence] Error:', error);
+    const message = error instanceof Error ? error.message : 'Lỗi ghi nhận hiện diện';
+    const raw = (req.body || {}) as Record<string, string>;
+    res.status(200).json({
+      patron_id: raw.patron_id || '',
+      current_status: 'unknown',
+      currentStatus: 'unknown',
+      last_entry_at: null,
+      lastEntryAt: null,
+      last_entry_camera: null,
+      lastEntryCamera: null,
+      message: `Không thể ghi nhận hiện diện: ${message}`,
+      skipped: true,
+      error: true,
+    });
   }
 });
 

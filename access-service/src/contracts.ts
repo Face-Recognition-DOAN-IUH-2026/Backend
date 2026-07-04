@@ -23,7 +23,7 @@ export const FaceResultEventSchema = z.object({
   result: z.record(z.unknown()).optional(),
   user_id: z.string().nullish(),
   camera_id: z.string().nullish(),
-  occurred_at: z.string().datetime(),
+  occurred_at: z.string().optional(),
   source: z.string().min(1).default('face-recognition-service'),
 });
 
@@ -68,7 +68,7 @@ export const AccessRealtimeEventSchema = z.object({
   score: z.number().finite().nullish(),
   bbox: z.unknown().optional(),
   landmarks: z.unknown().optional(),
-  occurred_at: z.string().datetime(),
+  occurred_at: z.string().optional(),
   source: z.string().min(1),
   image_url: z.string().nullish(),
 });

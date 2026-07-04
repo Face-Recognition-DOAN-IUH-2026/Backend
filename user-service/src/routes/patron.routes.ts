@@ -178,7 +178,7 @@ router.get('/lookup', (req, res) => patronController.lookup(req, res));
  *                 type: string
  *     responses:
  *       200:
- *         description: 'Returns { student_code_exists, email_exists }'
+ *         description: Check result with exists flags
  */
 router.post('/check-exists', (req, res) => patronController.checkExists(req, res));
 
@@ -197,7 +197,7 @@ router.post('/check-exists', (req, res) => patronController.checkExists(req, res
  *         description: Student code to check
  *     responses:
  *       200:
- *         description: Returns { exists: boolean }
+ *         description: Check result
  */
 router.get('/check-code/:code', (req, res) => patronController.checkStudentCode(req, res));
 
