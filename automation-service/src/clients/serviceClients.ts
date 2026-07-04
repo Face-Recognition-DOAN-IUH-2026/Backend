@@ -89,10 +89,10 @@ export const notificationClient = {
       data?: Record<string, any>;
     }>
   ) {
+    let publishedCount = 0;
     try {
-      let failCount = 0;
       for (const input of notifications) {
-        const published = amqpClient.publish('notification.send', {
+        const published = await amqpClient.publish('notification.send', {
           emailType: 'push',
           userId: input.userId,
           type: input.type,
@@ -100,10 +100,10 @@ export const notificationClient = {
           body: input.body,
           data: input.data || {},
         });
-        if (!published) failCount++;
+        if (published) publishedCount++;
       }
-      if (failCount === 0) {
-        return { success: true, via: 'rabbitmq', count: notifications.length };
+      if (publishedCount > 0) {
+        return { success: true, via: 'rabbitmq', count: publishedCount };
       }
     } catch (err: any) {
       console.error('[AMQP] RabbitMQ bulk publish failed, falling back to HTTP sync:', err.message);
@@ -142,6 +142,17 @@ export const borrowClient = {
       method: 'POST',
     });
   },
+
+  async getWaitlistByBook(bookId: string) {
+    return request(`${config.services.borrowService}/borrow/internal/book/${bookId}/waitlist`);
+  },
+
+  async batchNotifyWaitlist(ids: string[]) {
+    return request(`${config.services.borrowService}/borrow/internal/waitlist/batch-notify`, {
+      method: 'PATCH',
+      body: { ids },
+    });
+  },
 };
 
 export const scheduleClient = {
@@ -155,6 +166,13 @@ export const scheduleClient = {
 
   async getAttendance(scheduleId: string) {
     return request(`${config.services.scheduleService}/schedules/assignments/${scheduleId}/attendance`);
+  },
+
+  async autoCheckout(timeout = 30000) {
+    return request(`${config.services.scheduleService}/schedules/internal/auto-checkout`, {
+      method: 'POST',
+      timeout,
+    });
   },
 };
 

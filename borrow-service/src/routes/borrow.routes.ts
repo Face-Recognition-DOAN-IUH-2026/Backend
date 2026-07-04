@@ -8,6 +8,7 @@ import { auth, AuthRequest, requireRole } from '../middlewares/auth';
 import { HttpError } from '../middlewares/errorHandler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { WaitlistRepository } from '../repositories/WaitlistRepository';
+import { Waitlist } from '../entities/Waitlist';
 import { isPatronInside, getPatronAccessStatus, getPatronRawAccessStatus } from '../clients/AccessServiceClient';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { lookupPatronById, lookupPatronByStudentCode, lookupPatronsByIds, PatronSummary } from '../clients/UserServiceClient';
@@ -21,6 +22,15 @@ import { BorrowSlip } from '../entities/BorrowSlip';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// GET /config — Public, returns borrow configuration for frontend
+router.get('/config', (_req, res) => {
+  res.json({
+    max_borrow_books: config.maxBorrowBooks,
+    max_borrow_books_per_slip: config.maxBorrowBooksPerSlip,
+    max_borrow_days: config.maxBorrowDays,
+  });
+});
 
 router.use(auth);
 
@@ -100,14 +110,7 @@ function parseExcelRows(buffer: Buffer) {
 async function getOrCreateBookAndCopy(repo: BorrowRepository, barcode: string, isbn?: string) {
   const existingCopy = await repo.getCopyByBarcode(barcode);
   if (existingCopy) return { book: existingCopy.book || await repo.getBookById(existingCopy.bookId), copy: existingCopy };
-  let book = isbn ? await repo.getBookByIsbn(isbn) : null;
-  if (!book && isbn) {
-    const meta = await fetchGoogleBooks(isbn);
-    if (meta) book = await repo.createBook(isbn, meta.title, meta.author, meta.coverUrl);
-  }
-  if (!book) book = await repo.createBook(isbn || barcode, `Barcode ${barcode}`);
-  const copy = await repo.createCopy(book.id, barcode, book.shelfLocation);
-  return { book, copy };
+  return null;
 }
 
 const patronStatusMiddleware = requireRole(['patron', 'admin', 'staff'], 'Chi xem trang thai trong thu vien');
@@ -811,9 +814,10 @@ router.post('/staff/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri 
           }
         }
         if (!book) {
-          const { book: newBook, copy: newCopy } = await getOrCreateBookAndCopy(repo, barcode, lookupIsbn);
-          book = newBook;
-          copy = newCopy;
+          const result = await getOrCreateBookAndCopy(repo, barcode, lookupIsbn);
+          if (!result) throw new HttpError(404, `Khong tim thay sach voi ma vach ${barcode} hoac ISBN ${lookupIsbn}`);
+          book = result.book;
+          copy = result.copy;
         } else if (!copy) {
           copy = await repo.getAvailableCopy(book.id);
           if (!copy) throw new HttpError(409, `Sach ${book.title} da het ban co the muon`);
@@ -843,18 +847,36 @@ router.post('/staff/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri 
     if (activeCount + bookIds.length > config.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
     if (bookIds.length > config.maxBorrowBooksPerSlip) throw new HttpError(409, `Moi phieu muon toi da ${config.maxBorrowBooksPerSlip} cuon`);
 
-    for (const copyId of copyIds) {
-      if (copyId) {
-        const copy = await repo.getCopyById(copyId);
-        if (copy) await repo.setCopyAvailable(copy, false);
-      }
+    // Batch update copy availability
+    const validCopyIds = copyIds.filter((id): id is string => id !== null);
+    const allCopies = validCopyIds.length > 0 ? await repo.copies.find({ where: { id: In(validCopyIds) } }) : [];
+    const copiesMap = new Map(allCopies.map(c => [c.id, c]));
+    const copiesToUpdate = validCopyIds.map(id => copiesMap.get(id)).filter(Boolean) as BookCopy[];
+    for (const copy of copiesToUpdate) {
+      copy.isAvailable = false;
+      copy.updatedAt = new Date();
+    }
+    if (copiesToUpdate.length > 0) {
+      await repo.copies.save(copiesToUpdate);
     }
 
     const { slip, records } = await repo.createSlip(body.patron_id, bookIds, copyIds, shelfLocations, req.user?.id, req.user?.email, body.note);
 
-    for (let i = 0; i < records.length; i += 1) {
-      records[i].book = (await repo.getBookById(bookIds[i]))!;
-      records[i].copy = copyIds[i] ? await repo.getCopyById(copyIds[i]!) : null;
+    // Batch load books and copies for records
+    const recordBookIds = records.map(r => r.bookId);
+    const recordCopyIds = records.filter(r => r.copyId).map(r => r.copyId!);
+
+    const [recordBooks, recordCopies] = await Promise.all([
+      repo.books.find({ where: { id: In(recordBookIds) } }),
+      recordCopyIds.length > 0 ? repo.copies.find({ where: { id: In(recordCopyIds) } }) : [],
+    ]);
+
+    const recordBooksMap = new Map(recordBooks.map(b => [b.id, b]));
+    const recordCopiesMap = new Map(recordCopies.map(c => [c.id, c]));
+
+    for (const record of records) {
+      record.book = recordBooksMap.get(record.bookId)!;
+      record.copy = record.copyId ? recordCopiesMap.get(record.copyId) || null : null;
     }
 
     for (const record of records) {
@@ -1326,7 +1348,8 @@ router.get('/books/template', async (_req, res, next) => {
 router.get('/books/export', async (_req, res, next) => {
   try {
     const repo = new BorrowRepository();
-    const { items } = await repo.listBooks(0, 10000);
+    const MAX_EXPORT = 10000;
+    const { items } = await repo.listBooks(0, MAX_EXPORT);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Books');
     ws.addRow(['ISBN', 'Title', 'Author', 'Total Copies', 'Available Copies', 'Shelf Location', 'Created At']);
@@ -2046,7 +2069,7 @@ router.delete('/waitlist/:id', requireRole(['patron', 'admin', 'staff'], 'Chỉ 
 router.get('/waitlist', async (req: AuthRequest, res, next) => {
   try {
     const userId = patronIdFrom(req.user);
-    const waitlistRepo = AppDataSource.getRepository('Waitlist');
+    const waitlistRepo = AppDataSource.getRepository(Waitlist);
     const entries = await waitlistRepo.find({
       where: { patronId: userId, status: 'waiting' as any },
       relations: { book: true },

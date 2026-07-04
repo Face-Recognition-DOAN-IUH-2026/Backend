@@ -295,8 +295,15 @@ app.use('/api/ai/patrons', patronAiLimiter, createProxyMiddleware(aiProxyOpts));
 app.use('/api/ai/staff', staffAiLimiter, createProxyMiddleware(aiProxyOpts));
 app.use('/api/ai/admin', adminAiLimiter, createProxyMiddleware(aiProxyOpts));
 
-// Legacy catch-all for /api/ai (backward compatibility — command-center, insights, etc.)
-app.use('/api/ai', createProxyMiddleware(aiProxyOpts));
+// AI catch-all — all /api/ai/* requests route to ai-service with legacy-routed header
+app.use('/api/ai', createProxyMiddleware({
+  ...aiProxyOpts,
+  on: {
+    proxyReq: (proxyReq) => {
+      proxyReq.setHeader('X-Legacy-Routed', 'true');
+    },
+  },
+}));
 
 // Patron stats from user-service (must be before catch-all /api/patrons)
 app.use('/api/patrons/stats', createProxyMiddleware({

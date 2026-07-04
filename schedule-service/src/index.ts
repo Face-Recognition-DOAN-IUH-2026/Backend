@@ -7,7 +7,7 @@ import scheduleRoutes from './routes/schedule.routes';
 import scheduleInternalRoutes from './routes/schedule-internal.routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
-import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
+import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
 import { auditContextMiddleware } from './middlewares/auditContext';
 

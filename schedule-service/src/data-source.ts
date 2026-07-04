@@ -30,6 +30,6 @@ export const AppDataSource = new DataSource({
     StaffShiftPreference,
   ],
   migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
-  synchronize: process.env.NODE_ENV !== 'production',
+  synchronize: process.env.NODE_ENV === 'development',
   logging: process.env.TYPEORM_LOGGING === 'true',
 });

@@ -60,12 +60,14 @@ export async function dailyStatsReport(config: Record<string, any>): Promise<any
     try {
       const admins = await userClient.getUsersByRole('admin');
       adminUserIds = Array.isArray(admins) ? admins.map((u: any) => u.id) : [];
-    } catch {
-      // fallback: try staff as well
+    } catch (err) {
+      console.warn('[dailyStatsReport] Failed to fetch admin users, trying staff:', (err as Error)?.message || err);
       try {
         const staff = await userClient.getUsersByRole('staff');
         adminUserIds = Array.isArray(staff) ? staff.map((u: any) => u.id) : [];
-      } catch {}
+      } catch (err2) {
+        console.warn('[dailyStatsReport] Failed to fetch staff users:', (err2 as Error)?.message || err2);
+      }
     }
   }
 

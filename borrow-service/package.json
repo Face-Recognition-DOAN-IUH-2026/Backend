@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node src/index.ts",
+    "dev:test-borrow": "node tools/test-borrow.js",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "jest --runInBand"

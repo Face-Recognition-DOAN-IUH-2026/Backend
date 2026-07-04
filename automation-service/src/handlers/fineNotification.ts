@@ -18,13 +18,15 @@ export async function fineNotification(_config: Record<string, any>, event?: Aut
     const patron = await userClient.getUser(patronId);
     if (patron?.fullName) patronName = patron.fullName;
     if (patron?.email) patronEmail = patron.email;
-  } catch {}
+  } catch (err) {
+    console.warn('[fineNotification] Failed to fetch patron:', (err as Error)?.message || err);
+  }
 
   await notificationClient.createNotification({
     userId: patronId,
     type: 'fine_notice',
-    title: 'Phí phạt trễ hạn',
-    body: `${patronName}, bạn bị phạt ${fineAmount.toLocaleString('vi-VN')}đ vì trả "${bookTitle || 'sách'}" trễ ${daysOverdue || 0} ngày.`,
+    title: 'Nhắc phí quá hạn',
+    body: `${patronName}, khoản phí quá hạn cho "${bookTitle || 'sách'}" là ${fineAmount.toLocaleString('vi-VN')}đ. Đến quầy thư viện để thanh toán và mở khóa thẻ bạn nhé!`,
     data: {
       bookTitle,
       fineAmount,

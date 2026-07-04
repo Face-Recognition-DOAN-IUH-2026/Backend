@@ -1,16 +1,10 @@
 jest.mock('../../clients/serviceClients');
 
 import { bookAvailabilityNotify } from '../../handlers/bookAvailabilityNotify';
-import { notificationClient } from '../../clients/serviceClients';
+import { borrowClient, notificationClient } from '../../clients/serviceClients';
 
+const mockBorrowClient = borrowClient as jest.Mocked<typeof borrowClient>;
 const mockNotificationClient = notificationClient as jest.Mocked<typeof notificationClient>;
-
-function mockFetchOnce(data: any, ok = true) {
-  return jest.fn().mockResolvedValueOnce({
-    ok,
-    json: jest.fn().mockResolvedValue(data),
-  });
-}
 
 describe('bookAvailabilityNotify', () => {
   beforeEach(() => {
@@ -30,15 +24,15 @@ describe('bookAvailabilityNotify', () => {
   });
 
   it('returns 0 when waitlist API returns error', async () => {
-    global.fetch = mockFetchOnce(null, false);
+    mockBorrowClient.getWaitlistByBook = jest.fn().mockRejectedValue(new Error('API error'));
 
     const result = await bookAvailabilityNotify({}, { type: 'book.returned', payload: { bookId: 'b1', title: 'Test Book' } } as any);
     expect(result.notified).toBe(0);
-    expect(result.message).toBe('No waitlist available for this book');
+    expect(result.message).toBe('Waitlist feature not available');
   });
 
   it('returns 0 when waitlist is empty', async () => {
-    global.fetch = mockFetchOnce([]);
+    mockBorrowClient.getWaitlistByBook = jest.fn().mockResolvedValue([]);
 
     const result = await bookAvailabilityNotify({}, { type: 'book.returned', payload: { bookId: 'b1', title: 'Test Book' } } as any);
     expect(result.notified).toBe(0);
@@ -52,9 +46,8 @@ describe('bookAvailabilityNotify', () => {
       { id: 'wl-3', patron_id: 'p3', book_id: 'b1', status: 'waiting', created_at: '2025-01-03' },
     ];
 
-    global.fetch = jest.fn()
-      .mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue(waitlist) })
-      .mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({}) });
+    mockBorrowClient.getWaitlistByBook = jest.fn().mockResolvedValue(waitlist);
+    mockBorrowClient.batchNotifyWaitlist = jest.fn().mockResolvedValue({});
 
     const result = await bookAvailabilityNotify({}, { type: 'book.returned', payload: { bookId: 'b1', title: 'Test Book' } } as any);
 
@@ -65,6 +58,7 @@ describe('bookAvailabilityNotify', () => {
       expect.objectContaining({ userId: 'p1', type: 'book_available' })
     );
     expect(mockNotificationClient.createBulkNotifications).not.toHaveBeenCalled();
+    expect(mockBorrowClient.batchNotifyWaitlist).toHaveBeenCalledWith(['wl-1']);
   });
 
   it('handles patron_id field in camelCase', async () => {
@@ -72,9 +66,8 @@ describe('bookAvailabilityNotify', () => {
       { id: 'wl-1', patronId: 'p-camel', bookId: 'b1', status: 'waiting', createdAt: '2025-01-01' },
     ];
 
-    global.fetch = jest.fn()
-      .mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue(waitlist) })
-      .mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({}) });
+    mockBorrowClient.getWaitlistByBook = jest.fn().mockResolvedValue(waitlist);
+    mockBorrowClient.batchNotifyWaitlist = jest.fn().mockResolvedValue({});
 
     const result = await bookAvailabilityNotify({}, { type: 'book.returned', payload: { bookId: 'b1', title: 'Book' } } as any);
 
@@ -90,9 +83,8 @@ describe('bookAvailabilityNotify', () => {
       { id: 'wl-1', patron_id: 'p1', book_id: 'b1', status: 'waiting' },
     ];
 
-    global.fetch = jest.fn()
-      .mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue(waitlist) })
-      .mockRejectedValueOnce(new Error('Network error'));
+    mockBorrowClient.getWaitlistByBook = jest.fn().mockResolvedValue(waitlist);
+    mockBorrowClient.batchNotifyWaitlist = jest.fn().mockRejectedValue(new Error('Network error'));
 
     const result = await bookAvailabilityNotify({}, { type: 'book.returned', payload: { bookId: 'b1', title: 'Book' } } as any);
 

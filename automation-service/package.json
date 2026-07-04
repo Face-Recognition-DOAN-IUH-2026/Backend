@@ -5,6 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node src/index.ts",
+    "dev:activate-task": "node tools/activate-task.js",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "jest --runInBand",

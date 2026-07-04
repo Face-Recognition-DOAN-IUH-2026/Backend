@@ -4,8 +4,6 @@ import cors from 'cors';
 import { config } from './config';
 import { AppDataSource } from './data-source';
 import aiRoutes from './routes/ai.routes';
-import chatRouter from './routes/chat';
-import confirmRouter from './routes/confirm';
 import cardParserRouter from './routes/card-parser';
 import patronChatRouter from './routes/chat.patron';
 import staffChatRouter from './routes/chat.staff';
@@ -67,10 +65,6 @@ app.use('/ai/patrons/chat', auth, requireRole(['patron']), patronChatRouter);
 app.use('/ai/staff/chat', auth, requireRole(['admin', 'staff']), staffChatRouter);
 app.use('/ai/admin/chat', auth, requireRole(['admin']), adminChatRouter);
 
-// Legacy routes (backward compatibility — same endpoints, same auth)
-app.use('/ai/chat', auth, chatRouter);
-app.use('/ai/confirm', auth, confirmRouter);
-
 // Card text parsing (OCR result -> structured data via LLM)
 app.use('/ai', auth, cardParserRouter);
 
@@ -91,10 +85,6 @@ app.get('/ai/sessions/:sessionId', auth, (req, res) => {
     pendingConfirmation: session.pendingConfirmation,
   });
 });
-
-// Backward compat: /chat, /confirm
-app.use('/chat', auth, chatRouter);
-app.use('/confirm', auth, confirmRouter);
 
 if (config.nodeEnv !== 'production') {
   app.get('/api-docs/swagger.json', (_req, res) => {
@@ -138,7 +128,6 @@ async function start() {
       console.log(`  Patron Chat:   /ai/patrons/chat (requireRole: patron)`);
       console.log(`  Staff Chat:    /ai/staff/chat (requireRole: admin, staff)`);
       console.log(`  Admin Chat:    /ai/admin/chat (requireRole: admin)`);
-      console.log(`  Legacy Chat:   /ai/chat (backward compat)`);
       console.log(`  Command Center: /ai/command-center/*`);
       console.log(`  LLM (OpenRouter): ${config.openRouter.model}`);
       console.log(`  LLM (NVIDIA NIM): ${config.nvidiaModel}`);

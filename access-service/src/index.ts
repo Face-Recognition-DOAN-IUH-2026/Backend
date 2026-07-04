@@ -10,7 +10,7 @@ import accessRoutes from './routes/access.routes';
 import internalRoutes from './routes/internal.routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
-import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
+import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 import { decodeToken } from '../../shared';
 import { realtimeHub } from './realtime/RealtimeHub';
 import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';

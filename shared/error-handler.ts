@@ -1,6 +1,23 @@
 import { Request, Response, NextFunction } from 'express';
 import { createJiraBug, JiraIssueParams } from './jira-client';
 
+const SENSITIVE_FIELDS = ['password', 'code', 'token', 'secret', 'authorization', 'otp', 'otpCode', 'resetCode', 'verificationCode'];
+
+function stripSensitiveFields(body: Record<string, any>): Record<string, any> {
+  if (!body || typeof body !== 'object') return body;
+  const sanitized: Record<string, any> = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (SENSITIVE_FIELDS.some(f => key.toLowerCase().includes(f))) {
+      sanitized[key] = '***REDACTED***';
+    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      sanitized[key] = stripSensitiveFields(value);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+}
+
 export class HttpError extends Error {
   constructor(public statusCode: number, message: string) {
     super(message);
@@ -24,6 +41,15 @@ function getServiceName(): string {
 }
 
 export function errorHandler(err: any, req: Request, res: Response, _next: NextFunction) {
+  // Zod validation errors → 400
+  if (err?.name === 'ZodError') {
+    res.status(400).json({
+      error: 'Validation Error',
+      detail: err.issues || err.errors || [{ message: err.message }],
+    });
+    return;
+  }
+
   const statusCode = err.statusCode || err.status || 500;
   const message = err.message || 'Internal Server Error';
   const serviceName = getServiceName();
@@ -46,7 +72,7 @@ export function errorHandler(err: any, req: Request, res: Response, _next: NextF
       method: req.method,
       stacktrace: err.stack,
       userId: (req as any).user?.userId || (req as any).user?.sub,
-      requestBody: req.body ? JSON.stringify(req.body).substring(0, 2000) : undefined,
+      requestBody: req.body ? JSON.stringify(stripSensitiveFields(req.body)).substring(0, 2000) : undefined,
       timestamp: new Date().toISOString(),
     };
 

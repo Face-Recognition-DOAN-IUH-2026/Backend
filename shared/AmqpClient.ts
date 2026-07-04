@@ -116,7 +116,10 @@ export class AmqpClient {
     }
   }
 
-  async subscribeFanout(exchangeName: string, onMessage: (payload: any) => void): Promise<void> {
+  async subscribeFanout(
+    exchangeName: string,
+    onMessage: (payload: any) => void | Promise<void>
+  ): Promise<void> {
     if (!this.channel) await this.connect();
     if (!this.channel) throw new Error('No AMQP channel available');
     await this.channel.assertExchange(exchangeName, 'fanout', { durable: false });
@@ -124,19 +127,20 @@ export class AmqpClient {
     await this.channel.bindQueue(q.queue, exchangeName, '');
     await this.channel.consume(
       q.queue,
-      (msg) => {
-        if (msg) {
-          try {
-            const payload = JSON.parse(msg.content.toString());
-            onMessage(payload);
-          } catch (e) {
-            console.error('[AMQP] Fanout parse message error', e);
-          }
+      async (msg) => {
+        if (!msg) return;
+        try {
+          const payload = JSON.parse(msg.content.toString());
+          await onMessage(payload);
+          this.channel?.ack(msg);
+        } catch (e) {
+          console.error('[AMQP] Fanout error on', exchangeName, e);
+          this.channel?.nack(msg, false, false);
         }
       },
-      { noAck: true }
+      { noAck: false }
     );
-    console.log(`[AMQP] Subscribed to fanout exchange: ${exchangeName} (noAck=true, realtime)`);
+    console.log(`[AMQP] Subscribed to fanout exchange: ${exchangeName} (manual ack)`);
   }
 
   async subscribeFanoutReliable(
@@ -195,6 +199,10 @@ export class AmqpClient {
     // Declare queue
     await ch.assertQueue(queueName, { durable: true });
 
+    // Declare DLQ for this queue
+    const dlq = `${queueName}.dlq`;
+    await ch.assertQueue(dlq, { durable: true });
+
     // Bind queue to exchange with each routing key
     for (const key of routingKeys) {
       await ch.bindQueue(queueName, this.exchangeName, key);
@@ -209,14 +217,28 @@ export class AmqpClient {
         try {
           const content = msg.content.toString();
           const envelope = JSON.parse(content) as EventEnvelope;
-          
           await onMessage(envelope);
           ch.ack(msg);
         } catch (err: any) {
-          console.error(`[AMQP] Error processing message on queue ${queueName}:`, err.message);
-          // nack and requeue = false for invalid messages to prevent infinite loops, but we can retry on connection/DB errors
-          // To be simple and clean: ack if it's a JSON parse error, otherwise nack without requeue to not clog the queue.
-          ch.nack(msg, false, false);
+          const isParseError = err instanceof SyntaxError;
+          if (isParseError) {
+            console.error(`[AMQP] Invalid message on ${queueName}:`, err.message);
+            ch.nack(msg, false, false);
+            return;
+          }
+          const retries = (msg.properties.headers?.['x-retry-count'] as number) || 0;
+          if (retries < 3) {
+            console.warn(`[AMQP] Retry ${retries + 1}/3 on ${queueName}: ${err.message}`);
+            ch.publish(this.exchangeName, msg.fields.routingKey, msg.content, {
+              persistent: true,
+              headers: { ...msg.properties.headers, 'x-retry-count': retries + 1 },
+            });
+            ch.ack(msg);
+          } else {
+            console.error(`[AMQP] DLQ after 3 retries on ${queueName}: ${err.message}`);
+            ch.publish(dlq, msg.fields.routingKey, msg.content, { persistent: true });
+            ch.ack(msg);
+          }
         }
       },
       { noAck: false }
