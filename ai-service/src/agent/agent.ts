@@ -26,7 +26,7 @@ function buildToolsDescription(toolDefs: ToolDef[]): string {
     .join('\n');
 }
 
-function buildSystemPrompt(
+export function buildSystemPrompt(
   contextDocuments: RetrievedDocument[],
   userContext?: UserContext,
   availableTools: ToolDef[] = patronToolDefs,
@@ -87,6 +87,11 @@ KHI CAN GOI TOOL, tra ve dung format JSON:
 KHONG BAO GIO tra ve JSON ma khong co key "tool". Neu khong goi tool, tra loi bang tieng Viet binh thuong.
 
 Khi da co du thong tin, tong hop va tra loi nguoi dung.
+
+FORMAT CARD SACH (QUAN TRONG - phai dung format de frontend hien thi dep):
+Khi hien thi thong tin sach, PHAI dung dung format sau:
+:::book_card {"title": "Ten sach", "author": "Tac gia", "isbn": "ISBN", "categories": "The loai", "description": "Mo ta", "cover_url": "URL anh", "source": "database hoac google_books"}
+KHONG BAO GIO hien thi thong tin sach bang text thuan. Luon dung format :::book_card o tren.
 ${userContextPrompt}
 ${kbContext}`;
 }

@@ -1,6 +1,4 @@
-import { notificationClient } from '../clients/serviceClients';
-import { config } from '../config';
-import { getServiceToken } from '../../../shared';
+import { borrowClient, notificationClient } from '../clients/serviceClients';
 
 export async function expireWaitlistNotifications(
   cfg: Record<string, any>,
@@ -9,21 +7,7 @@ export async function expireWaitlistNotifications(
   const expiryHours = cfg.expiryHours || 24;
 
   try {
-    const response = await fetch(
-      `${config.services.borrowService}/borrow/internal/waitlist/expired?hours=${expiryHours}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${getServiceToken('automation-service', config.jwtSecret)}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    if (!response.ok) {
-      return { expired: 0, advanced: 0, message: 'Failed to fetch expired entries' };
-    }
-
-    const expired: Array<{ id: string; book_id: string; patron_id: string; status: string }> = await response.json() as any;
+    const expired = await borrowClient.getExpiredWaitlist(expiryHours);
 
     if (!Array.isArray(expired) || expired.length === 0) {
       return { expired: 0, advanced: 0, message: 'No expired notifications' };
@@ -33,20 +17,9 @@ export async function expireWaitlistNotifications(
 
     for (const entry of expired) {
       try {
-        const advanceRes = await fetch(
-          `${config.services.borrowService}/borrow/internal/waitlist/advance/${entry.id}`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${getServiceToken('automation-service', config.jwtSecret)}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-        if (!advanceRes.ok) continue;
+        const advanceData = await borrowClient.advanceWaitlist(entry.id);
 
-        const advanceData: any = await advanceRes.json();
-        if (advanceData.next) {
+        if (advanceData?.next) {
           await notificationClient.createNotification({
             userId: advanceData.next.patron_id,
             type: 'book_available',
@@ -56,21 +29,15 @@ export async function expireWaitlistNotifications(
           });
 
           try {
-            await fetch(
-              `${config.services.borrowService}/borrow/internal/waitlist/batch-notify`,
-              {
-                method: 'PATCH',
-                headers: {
-                  'Authorization': `Bearer ${getServiceToken('automation-service', config.jwtSecret)}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ ids: [advanceData.next.id] }),
-              }
-            );
-          } catch {}
+            await borrowClient.batchNotifyWaitlist([advanceData.next.id]);
+          } catch (err) {
+            console.warn('[expireWaitlistNotifications] Failed to advance waitlist:', (err as Error)?.message || err);
+          }
           advanced++;
         }
-      } catch {}
+      } catch (err) {
+        console.warn('[expireWaitlistNotifications] Advance failed:', (err as Error)?.message || err);
+      }
     }
 
     return { expired: expired.length, advanced };

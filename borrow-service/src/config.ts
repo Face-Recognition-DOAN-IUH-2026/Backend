@@ -18,6 +18,11 @@ if (!postgresUrl) {
   throw new Error('[Config] POSTGRES_URL must be set');
 }
 
+function requireEnv(value: string | undefined, name: string): string {
+  if (!value) throw new Error(`[Config] ${name} must be set`);
+  return value;
+}
+
 export const config = {
   serviceName: process.env.SERVICE_NAME || 'borrow-service',
   port: parseInt(process.env.PORT || '8000', 10),
@@ -26,8 +31,8 @@ export const config = {
   userServiceUrl: process.env.USER_SERVICE_URL || 'http://user-service:3001',
   accessServiceUrl: process.env.ACCESS_SERVICE_URL || 'http://access-service:3003',
   notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:3006',
-  serviceJwtSecret: process.env.SERVICE_JWT_SECRET || '',
-  jwtSecret: process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || '',
+  serviceJwtSecret: requireEnv(process.env.SERVICE_JWT_SECRET, 'SERVICE_JWT_SECRET'),
+  jwtSecret: requireEnv(process.env.JWT_ACCESS_SECRET, 'JWT_ACCESS_SECRET'),
   jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
   maxEntryHours: parseInt(process.env.PATRON_ACCESS_EXPIRY_HOURS || '24', 10),

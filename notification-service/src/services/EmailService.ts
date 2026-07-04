@@ -16,6 +16,12 @@ export class EmailService {
     });
   }
 
+  async verifyConnection(): Promise<void> {
+    const ok = await this.transporter.verify();
+    if (!ok) throw new Error('SMTP connection verification failed');
+    console.log('[EmailService] SMTP connection verified');
+  }
+
   async sendPasswordResetCode(toEmail: string, code: string): Promise<void> {
     console.log(`[EmailService] Sending password reset to: ${toEmail}`);
     const mailOptions = {
@@ -66,27 +72,28 @@ Neu ban khong yeu cau dat lai mat khau, vui long bo qua email nay.
     const mailOptions = {
       from: config.smtp.from,
       to: toEmail,
-      subject: `[ThuVienIUH] Sach qua han tra - "${bookTitle}"`,
+      subject: `[ThuVienIUH] Nhắc trả sách - "${bookTitle}"`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
-          <div style="background: linear-gradient(135deg, #e53935 0%, #c62828 100%); padding: 24px; text-align: center; border-radius: 12px 12px 0 0;">
-            <h1 style="color: white; margin: 0; font-size: 24px;">Thu Vien IUH - Canh bao qua han</h1>
+          <div style="background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%); padding: 24px; text-align: center; border-radius: 12px 12px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">Thư Viện IUH - Nhắc trả sách</h1>
           </div>
           <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px; border: 1px solid #e0e0e0;">
-            <h2 style="color: #e53935; margin: 0 0 16px; font-size: 20px;">Sach cua ban da qua han!</h2>
+            <h2 style="color: #1976d2; margin: 0 0 16px; font-size: 20px;">Sách của bạn đã quá hạn trả</h2>
             <p style="color: #333; font-size: 16px; line-height: 1.6;">
-              Cuon sach <strong>"${bookTitle}"</strong> da qua han tra <strong>${daysOverdue} ngay</strong>.
+              Chào bạn,<br/><br/>
+              Cuốn sách <strong>"${bookTitle}"</strong> đã quá hạn trả <strong>${daysOverdue} ngày</strong>.
             </p>
             <p style="color: #666; font-size: 14px; line-height: 1.6;">
-              Vui long tra sach ngay de tranh phi phat. Moi ngay qua han, ban se bi phat them phi phat theo quy dinh.
+              Vui lòng trả sách sớm nhất có thể để tránh phí phát thêm. Bạn có thể trả sách tại quầy thư viện hoặc qua máy trả sách tự động.
             </p>
-            <div style="background: #ffebee; border: 1px solid #e53935; border-radius: 8px; padding: 16px; margin: 24px 0;">
-              <p style="color: #c62828; font-size: 13px; margin: 0;">
-                <strong>Luu y:</strong> Phi phat duoc tinh tu ngay het han tra sach. Vui long tra sach som nhat co the.
+            <div style="background: #e3f2fd; border: 1px solid #1976d2; border-radius: 8px; padding: 16px; margin: 24px 0;">
+              <p style="color: #0d47a1; font-size: 13px; margin: 0;">
+                <strong>Lưu ý:</strong> Nếu bạn cần hỗ trợ, vui lòng liên hệ thư viện qua email hoặc số điện thoại trên thẻ thành viên.
               </p>
             </div>
             <p style="color: #999; font-size: 12px; text-align: center; margin: 24px 0 0;">
-              Email nay duoc gui tu He thong Thu Vien IUH. Vui long khong tra loi email nay.
+              Email này được gửi từ Hệ Thống Thư Viện IUH. Vui lòng không trả lời email này.
             </p>
           </div>
         </div>
@@ -100,26 +107,40 @@ Neu ban khong yeu cau dat lai mat khau, vui long bo qua email nay.
     const mailOptions = {
       from: config.smtp.from,
       to: toEmail,
-      subject: `[ThuVienIUH] Phat phat tra tre - "${bookTitle}"`,
+      subject: `[ThuVienIUH] Thông tin phí quá hạn - "${bookTitle}"`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
           <div style="background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%); padding: 24px; text-align: center; border-radius: 12px 12px 0 0;">
-            <h1 style="color: white; margin: 0; font-size: 24px;">Thu Vien IUH - Thong bao phat</h1>
+            <h1 style="color: white; margin: 0; font-size: 24px;">Thư Viện IUH - Hướng dẫn xử lý phí quá hạn</h1>
           </div>
           <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px; border: 1px solid #e0e0e0;">
-            <h2 style="color: #f57c00; margin: 0 0 16px; font-size: 20px;">Ban co phat phat moi!</h2>
+            <h2 style="color: #f57c00; margin: 0 0 16px; font-size: 20px;">Tài khoản của bạn có phí quá hạn</h2>
             <p style="color: #333; font-size: 16px; line-height: 1.6;">
-              Cuon sach <strong>"${bookTitle}"</strong> da duoc tra tre <strong>${daysOverdue} ngay</strong>.
+              Chào bạn,<br/><br/>
+              Cuốn sách <strong>"${bookTitle}"</strong> đã quá hạn trả <strong>${daysOverdue} ngày</strong>.
             </p>
             <div style="background: #fff3e0; border: 1px solid #ff9800; border-radius: 8px; padding: 24px; text-align: center; margin: 24px 0;">
-              <p style="color: #666; font-size: 14px; margin: 0 0 8px;">Tong tien phat</p>
-              <p style="color: #f57c00; font-size: 32px; font-weight: bold; margin: 0;">${fineAmount.toLocaleString('vi-VN')}d</p>
+              <p style="color: #666; font-size: 14px; margin: 0 0 8px;">Khoản phí quá hạn hiện tại</p>
+              <p style="color: #f57c00; font-size: 32px; font-weight: bold; margin: 0;">${fineAmount.toLocaleString('vi-VN')}đ</p>
             </div>
-            <p style="color: #666; font-size: 14px; line-height: 1.6;">
-              Vui long thanh toan phi phat tai quay thu vien hoac lien he nhan vien de duoc huong dan.
+            <p style="color: #333; font-size: 15px; line-height: 1.6; font-weight: 600;">
+              Đừng lo bạn! Chỉ cần thanh toán tại quầy thư viện để mở khóa thẻ và tiếp tục sử dụng thư viện.
             </p>
+            <div style="background: #f5f5f5; border-radius: 8px; padding: 16px; margin: 20px 0;">
+              <p style="color: #333; font-size: 14px; margin: 0 0 8px;"><strong>Hướng dẫn thanh toán:</strong></p>
+              <p style="color: #666; font-size: 13px; line-height: 1.8; margin: 0;">
+                1. Đến quầy thư viện (Tầng 1, Khu A)<br/>
+                2. Quét mã QR tại quầy hoặc trình thanh toán cho nhân viên<br/>
+                3. Sau khi thanh toán, thẻ của bạn sẽ được mở khóa tự động
+              </p>
+            </div>
+            <div style="background: #e3f2fd; border: 1px solid #1976d2; border-radius: 8px; padding: 16px; margin: 24px 0;">
+              <p style="color: #0d47a1; font-size: 13px; margin: 0;">
+                <strong>Lưu ý:</strong> Sau khi thanh toán, vui lòng báo nhân viên để được mở khóa thẻ. Nếu bạn cần hỗ trợ, vui lòng liên hệ thư viện qua email hoặc số điện thoại trên thẻ thành viên.
+              </p>
+            </div>
             <p style="color: #999; font-size: 12px; text-align: center; margin: 24px 0 0;">
-              Email nay duoc gui tu He thong Thu Vien IUH. Vui long khong tra loi email nay.
+              Email này được gửi từ Hệ Thống Thư Viện IUH. Vui lòng không trả lời email này.
             </p>
           </div>
         </div>

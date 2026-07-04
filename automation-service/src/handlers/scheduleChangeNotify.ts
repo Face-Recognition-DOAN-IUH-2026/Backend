@@ -19,7 +19,9 @@ export async function scheduleChangeNotify(
   try {
     const user = await userClient.getUser(staffId);
     if (user?.fullName) staffName = user.fullName;
-  } catch {}
+  } catch (err) {
+    console.warn('[scheduleChangeNotify] Failed to fetch user:', (err as Error)?.message || err);
+  }
 
   const shiftDisplayName = shiftName || newShift || 'Chưa xác định';
 

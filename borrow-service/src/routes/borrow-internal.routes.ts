@@ -8,7 +8,7 @@ import { WaitlistRepository } from '../repositories/WaitlistRepository';
 import { createInternalAuth } from '../../shared';
 import { publishEvent } from '../utils/eventPublisher';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
-import { In } from 'typeorm';
+import { In, IsNull } from 'typeorm';
 import { calculateOverdueFine } from '../utils/fineCalculator';
 import { lookupPatronByStudentCode, lookupPatronById, PatronSummary } from '../clients/UserServiceClient';
 
@@ -140,7 +140,7 @@ router.get('/patron/:patronId', async (req: Request, res: Response) => {
   const { patronId } = req.params;
   try {
     const activeBorrows = await records().find({
-      where: { patronId, status: 'borrowed', returnAt: undefined as any },
+      where: { patronId, status: 'borrowed', returnAt: IsNull() },
       relations: { book: true },
       order: { dueAt: 'ASC' },
     });

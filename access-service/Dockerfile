@@ -12,7 +12,7 @@ COPY shared /app/shared
 RUN ln -s /app/shared ./shared
 
 RUN npm run build
-RUN if [ ! -e dist/shared ]; then ln -s /app/access-service/dist/access-service/shared dist/shared; fi
+RUN rm -rf dist/shared && ln -s /app/access-service/dist/access-service/shared dist/shared
 
 EXPOSE 3003
 

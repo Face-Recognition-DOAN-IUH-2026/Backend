@@ -40,8 +40,8 @@ export async function checkOverdueBorrows(config: Record<string, any>): Promise<
     notifications.push({
       userId: patronId,
       type: 'overdue_reminder',
-      title: 'Sách quá hạn',
-      body: `${patronName}, cuốn "${bookTitle}" đã quá hạn ${daysOverdue} ngày. Vui lòng trả sách sớm để tránh phí phạt.`,
+      title: 'Nhắc trả sách',
+      body: `${patronName}, cuốn "${bookTitle}" đã quá hạn ${daysOverdue} ngày. Vui lòng trả sách sớm để tránh phí thêm. Bạn có thể trả tại quầy thư viện hoặc máy trả sách tự động.`,
       data: {
         bookId: record.book_id || record.bookId,
         borrowRecordId: record.id,

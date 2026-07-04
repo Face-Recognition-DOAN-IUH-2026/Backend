@@ -116,6 +116,27 @@ describe('Borrow Routes', () => {
     });
   });
 
+  describe('GET /borrow/config', () => {
+    it('should return borrow configuration without auth', async () => {
+      const response = await request(app).get('/borrow/config');
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('max_borrow_books');
+      expect(response.body).toHaveProperty('max_borrow_books_per_slip');
+      expect(response.body).toHaveProperty('max_borrow_days');
+      expect(typeof response.body.max_borrow_books).toBe('number');
+      expect(typeof response.body.max_borrow_books_per_slip).toBe('number');
+      expect(typeof response.body.max_borrow_days).toBe('number');
+    });
+
+    it('should return default values', async () => {
+      const response = await request(app).get('/borrow/config');
+      expect(response.status).toBe(200);
+      expect(response.body.max_borrow_books).toBe(3);
+      expect(response.body.max_borrow_books_per_slip).toBe(5);
+      expect(response.body.max_borrow_days).toBe(14);
+    });
+  });
+
   describe('Authentication', () => {
     it('should return 401 when no token provided', async () => {
       const response = await request(app).get('/borrow/history');

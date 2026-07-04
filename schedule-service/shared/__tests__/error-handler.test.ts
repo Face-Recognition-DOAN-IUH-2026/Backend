@@ -1,6 +1,6 @@
-import { setupProcessErrorHandlers } from '../error-handler';
+import { setupProcessErrorHandlers } from '../../../shared/error-handler';
 
-jest.mock('../jira-client', () => ({
+jest.mock('../../../shared/jira-client', () => ({
   createJiraBug: jest.fn().mockResolvedValue({ key: 'TEST-1' }),
 }));
 

@@ -1,6 +1,11 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+function requireEnv(value: string | undefined, name: string): string {
+  if (!value) throw new Error(`[Config] ${name} must be set`);
+  return value;
+}
+
 // Validate required secrets at startup
 const jwtSecret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
 
@@ -14,7 +19,7 @@ export const config = {
   jwtSecret,
   jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
-  serviceJwtSecret: process.env.SERVICE_JWT_SECRET || '',
+  serviceJwtSecret: requireEnv(process.env.SERVICE_JWT_SECRET, 'SERVICE_JWT_SECRET'),
   redisUrl: process.env.REDIS_URL || 'redis://redis:6379/0',
   db: {
     host: process.env.DB_HOST || 'localhost',
@@ -28,8 +33,8 @@ export const config = {
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '587', 10),
     secure: process.env.SMTP_SECURE === 'true',
-    user: process.env.SMTP_USER || '',
-    pass: process.env.SMTP_PASS || '',
+    user: requireEnv(process.env.SMTP_USER, 'SMTP_USER'),
+    pass: requireEnv(process.env.SMTP_PASS, 'SMTP_PASS'),
     from: process.env.SMTP_FROM || 'Thu Vien IUH <noreply@iuh.edu.vn>',
   },
 };

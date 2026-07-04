@@ -105,6 +105,9 @@ async function buildFromUserService(patronId: string): Promise<PatronAccessStatu
 }
 
 export async function getPatronAccessStatus(patronId: string): Promise<PatronAccessStatus> {
+  if (!circuit.canRequest()) {
+    return buildFromUserService(patronId);
+  }
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const res = await fetch(`${config.accessServiceUrl}/internal/access/patrons/${patronId}/status`, {
@@ -125,6 +128,9 @@ export async function getPatronAccessStatus(patronId: string): Promise<PatronAcc
 
       if (res.status >= 500) {
         circuit.recordFailure();
+      } else {
+        circuit.recordSuccess();
+        return buildFromUserService(patronId);
       }
 
       if (attempt < 3) {
@@ -144,6 +150,9 @@ export async function getPatronAccessStatus(patronId: string): Promise<PatronAcc
 }
 
 export async function getPatronRawAccessStatus(patronId: string): Promise<PatronAccessStatus> {
+  if (!circuit.canRequest()) {
+    return buildFromUserService(patronId);
+  }
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const res = await fetch(`${config.accessServiceUrl}/internal/access/patrons/${patronId}/status`, {
@@ -172,6 +181,9 @@ export async function getPatronRawAccessStatus(patronId: string): Promise<Patron
 
       if (res.status >= 500) {
         circuit.recordFailure();
+      } else {
+        circuit.recordSuccess();
+        return buildFromUserService(patronId);
       }
 
       if (attempt < 3) {

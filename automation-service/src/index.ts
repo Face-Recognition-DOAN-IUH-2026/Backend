@@ -7,7 +7,7 @@ import automationRoutes from './routes/automation.routes';
 import internalRoutes from './routes/internal.routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
-import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
+import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 import { cronScheduler } from './scheduler/CronScheduler';
 import { eventBus } from './events/EventBus';
 

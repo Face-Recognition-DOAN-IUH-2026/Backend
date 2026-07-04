@@ -11,6 +11,6 @@ export const AppDataSource = new DataSource({
   username: config.db.user,
   password: config.db.password,
   entities: [Notification],
-  synchronize: true,
+  synchronize: process.env.NODE_ENV === 'development',
   logging: process.env.TYPEORM_LOGGING === 'true',
 });

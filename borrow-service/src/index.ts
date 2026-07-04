@@ -8,7 +8,7 @@ import { AppDataSource } from './data-source';
 import borrowRoutes from './routes/borrow.routes';
 import borrowInternalRoutes from './routes/borrow-internal.routes';
 import libraryRoutes from './routes/library.routes';
-import { errorHandler, setupProcessErrorHandlers } from '../shared/error-handler';
+import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 import { amqpClient } from './clients/AmqpClient';
 
 const app = express();
