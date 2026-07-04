@@ -20,7 +20,7 @@ def _get_stream_service():
 
 
 @router.get("/snapshot/{camera_id}")
-async def camera_snapshot(camera_id: str):
+async def camera_snapshot(camera_id: str, _=Depends(get_current_user)):
     ss = _get_stream_service()
     jpeg = ss.get_last_frame_jpeg(camera_id)
     if jpeg is None:

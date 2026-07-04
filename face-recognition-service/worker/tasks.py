@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 import urllib.parse
 import uuid as _uuid
 
@@ -34,6 +36,44 @@ _milvus: MilvusClient | None = None
 _storage: MinioStorage | None = None
 
 # =============================================================================
+# PER-CAMERA CIRCUIT BREAKER — prevents one failing camera from blocking all
+# =============================================================================
+class CameraCircuitBreaker:
+    def __init__(self, camera_id: str, threshold: int = 3, cooldown: float = 30.0):
+        self.camera_id = camera_id
+        self.threshold = threshold
+        self.cooldown = cooldown
+        self.failures = 0
+        self.last_failure_time: float = 0
+        self._lock = threading.Lock()
+
+    def can_execute(self) -> bool:
+        with self._lock:
+            if self.failures < self.threshold:
+                return True
+            if time.time() - self.last_failure_time > self.cooldown:
+                self.failures = 0
+                return True
+            return False
+
+    def record_failure(self):
+        with self._lock:
+            self.failures += 1
+            self.last_failure_time = time.time()
+            logger.warning("Circuit breaker for %s opened (failures=%d)", self.camera_id, self.failures)
+
+    def record_success(self):
+        with self._lock:
+            self.failures = 0
+
+_circuit_breakers: dict[str, CameraCircuitBreaker] = {}
+
+def _breaker_for(camera_id: str) -> CameraCircuitBreaker:
+    if camera_id not in _circuit_breakers:
+        _circuit_breakers[camera_id] = CameraCircuitBreaker(camera_id)
+    return _circuit_breakers[camera_id]
+
+# =============================================================================
 # USER-SERVICE API CLIENT - HTTP calls instead of direct DB queries
 # =============================================================================
 _USER_SERVICE_URL = settings.user_service_url
@@ -48,16 +88,22 @@ def _get_service_auth_headers() -> dict:
         secret=settings.jwt_access_secret,
     )
 
-def _call_user_service(method: str, path: str, **kwargs) -> dict | None:
+def _call_user_service(method: str, path: str, camera_id: str = "unknown", **kwargs) -> dict | None:
+    breaker = _breaker_for(camera_id)
+    if not breaker.can_execute():
+        logger.warning("Circuit breaker OPEN for camera %s, failing fast on user-service %s %s", camera_id, method, path)
+        return None
     try:
         headers = kwargs.pop("headers", {})
         headers.update(_get_service_auth_headers())
         with httpx.Client(base_url=_USER_SERVICE_URL, timeout=5.0) as client:
             resp = client.request(method, path, headers=headers, **kwargs)
             if resp.status_code == 200:
+                breaker.record_success()
                 return resp.json()
         return None
     except Exception as exc:
+        breaker.record_failure()
         logger.warning("user-service call failed %s %s: %s", method, path, exc)
         return None
 
@@ -85,17 +131,23 @@ def _get_user_via_api(user_id: str) -> dict | None:
     return None
 
 
-def _call_access_service(method: str, path: str, **kwargs) -> dict | None:
+def _call_access_service(method: str, path: str, camera_id: str = "unknown", **kwargs) -> dict | None:
+    breaker = _breaker_for(f"access-{camera_id}")
+    if not breaker.can_execute():
+        logger.warning("Circuit breaker OPEN for access-service camera %s, failing fast on %s %s", camera_id, method, path)
+        return None
     try:
         headers = kwargs.pop("headers", {})
         headers.update(_get_service_auth_headers())
         with httpx.Client(base_url=_ACCESS_SERVICE_URL, timeout=5.0) as client:
             resp = client.request(method, path, headers=headers, **kwargs)
             if resp.status_code < 300:
+                breaker.record_success()
                 return resp.json()
             logger.warning("access-service returned %s for %s %s", resp.status_code, method, path)
         return None
     except Exception as exc:
+        breaker.record_failure()
         logger.warning("access-service call failed %s %s: %s", method, path, exc)
         return None
 
@@ -1284,16 +1336,6 @@ def _process_single_face(
 @celery_app.task(bind=True, name="process_camera_frame", max_retries=1, default_retry_delay=5)
 def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
     logger.info("Processing camera frame from %s", camera_id)
-    # Decrement backpressure counter (Phase 3)
-    try:
-        import redis as _redis
-        r = _redis.Redis.from_url(settings.redis_url)
-        try:
-            r.decr(f"camera_queue:{camera_id}")
-        finally:
-            r.close()
-    except Exception:
-        pass
     try:
         # Phase 4: Camera frames are Redis-only (no MinIO fallback)
         import time
@@ -1373,6 +1415,17 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
         result = {"camera_id": camera_id, "status": "error", "error": str(exc)}
         _publish_camera_event(result)
         return result
+    finally:
+        # Belt-and-suspenders: DECR always runs, even on exception
+        try:
+            import redis as _redis
+            r = _redis.Redis.from_url(settings.redis_url)
+            try:
+                r.decr(f"camera_queue:{camera_id}")
+            finally:
+                r.close()
+        except Exception:
+            pass
 
 
 @celery_app.task(bind=True, name="verify_face", max_retries=2, default_retry_delay=5)
@@ -1388,6 +1441,7 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
         if not all_embeddings:
             _publish_face_result(self.request.id, "face_recognition", "FAILURE", {"error": "Face not enrolled"})
             _delete_temp_frame(object_key)
+            _call_access_service("POST", f"/internal/access/patrons/{patron_id}/revert-pending", camera_id="kiosk")
             return {"status": "error", "error": "Face not enrolled"}
         score = 0.0
         for row in all_embeddings:
@@ -1400,11 +1454,13 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
         if score < settings.face_match_threshold:
             _publish_face_result(self.request.id, "face_recognition", "FAILURE", {"error": "Face does not match", "score": score})
             _delete_temp_frame(object_key)
+            _call_access_service("POST", f"/internal/access/patrons/{patron_id}/revert-pending", camera_id="kiosk")
             return {"status": "error", "error": "Face does not match", "score": score}
         liveness = run_liveness_analysis(img)
         if not liveness.get("is_live", False):
             _publish_face_result(self.request.id, "face_recognition", "FAILURE", {"error": "Liveness check failed", "is_live": False})
             _delete_temp_frame(object_key)
+            _call_access_service("POST", f"/internal/access/patrons/{patron_id}/revert-pending", camera_id="kiosk")
             return {"status": "error", "error": "Liveness check failed", "is_live": False}
 
         # Lookup patron info through user-service; kiosk still owns its access decision.
@@ -1444,6 +1500,7 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
             },
         )
         _delete_temp_frame(object_key)
+        _call_access_service("POST", f"/internal/access/patrons/{patron_id}/confirm-entry", camera_id="kiosk")
         return {
             "status": "success",
             "patron_id": patron_id,
@@ -1457,5 +1514,6 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
     except Exception as exc:
         _publish_face_result(self.request.id, "face_recognition", "FAILURE", {"error": str(exc)})
         _delete_temp_frame(object_key)
+        _call_access_service("POST", f"/internal/access/patrons/{patron_id}/revert-pending", camera_id="kiosk")
         logger.exception("Verify face failed for %s", patron_id)
         return {"status": "error", "error": str(exc)}

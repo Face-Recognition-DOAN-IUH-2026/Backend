@@ -285,8 +285,8 @@ export class AccessService {
     };
   }
 
-  async setStatus(patronId: string, currentStatus: 'inside' | 'outside', cameraId?: string | null) {
-    if (!['inside', 'outside'].includes(currentStatus)) {
+  async setStatus(patronId: string, currentStatus: 'inside' | 'outside' | 'pending', cameraId?: string | null) {
+    if (!['inside', 'outside', 'pending'].includes(currentStatus)) {
       throw new HttpError(400, 'Invalid current_status');
     }
     const accessType: AccessType = currentStatus === 'inside' ? 'entry' : 'exit';
@@ -307,11 +307,40 @@ export class AccessService {
 
   async recordKioskPresence(patronId: string, studentCode: string, deviceId: string): Promise<any> {
     const state = await this.getStatus(patronId);
-    if (state.currentStatus === 'inside') {
-      return { ...state, message: 'Độc giả đã có mặt trong thư viện', skipped: true };
+    if (state.currentStatus === 'inside' || state.currentStatus === 'pending') {
+      return { ...state, message: 'Độc giả đã có mặt trong thư viện hoặc đang xác thực', skipped: true };
     }
-    await this.setStatus(patronId, 'inside', 'kiosk');
-    return { ...await this.getStatus(patronId), message: 'Đã ghi nhận hiện diện qua Kiosk', skipped: false };
+    await this.setStatus(patronId, 'pending', 'kiosk');
+    return { ...await this.getStatus(patronId), message: 'Đang chờ xác thực', skipped: false };
+  }
+
+  async confirmEntry(patronId: string): Promise<any> {
+    const state = await this.getStatus(patronId);
+    if (state.currentStatus !== 'pending') {
+      return { ...state, message: 'Trạng thái không phải pending, bỏ qua', skipped: true };
+    }
+    await this.upsertState(patronId, 'entry', 'face-verify', new Date());
+    return { ...await this.getStatus(patronId), message: 'Xác nhận vào thư viện thành công' };
+  }
+
+  async revertPending(patronId: string): Promise<any> {
+    const state = await this.getStatus(patronId);
+    if (state.currentStatus !== 'pending') {
+      return { ...state, message: 'Trạng thái không phải pending, bỏ qua', skipped: true };
+    }
+    await this.upsertState(patronId, 'exit', 'verify-failed', new Date());
+    return { ...await this.getStatus(patronId), message: 'Hoàn tác trạng thái pending thành công' };
+  }
+
+  async cleanupExpiredPending(expiredBefore: Date): Promise<{ cleaned: number }> {
+    const repo = stateRepo();
+    const pending = await repo.find({ where: { currentStatus: 'pending' as any } });
+    const expired = pending.filter(s => s.updatedAt < expiredBefore);
+    if (expired.length === 0) return { cleaned: 0 };
+    for (const state of expired) {
+      await this.upsertState(state.patronId, 'exit', 'timeout', new Date());
+    }
+    return { cleaned: expired.length };
   }
 
   private async generateEventCode(): Promise<string> {

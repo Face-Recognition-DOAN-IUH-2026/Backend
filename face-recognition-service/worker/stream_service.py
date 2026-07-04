@@ -157,7 +157,23 @@ class CameraStream:
 
     def reconnect(self) -> bool:
         logger.info("Camera %s manual reconnect triggered", self.camera_id)
-        return self._running
+        if not self._running:
+            logger.warning("Camera %s reconnect called but stream not running", self.camera_id)
+            return False
+
+        # Signal _run loop to stop
+        self._running = False
+
+        # Wait for thread to finish (with timeout)
+        if self._thread:
+            self._thread.join(timeout=5)
+
+        # Restart
+        self._running = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        logger.info("Camera %s stream restarted", self.camera_id)
+        return True
 
     def get_last_frame_jpeg(self) -> Optional[bytes]:
         with self._last_frame_lock:

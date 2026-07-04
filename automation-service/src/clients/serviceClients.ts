@@ -177,6 +177,13 @@ export const accessClient = {
       body: { patron_id: patronId },
     });
   },
+
+  async cleanupExpiredPending(seconds: number = 30) {
+    return request(`${config.services.accessService}/internal/access/cleanup-expired-pending`, {
+      method: 'POST',
+      body: { seconds },
+    });
+  },
 };
 
 export const userClient = {
