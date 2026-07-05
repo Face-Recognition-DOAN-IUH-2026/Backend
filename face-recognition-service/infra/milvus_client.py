@@ -31,14 +31,31 @@ class MilvusClient:
         self._get_or_create_collection()
         self._ensure_index()
 
+    def _reload_collection(self) -> None:
+        try:
+            self.client.release_collection(self.collection_name)
+        except Exception:
+            pass
+        try:
+            self.client.load_collection(self.collection_name, timeout=30)
+        except Exception as exc:
+            logger.warning("Milvus load_collection timed out: %s", exc)
+
     def _with_retry(self, fn, max_retries=4, base_delay=1.0):
         for attempt in range(max_retries):
             try:
                 return fn()
             except MilvusException as e:
-                if "Timestamp lag too large" in str(e) and attempt < max_retries - 1:
+                err_str = str(e)
+                if "Timestamp lag too large" in err_str and attempt < max_retries - 1:
                     delay = base_delay * (2 ** attempt)
                     logger.warning("Milvus timestamp lag, retrying in %.1fs (attempt %d/%d)", delay, attempt + 1, max_retries)
+                    time.sleep(delay)
+                    continue
+                if "channel not available" in err_str and attempt < max_retries - 1:
+                    logger.warning("Milvus channel not available, reloading collection (attempt %d/%d)", attempt + 1, max_retries)
+                    self._reload_collection()
+                    delay = base_delay * (2 ** attempt)
                     time.sleep(delay)
                     continue
                 raise
@@ -120,6 +137,23 @@ class MilvusClient:
             return None
         return rows[0].get("embedding")
 
+    def get_embeddings_by_user_id_eventually(self, user_id: str) -> list[dict[str, Any]]:
+        def _query():
+            return self.client.query(
+                self.collection_name,
+                filter=f'user_id == "{user_id}"',
+                output_fields=["id", "angle", "embedding"],
+                consistency="Eventually",
+            )
+        results = self._with_retry(_query)
+        return results or []
+
+    def get_embedding_by_user_id_eventually(self, user_id: str) -> list[float] | None:
+        rows = self.get_embeddings_by_user_id_eventually(user_id)
+        if not rows:
+            return None
+        return rows[0].get("embedding")
+
     def search(self, *, embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
         def _search():
             results = self.client.search(
@@ -129,6 +163,29 @@ class MilvusClient:
                 search_params={"metric_type": self.metric_type, "params": {"nprobe": 16}},
                 limit=top_k,
                 output_fields=["user_id", "angle"],
+            )
+            if not results:
+                return []
+            hits = []
+            for r in results[0]:
+                hits.append({
+                    "user_id": r["entity"]["user_id"],
+                    "angle": r["entity"].get("angle", ""),
+                    "score": float(r["distance"]),
+                })
+            return hits
+        return self._with_retry(_search)
+
+    def searchEventually(self, *, embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
+        def _search():
+            results = self.client.search(
+                collection_name=self.collection_name,
+                data=[embedding],
+                anns_field="embedding",
+                search_params={"metric_type": self.metric_type, "params": {"nprobe": 16}},
+                limit=top_k,
+                output_fields=["user_id", "angle"],
+                consistency="Eventually",
             )
             if not results:
                 return []
