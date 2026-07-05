@@ -313,7 +313,7 @@ async def process_image_sync(
             # Combined identify + liveness pipeline
             embedding = extract_embedding_placeholder(img)
             milvus = _get_milvus()
-            matches = milvus.search(embedding=embedding, top_k=5)
+            matches = milvus.searchEventually(embedding=embedding, top_k=5)
             
             # Enrich matches with user info
             enriched_matches = []
@@ -344,7 +344,7 @@ async def process_image_sync(
         elif request.process_type == "verify":
             embedding = extract_embedding_placeholder(img)
             milvus = _get_milvus()
-            enrolled_embedding = milvus.get_embedding_by_user_id(request.target_user_id)
+            enrolled_embedding = milvus.get_embedding_by_user_id_eventually(request.target_user_id)
             
             if enrolled_embedding:
                 import numpy as np
@@ -357,7 +357,7 @@ async def process_image_sync(
         elif request.process_type == "identify":
             embedding = extract_embedding_placeholder(img)
             milvus = _get_milvus()
-            matches = milvus.search(embedding=embedding, top_k=5)
+            matches = milvus.searchEventually(embedding=embedding, top_k=5)
             
             enriched_matches = []
             for match in matches:
