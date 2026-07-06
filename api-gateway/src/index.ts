@@ -305,6 +305,13 @@ app.use('/api/ai', createProxyMiddleware({
   },
 }));
 
+// Patron search from user-service (must be before catch-all /api/patrons)
+app.use('/api/patrons/search', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,
+}));
+
 // Patron stats from user-service (must be before catch-all /api/patrons)
 app.use('/api/patrons/stats', createProxyMiddleware({
   target: config.services.userService,
@@ -355,15 +362,15 @@ app.use('/api/automation', createProxyMiddleware({
 app.use('/api/users/me', createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
-  pathRewrite: stripApiPrefixFromOriginalPath,  // /api/users/me → /users/me
+  pathRewrite: stripApiPrefixFromOriginalPath, // /api/users/me → /users/me
 }));
 app.use('/api/users/:id', createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
-  pathRewrite: stripApiPrefixFromOriginalPath,  // /api/users/:id → /users/:id
+  pathRewrite: stripApiPrefixFromOriginalPath, // /api/users/:id → /users/:id
 }));
 app.use('/api/users', createProxyMiddleware({
-  target: config.services.faceRecognitionApi,
+  target: config.services.userService,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,
 }));
