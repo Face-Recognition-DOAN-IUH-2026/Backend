@@ -4,12 +4,13 @@ WORKDIR /app/schedule-service
 
 COPY schedule-service/package*.json ./
 COPY schedule-service/tsconfig.json ./
-COPY schedule-service/node_modules ./node_modules
+RUN npm install
 
 COPY schedule-service/src ./src
 COPY schedule-service/migrations ./migrations
 COPY shared /app/shared
 RUN ln -s /app/shared ./shared
+RUN cd /app/shared && npm install
 
 RUN npm run build
 RUN rm -rf dist/shared && ln -s /app/schedule-service/dist/schedule-service/shared dist/shared

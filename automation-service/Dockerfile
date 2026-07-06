@@ -4,12 +4,13 @@ WORKDIR /app/automation-service
 
 COPY automation-service/package*.json ./
 COPY automation-service/tsconfig.json ./
-COPY automation-service/node_modules ./node_modules
+RUN npm install
 
 COPY automation-service/src ./src
 COPY automation-service/migrations ./migrations
 COPY shared /app/shared
 RUN ln -s /app/shared ./shared
+RUN cd /app/shared && npm install
 
 RUN npm run build
 RUN cp -r migrations dist/migrations

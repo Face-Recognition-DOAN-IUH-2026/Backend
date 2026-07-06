@@ -4,12 +4,13 @@ WORKDIR /app/notification-service
 
 COPY notification-service/package*.json ./
 COPY notification-service/tsconfig.json ./
-COPY notification-service/node_modules ./node_modules
+RUN npm install
 
 COPY notification-service/src ./src
 COPY notification-service/migrations ./migrations
 COPY shared /app/shared
 RUN ln -s /app/shared ./shared
+RUN cd /app/shared && npm install
 
 RUN npm run build
 RUN cp -r migrations dist/migrations

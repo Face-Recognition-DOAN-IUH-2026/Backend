@@ -4,12 +4,13 @@ WORKDIR /app/user-service
 
 COPY user-service/package*.json ./
 COPY user-service/tsconfig.json ./
-COPY user-service/node_modules ./node_modules
+RUN npm install
 
 COPY user-service/src ./src
 COPY user-service/migrations ./migrations
 COPY shared /app/shared
 RUN ln -s /app/shared ./shared
+RUN cd /app/shared && npm install
 
 RUN npm run build
 
