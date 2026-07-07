@@ -1,5 +1,7 @@
 import { checkActiveBorrows, borrowCircuit } from '../clients/BorrowServiceClient';
 
+jest.unmock('../clients/BorrowServiceClient');
+jest.unmock('../config');
 jest.mock('../../../shared/auth', () => ({
   getServiceToken: () => 'mock-service-token',
 }));

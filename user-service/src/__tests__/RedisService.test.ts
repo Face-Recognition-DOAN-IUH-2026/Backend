@@ -1,5 +1,6 @@
 import { RedisService } from '../services/RedisService';
 
+jest.unmock('../services/RedisService');
 jest.mock('ioredis', () => {
   const store: Record<string, string> = {};
   const MockRedis = jest.fn().mockImplementation(() => ({

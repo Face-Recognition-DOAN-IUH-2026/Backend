@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { FaceServiceClient } from '../clients/FaceServiceClient';
 
+jest.unmock('../clients/FaceServiceClient');
+jest.unmock('../config');
 jest.mock('axios');
 jest.mock('../../../shared/auth', () => ({
   getServiceToken: () => 'mock-service-token',

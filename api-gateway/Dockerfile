@@ -13,7 +13,7 @@ RUN cd /app/shared && npm install
 RUN npx tsc
 RUN if [ ! -e dist/shared ]; then ln -s /app/api-gateway/dist/api-gateway/shared dist/shared; fi
 
-RUN npm prune --production
+RUN npm prune --omit=dev
 
 EXPOSE 80
 
