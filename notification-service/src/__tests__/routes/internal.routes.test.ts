@@ -1,6 +1,6 @@
 import express from 'express';
 import request from 'supertest';
-import { generateServiceToken } from '../../../../shared';
+import { generateServiceToken } from '../../../../shared/auth';
 import internalRoutes from '../../routes/internal.routes';
 
 jest.mock('../../services/NotificationService');

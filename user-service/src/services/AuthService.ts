@@ -6,7 +6,9 @@ import { User, UserRole } from '../entities/User.entity';
 import { UserRepository } from '../repositories/UserRepository';
 import { RedisService } from './RedisService';
 import { config } from '../config';
-import { getServiceToken, CircuitBreaker, retryWithBackoff } from '../../../shared';
+import { getServiceToken } from '../../../shared/auth';
+import { CircuitBreaker } from '../../../shared/utils/circuitBreaker';
+import { retryWithBackoff } from '../../../shared/utils/retryWithBackoff';
 import {
   RegisterDto,
   LoginDto,

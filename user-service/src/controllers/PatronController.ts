@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
-import { AuthRequest, setAuthCookie } from '../../shared';
+import { setAuthCookie } from '../../shared/auth';
+import type { AuthRequest } from '../../shared/auth/types';
 import { patronService } from '../services';
 
 export class PatronController {

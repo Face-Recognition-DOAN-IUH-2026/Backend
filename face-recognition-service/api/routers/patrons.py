@@ -251,29 +251,7 @@ async def enroll_patron_face_batch(
         raise HTTPException(500, f"Failed to store temp frames: {exc}")
 
     task = batch_enroll_task.delay(str(patron_id), keys)
-
-    result = await run_in_threadpool(task.get, timeout=120)
-    if result.get("status") == "error":
-        error_results = result.get("results", [])
-        error_msgs = []
-        for r in error_results:
-            if r.get("status") == "error":
-                msg = r.get("error", "Unknown error")
-                if msg == "LIVENESS_FAILED":
-                    error_msgs.append(f"{r['angle']}: An khong phai khuon mat that")
-                elif msg == "NO_FACE_DETECTED":
-                    error_msgs.append(f"{r['angle']}: Khong tim thay khuon mat")
-                elif msg == "MULTIPLE_FACES":
-                    error_msgs.append(f"{r['angle']}: Co nhieu hon 1 khuon mat")
-                elif msg == "LOW_QUALITY":
-                    error_msgs.append(f"{r['angle']}: Anh qua mo hoac thieu sang")
-                elif msg == "FACE_DETECTION_FAILED":
-                    error_msgs.append(f"{r['angle']}: Khong the trich xuat khuon mat")
-                else:
-                    error_msgs.append(f"{r['angle']}: {msg}")
-        raise HTTPException(400, f"Enroll that bai: {', '.join(error_msgs)}")
-
-    return {"success": True, "message": "Face enrolled successfully (4 angles)", "patron_id": str(patron_id)}
+    return {"success": True, "message": "Face enrolled successfully (4 angles)", "patron_id": str(patron_id), "job_id": task.id}
 
 
 @router.post("/{patron_id}/enroll-face", status_code=410)

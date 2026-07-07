@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { config } from '../config';
 import { patronService, userService, userRepo } from '../services';
-import { createInternalAuth } from '../../../shared';
+import { createInternalAuth } from '../../../shared/auth';
 
 const internalAuth = createInternalAuth({
   serviceName: 'user-service',

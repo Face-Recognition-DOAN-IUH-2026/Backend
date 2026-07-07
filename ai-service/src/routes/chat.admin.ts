@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthRequest } from '../../../shared';
+import type { AuthRequest } from '../../../shared/auth/types';
 import { sessionStore } from '../sessions';
 import { processMessage } from '../agent/agent';
 import { adminToolDefs } from '../tools/registry';

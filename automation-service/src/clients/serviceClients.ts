@@ -1,6 +1,8 @@
 import { config } from '../config';
 import { amqpClient } from './AmqpClient';
-import { getServiceToken, CircuitBreaker, retryWithBackoff } from '../../../shared';
+import { getServiceToken } from '../../../shared/auth';
+import { CircuitBreaker } from '../../../shared/utils/circuitBreaker';
+import { retryWithBackoff } from '../../../shared/utils/retryWithBackoff';
 
 interface RequestOptions {
   method?: string;

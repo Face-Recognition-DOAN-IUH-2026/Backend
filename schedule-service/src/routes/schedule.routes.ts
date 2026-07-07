@@ -1,7 +1,8 @@
 import { Router, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { scheduleService } from '../services/ScheduleService';
-import { createAuth, AuthRequest, requireRole } from '../../../shared';
+import { createAuth, requireRole } from '../../../shared/auth';
+import type { AuthRequest } from '../../../shared/auth/types';
 import { config } from '../config';
 
 const auth = createAuth({

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createInternalAuth } from '../../../shared';
+import { createInternalAuth } from '../../../shared/auth';
 import { config } from '../config';
 import { AppDataSource } from '../data-source';
 import { AutomationTask } from '../entities/AutomationTask';

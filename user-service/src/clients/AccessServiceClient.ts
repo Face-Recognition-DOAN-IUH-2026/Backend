@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { getServiceToken } from '../../../shared';
+import { getServiceToken } from '../../../shared/auth';
 
 interface RequestOptions {
   method?: string;

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { config } from '../config';
 import { AiAnalysisResult, LibraryOperationsSnapshot } from '../services/types';
-import { HttpError } from '../../../shared';
+import { HttpError } from '../../../shared/error-handler';
 
 const analysisSchema = z.object({
   headline: z.string().min(1),

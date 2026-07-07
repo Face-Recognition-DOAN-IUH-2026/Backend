@@ -1,7 +1,7 @@
 import { amqpClient } from '../clients/AmqpClient';
 import { AppDataSource } from '../data-source';
 import { User } from '../entities';
-import { EventEnvelope } from '../../shared';
+import { EventEnvelope } from '../../shared/AmqpClient';
 
 export async function startAmqpSubscriber(): Promise<void> {
   try {

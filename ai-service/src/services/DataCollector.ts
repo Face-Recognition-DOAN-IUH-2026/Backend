@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { getServiceToken } from '../../../shared';
+import { getServiceToken } from '../../../shared/auth';
 import { LibraryOperationsSnapshot } from './types';
 
 type FetchResult = { ok: true; data: any } | { ok: false; error: string };

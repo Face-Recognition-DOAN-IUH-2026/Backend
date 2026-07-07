@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { createAuth, requireRole, AuthRequest } from '../../../shared';
+import { createAuth, requireRole } from '../../../shared/auth';
+import type { AuthRequest } from '../../../shared/auth/types';
 import { config } from '../config';
 import { AppDataSource } from '../data-source';
 import { AutomationTask } from '../entities/AutomationTask';

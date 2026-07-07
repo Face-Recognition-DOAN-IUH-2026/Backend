@@ -1,6 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { createAuth, AuthRequest, requireRole } from '../../../shared';
+import { createAuth, requireRole } from '../../../shared/auth';
+import type { AuthRequest } from '../../../shared/auth/types';
 import { config } from '../config';
 import { aiService } from '../services/AiService';
 

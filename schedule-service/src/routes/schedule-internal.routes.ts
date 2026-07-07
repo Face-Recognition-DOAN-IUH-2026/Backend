@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { scheduleService } from '../services/ScheduleService';
 import { config } from '../config';
-import { createInternalAuth } from '../../../shared';
+import { createInternalAuth } from '../../../shared/auth';
 
 const internalAuth = createInternalAuth({
   serviceName: 'schedule-service',

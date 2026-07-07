@@ -1,6 +1,6 @@
 import { config } from '../config';
 import { amqpClient } from './AmqpClient';
-import { getServiceToken } from '../../../shared';
+import { getServiceToken } from '../../../shared/auth';
 
 interface RequestOptions {
   method?: string;
