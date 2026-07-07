@@ -6,9 +6,11 @@ const AVATAR_MAX_SIZE = 2 * 1024 * 1024;
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 
 export class UserController {
-  async getAll(_req: AuthRequest, res: Response) {
+  async getAll(req: AuthRequest, res: Response) {
     try {
-      const result = await userService.getAllUsers();
+      const skip = parseInt(typeof req.query.skip === 'string' ? req.query.skip : '0', 10) || 0;
+      const limit = parseInt(typeof req.query.limit === 'string' ? req.query.limit : '200', 10) || 200;
+      const result = await userService.getAllUsers(skip, limit);
       res.json(result);
     } catch (error: any) {
         console.error('Delete User Error:', error);

@@ -10,7 +10,6 @@ import { swaggerSpec } from './config/swagger';
 import { errorHandler } from './middlewares/errorHandler';
 import { setupProcessErrorHandlers } from '../../shared/error-handler';
 
-
 const app = express();
 
 app.use(cors({ origin: config.corsOrigins, credentials: true }));
@@ -40,10 +39,9 @@ async function start() {
     setupProcessErrorHandlers();
     await AppDataSource.initialize();
     console.log('Database initialized via TypeORM');
-    
+
     const { startAmqpSubscriber } = require('./subscribers/AmqpSubscriber');
     startAmqpSubscriber().catch((e: any) => console.error('[AMQP] Subscriber error:', e.message));
-
 
     const server = app.listen(config.port, () => {
       console.log(`User service running on port ${config.port}`);
