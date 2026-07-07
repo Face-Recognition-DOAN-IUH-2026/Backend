@@ -1,5 +1,6 @@
 import { config } from '../config';
 import { getServiceToken } from '../../../shared/auth';
+import { CircuitBreaker } from '../../../shared/utils/circuitBreaker';
 
 interface RequestOptions {
   method?: string;
@@ -7,7 +8,12 @@ interface RequestOptions {
   timeout?: number;
 }
 
+export const accessCircuit = new CircuitBreaker(3, 30_000);
+
 async function request(url: string, options: RequestOptions = {}): Promise<any> {
+  if (!accessCircuit.canRequest()) {
+    throw new Error('Access-service temporarily unavailable');
+  }
   const { method = 'GET', body, timeout = 5000 } = options;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -27,9 +33,11 @@ async function request(url: string, options: RequestOptions = {}): Promise<any> 
       const text = await res.text().catch(() => '');
       throw new Error(`HTTP ${res.status}: ${text}`);
     }
+    accessCircuit.recordSuccess();
     return res.json();
   } catch (error) {
     clearTimeout(timer);
+    accessCircuit.recordFailure();
     throw error;
   }
 }

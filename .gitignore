@@ -68,3 +68,10 @@ repomix-output.xml/
 SkillAgent/
 CLAUDE.md
 AGENTS.md
+
+# === Build artifacts ===
+*dist-local/
+ai-service/dist/
+borrow-service/dist/
+automation-service/dist/
+notification-service/dist/

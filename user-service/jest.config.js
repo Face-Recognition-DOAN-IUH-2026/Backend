@@ -7,7 +7,6 @@ module.exports = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
-  setupFilesAfterSetup: [],
   clearMocks: true,
   collectCoverage: false,
   moduleDirectories: ['node_modules', '<rootDir>/node_modules'],
