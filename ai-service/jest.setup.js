@@ -1,4 +1,4 @@
-jest.mock('../src/config', () => ({
+jest.mock('./src/config', () => ({
   config: {
     borrowServiceUrl: 'http://borrow-service:8000',
     userServiceUrl: 'http://user-service:3001',

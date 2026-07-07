@@ -13,7 +13,6 @@ RUN ln -s /app/shared ./shared
 RUN cd /app/shared && npm install
 
 RUN npm run build
-RUN cp -r migrations dist/migrations
 RUN npm prune --omit=dev
 
 EXPOSE 3006

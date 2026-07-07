@@ -8,6 +8,7 @@ module.exports = {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   clearMocks: true,
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   collectCoverage: false,
   moduleDirectories: ['node_modules', '<rootDir>/node_modules'],
   transform: {

@@ -1,5 +1,6 @@
 import { accessServiceClient, accessCircuit } from '../clients/AccessServiceClient';
 
+jest.unmock('../config');
 jest.mock('../../../shared/auth', () => ({
   getServiceToken: () => 'mock-service-token',
 }));
