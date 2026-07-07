@@ -97,6 +97,8 @@ async def _patron_to_public(user_data: dict, db: AsyncSession) -> PatronPublic:
         created_at=user_data.get("createdAt") or user_data.get("created_at"),
         updated_at=user_data.get("updatedAt") or user_data.get("updated_at"),
         has_face=face is not None,
+        course=user_data.get("course"),
+        permanent_address=user_data.get("permanentAddress") or user_data.get("permanent_address"),
     )
 
 
@@ -142,7 +144,7 @@ async def search_patrons(
     augmented = []
     for item in items:
         augmented.append(await _patron_to_public(item, db))
-    return augmented
+    return {"items": augmented, "total": result.get("total", len(augmented))}
 
 
 @router.get("/lookup")

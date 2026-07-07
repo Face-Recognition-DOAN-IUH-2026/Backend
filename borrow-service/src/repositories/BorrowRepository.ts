@@ -72,6 +72,16 @@ export class BorrowRepository {
     return { items, total, stats };
   }
 
+  async getAggregateStats() {
+    const row = await this.copies.createQueryBuilder('copy')
+      .select('COUNT(copy.id)', 'total')
+      .addSelect(`SUM(CASE WHEN copy.isAvailable = true THEN 1 ELSE 0 END)`, 'available')
+      .getRawOne();
+    const totalCopies = Number(row?.total || 0);
+    const availableCopies = Number(row?.available || 0);
+    return { totalCopies, availableCopies, borrowedCopies: totalCopies - availableCopies };
+  }
+
   async getStatsForBooks(bookIds: string[]) {
     if (!bookIds.length) return new Map<string, { total: number; available: number }>();
     const rows = await this.copies.createQueryBuilder('copy')

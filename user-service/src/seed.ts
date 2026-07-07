@@ -3,38 +3,142 @@ import bcrypt from 'bcryptjs';
 import { AppDataSource } from './data-source';
 import { User } from './entities/User.entity';
 
+const STAFF_PASSWORD = 'admin123';
+const PATRON_PASSWORD = 'patron123';
+
+const adminUsers = [
+  {
+    email: 'admin@example.com',
+    fullName: 'System Administrator',
+    role: 'admin',
+    phone: '0901000001',
+    identityNumber: '001000001',
+    avatarUrl: 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
+  },
+  {
+    email: 'admin2@example.com',
+    fullName: 'Nguyen Van Admin',
+    role: 'admin',
+    phone: '0901000002',
+    identityNumber: '001000002',
+    avatarUrl: 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
+  },
+];
+
+const staffUsers = [
+  {
+    email: 'staff1@example.com',
+    fullName: 'Tran Thi Staff',
+    role: 'staff',
+    phone: '0902000001',
+    identityNumber: '002000001',
+    avatarUrl: 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
+  },
+  {
+    email: 'staff2@example.com',
+    fullName: 'Le Van Staff',
+    role: 'staff',
+    phone: '0902000002',
+    identityNumber: '002000002',
+    avatarUrl: 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
+  },
+  {
+    email: 'staff3@example.com',
+    fullName: 'Pham Minh Staff',
+    role: 'staff',
+    phone: '0902000003',
+    identityNumber: '002000003',
+    avatarUrl: 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
+  },
+];
+
+const patronUsers = [
+  { email: 'patron01@example.com', fullName: 'Nguyen Van An', studentCode: 'SV001', className: 'CNPM-2021', course: '2021-2025', phone: '0903000001', identityNumber: '003000001', cardNumber: 'CARD001' },
+  { email: 'patron02@example.com', fullName: 'Tran Thi Bich', studentCode: 'SV002', className: 'KHMT-2022', course: '2022-2026', phone: '0903000002', identityNumber: '003000002', cardNumber: 'CARD002' },
+  { email: 'patron03@example.com', fullName: 'Le Van Cuong', studentCode: 'SV003', className: 'CNTT-2021', course: '2021-2025', phone: '0903000003', identityNumber: '003000003', cardNumber: 'CARD003' },
+  { email: 'patron04@example.com', fullName: 'Pham Thi Dao', studentCode: 'SV004', className: 'CNPM-2022', course: '2022-2026', phone: '0903000004', identityNumber: '003000004', cardNumber: 'CARD004' },
+  { email: 'patron05@example.com', fullName: 'Hoang Van Em', studentCode: 'SV005', className: 'KHMT-2021', course: '2021-2025', phone: '0903000005', identityNumber: '003000005', cardNumber: 'CARD005' },
+  { email: 'patron06@example.com', fullName: 'Nguyen Thi Fo', studentCode: 'SV006', className: 'CNTT-2022', course: '2022-2026', phone: '0903000006', identityNumber: '003000006', cardNumber: 'CARD006' },
+  { email: 'patron07@example.com', fullName: 'Vo Van Giang', studentCode: 'SV007', className: 'CNPM-2023', course: '2023-2027', phone: '0903000007', identityNumber: '003000007', cardNumber: 'CARD007' },
+  { email: 'patron08@example.com', fullName: 'Nguyen Thi Ha', studentCode: 'SV008', className: 'KHMT-2023', course: '2023-2027', phone: '0903000008', identityNumber: '003000008', cardNumber: 'CARD008' },
+  { email: 'patron09@example.com', fullName: 'Bui Van Khoa', studentCode: 'SV009', className: 'CNTT-2021', course: '2021-2025', phone: '0903000009', identityNumber: '003000009', cardNumber: 'CARD009' },
+  { email: 'patron10@example.com', fullName: 'Dang Thi Lan', studentCode: 'SV010', className: 'CNPM-2023', course: '2023-2027', phone: '0903000010', identityNumber: '003000010', cardNumber: 'CARD010' },
+];
+
 async function seed() {
   try {
     await AppDataSource.initialize();
     console.log('[seed] Database connected');
 
-    const adminEmail = (process.env.DEFAULT_ADMIN_EMAIL || 'admin@example.com').trim().toLowerCase();
-    const adminPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'admin123';
-    const adminFullName = process.env.DEFAULT_ADMIN_FULL_NAME || 'System Administrator';
-
     const repo = AppDataSource.getRepository(User);
-    const existing = await repo.findOne({ where: { email: adminEmail } });
+    const passwordHash = await bcrypt.hash(STAFF_PASSWORD, 10);
+    const patronPasswordHash = await bcrypt.hash(PATRON_PASSWORD, 10);
 
-    if (existing) {
-      console.log(`[seed] Admin account already exists: ${adminEmail}`);
-    } else {
-      const passwordHash = await bcrypt.hash(adminPassword, 10);
+    let created = 0;
+    let skipped = 0;
+
+    // Admin users
+    for (const data of adminUsers) {
+      const existing = await repo.findOne({ where: { email: data.email } });
+      if (existing) {
+        console.log(`[seed] Admin already exists: ${data.email}`);
+        skipped++;
+        continue;
+      }
       await repo.save(repo.create({
-        email: adminEmail,
+        ...data,
         passwordHash,
-        fullName: adminFullName,
-        role: 'admin',
         status: 'active',
         currentStatus: 'outside',
-        avatarUrl: 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
-        phone: '1234567890',
         permanentAddress: '123 Main St',
-        identityNumber: '123456789',
         passwordAutoGenerated: false,
       }));
-      console.log(`[seed] Created admin account: ${adminEmail} (password: ${adminPassword})`);
+      console.log(`[seed] Created admin: ${data.email}`);
+      created++;
     }
 
+    // Staff users
+    for (const data of staffUsers) {
+      const existing = await repo.findOne({ where: { email: data.email } });
+      if (existing) {
+        console.log(`[seed] Staff already exists: ${data.email}`);
+        skipped++;
+        continue;
+      }
+      await repo.save(repo.create({
+        ...data,
+        passwordHash,
+        status: 'active',
+        currentStatus: 'outside',
+        permanentAddress: '456 Staff Rd',
+        passwordAutoGenerated: false,
+      }));
+      console.log(`[seed] Created staff: ${data.email}`);
+      created++;
+    }
+
+    // Patron users
+    for (const data of patronUsers) {
+      const existing = await repo.findOne({ where: { email: data.email } });
+      if (existing) {
+        console.log(`[seed] Patron already exists: ${data.email}`);
+        skipped++;
+        continue;
+      }
+      await repo.save(repo.create({
+        ...data,
+        passwordHash: patronPasswordHash,
+        role: 'patron',
+        status: 'active',
+        currentStatus: 'outside',
+        permanentAddress: '789 Student Ave',
+        passwordAutoGenerated: false,
+      }));
+      console.log(`[seed] Created patron: ${data.email} (${data.studentCode})`);
+      created++;
+    }
+
+    console.log(`[seed] Done. Created: ${created}, Skipped: ${skipped}`);
     await AppDataSource.destroy();
     process.exit(0);
   } catch (error) {

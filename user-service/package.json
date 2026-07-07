@@ -13,6 +13,7 @@
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts",
     "test": "jest",
     "test:coverage": "jest --coverage",
+    "seed": "ts-node src/seed.ts",
     "docker:build": "docker build -t user-service ."
   },
   "dependencies": {
