@@ -1,5 +1,7 @@
 import { config } from '../config';
-import { getServiceToken, CircuitBreaker, retryWithBackoff } from '../../../shared';
+import { getServiceToken } from '../../../shared/auth';
+import { CircuitBreaker } from '../../../shared/utils/circuitBreaker';
+import { retryWithBackoff } from '../../../shared/utils/retryWithBackoff';
 
 export interface UserSummary {
   id: string;

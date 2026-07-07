@@ -11,7 +11,7 @@ import internalRoutes from './routes/internal.routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
-import { decodeToken } from '../../shared';
+import { decodeToken } from '../../shared/auth';
 import { realtimeHub } from './realtime/RealtimeHub';
 import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
 import { amqpClient } from './clients/AmqpClient';

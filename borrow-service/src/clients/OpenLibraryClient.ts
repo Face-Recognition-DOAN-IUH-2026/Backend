@@ -1,4 +1,4 @@
-import { CircuitBreaker } from '../../../shared';
+import { CircuitBreaker } from '../../../shared/utils/circuitBreaker';
 
 const circuit = new CircuitBreaker(3, 60_000);
 

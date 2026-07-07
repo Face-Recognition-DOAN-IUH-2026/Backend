@@ -3,11 +3,11 @@ import { AppDataSource } from '../data-source';
 import { AiInsight } from '../entities/AiInsight';
 import { AiRun } from '../entities/AiRun';
 import { config } from '../config';
-import { HttpError } from '../../../shared';
+import { HttpError } from '../../../shared/error-handler';
 import { OpenRouterClient } from '../clients/OpenRouterClient';
 import { DataCollector } from './DataCollector';
 import { AiInsightDto, BookRecommendation, BookRecommendationResponse, CommandCenterSummary, InsightExplanation, LibraryOperationsSnapshot } from './types';
-import { getServiceToken } from '../../../shared';
+import { getServiceToken } from '../../../shared/auth';
 
 const insightRepo = () => AppDataSource.getRepository(AiInsight);
 const runRepo = () => AppDataSource.getRepository(AiRun);

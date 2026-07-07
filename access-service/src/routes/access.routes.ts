@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z, ZodError } from 'zod';
 import { accessService } from '../services/AccessService';
-import { createAuth, requireRole } from '../../shared';
+import { createAuth, requireRole } from '../../shared/auth';
 import { config } from '../config';
 
 const auth = createAuth({

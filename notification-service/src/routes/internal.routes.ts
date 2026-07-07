@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { createInternalAuth } from '../../../shared';
+import { createInternalAuth } from '../../../shared/auth';
 import { config } from '../config';
 import { notificationService } from '../services/NotificationService';
 import { notificationHub } from '../realtime/NotificationHub';

@@ -17,7 +17,7 @@ import {
 } from '../contracts';
 import { UserServiceClient } from '../clients/UserServiceClient';
 import { realtimeHub } from '../realtime/RealtimeHub';
-import { HttpError } from '../../../shared';
+import { HttpError } from '../../../shared/error-handler';
 import { config } from '../config';
 
 const logRepo = () => AppDataSource.getRepository(AccessLog);

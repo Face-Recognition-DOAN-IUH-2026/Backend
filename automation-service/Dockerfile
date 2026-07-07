@@ -14,7 +14,6 @@ RUN cd /app/shared && npm install
 
 RUN npm run build
 RUN cp -r migrations dist/migrations
-RUN rm -rf dist/shared && ln -s /app/automation-service/dist/automation-service/shared dist/shared
 
 EXPOSE 3007
 

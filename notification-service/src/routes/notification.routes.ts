@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { createAuth, AuthRequest } from '../../../shared';
+import { createAuth } from '../../../shared/auth';
+import type { AuthRequest } from '../../../shared/auth/types';
 import { config } from '../config';
 import { notificationService } from '../services/NotificationService';
 import { notificationHub } from '../realtime/NotificationHub';

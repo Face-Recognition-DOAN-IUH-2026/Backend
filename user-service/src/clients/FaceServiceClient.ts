@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { config } from '../config';
-import { getServiceToken } from '../../../shared';
+import { getServiceToken } from '../../../shared/auth';
 
 export class FaceServiceClient {
   private baseUrl: string;

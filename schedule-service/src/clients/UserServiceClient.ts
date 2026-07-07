@@ -1,6 +1,8 @@
 import { config } from '../config';
 import { NotFoundError, ServiceUnavailableError } from '../errors';
-import { getServiceToken, CircuitBreaker, retryWithBackoff } from '../../../shared';
+import { getServiceToken } from '../../../shared/auth';
+import { CircuitBreaker } from '../../../shared/utils/circuitBreaker';
+import { retryWithBackoff } from '../../../shared/utils/retryWithBackoff';
 
 export interface StaffUser {
   id: string;

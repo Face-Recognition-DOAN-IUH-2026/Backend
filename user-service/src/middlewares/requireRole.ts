@@ -1,5 +1,6 @@
 import { Response, NextFunction } from 'express';
-import { AuthRequest, createAuth } from '../../../shared';
+import { createAuth } from '../../../shared/auth';
+import type { AuthRequest } from '../../../shared/auth/types';
 import { config } from '../config';
 
 const auth = createAuth({

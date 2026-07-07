@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { HttpError } from '../middlewares/errorHandler';
-import { CircuitBreaker, getServiceToken } from '../../../shared';
+import { getServiceToken } from '../../../shared/auth';
+import { CircuitBreaker } from '../../../shared/utils/circuitBreaker';
 
 const circuit = new CircuitBreaker(5, 60_000);
 

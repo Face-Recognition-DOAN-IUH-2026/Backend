@@ -8,6 +8,9 @@ import { AppDataSource } from './data-source';
 import borrowRoutes from './routes/borrow.routes';
 import borrowInternalRoutes from './routes/borrow-internal.routes';
 import libraryRoutes from './routes/library.routes';
+import bookRoutes from './routes/book.routes';
+import staffRoutes from './routes/staff.routes';
+import waitlistRoutes from './routes/waitlist.routes';
 import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 import { amqpClient } from './clients/AmqpClient';
 
@@ -17,6 +20,9 @@ app.use(express.json());
 
 app.use('/borrow/internal', borrowInternalRoutes);
 app.use('/borrow', borrowRoutes);
+app.use('/borrow', bookRoutes);
+app.use('/borrow', staffRoutes);
+app.use('/borrow', waitlistRoutes);
 app.use('/library', libraryRoutes);
 
 app.get('/healthz', (_req, res) => {

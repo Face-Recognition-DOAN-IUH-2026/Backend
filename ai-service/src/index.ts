@@ -11,7 +11,7 @@ import adminChatRouter from './routes/chat.admin';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
-import { createAuth, requireRole } from '../../shared';
+import { createAuth, requireRole } from '../../shared/auth';
 import { getCollection } from './clients/chromadb';
 import { indexDocuments } from './rag/indexer';
 import { sessionStore } from './sessions';

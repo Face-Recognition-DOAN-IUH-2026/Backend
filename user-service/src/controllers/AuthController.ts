@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { authService } from '../services';
-import { setAuthCookie, clearAuthCookie } from '../../shared';
+import { setAuthCookie, clearAuthCookie } from '../../shared/auth';
 
 export class AuthController {
   async register(req: Request, res: Response) {

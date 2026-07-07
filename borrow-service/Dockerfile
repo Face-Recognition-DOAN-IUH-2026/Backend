@@ -12,7 +12,6 @@ RUN ln -s /app/shared ./shared
 RUN cd /app/shared && npm install
 
 RUN npm run build
-RUN rm -rf dist/shared && ln -s /app/borrow-service/dist/borrow-service/shared dist/shared
 RUN npm prune --omit=dev
 
 EXPOSE 8000
