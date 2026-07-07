@@ -305,9 +305,9 @@ app.use('/api/ai', createProxyMiddleware({
   },
 }));
 
-// Patron search from user-service (must be before catch-all /api/patrons)
+// Patron search from face-recognition-service (converts camelCase → snake_case)
 app.use('/api/patrons/search', createProxyMiddleware({
-  target: config.services.userService,
+  target: config.services.faceRecognitionApi,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,
 }));

@@ -1275,8 +1275,10 @@ router.get('/books', async (req, res, next) => {
     const skip = Number(req.query.skip || 0);
     const limit = Number(req.query.limit || 20);
     const search = req.query.search as string | undefined;
-    const { items, total, stats } = await new BorrowRepository().listBooks(skip, limit, search);
-    res.json({ items: items.map((book) => { const stat = stats.get(book.id) || { total: 0, available: 0 }; return serializeBookWithStats(book, stat.total, stat.available); }), total, skip, limit });
+    const repo = new BorrowRepository();
+    const { items, total, stats } = await repo.listBooks(skip, limit, search);
+    const aggregateStats = await repo.getAggregateStats();
+    res.json({ items: items.map((book) => { const stat = stats.get(book.id) || { total: 0, available: 0 }; return serializeBookWithStats(book, stat.total, stat.available); }), total, skip, limit, aggregateStats });
   } catch (error) {
     next(error);
   }

@@ -138,6 +138,8 @@ class PatronPublic(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     has_face: bool = False
+    course: Optional[str] = None
+    permanent_address: Optional[str] = None
 
 
 class PatronLookupResult(BaseModel):

@@ -8,6 +8,7 @@
     "dev:test-borrow": "node tools/test-borrow.js",
     "build": "tsc",
     "start": "node dist/index.js",
+    "seed": "ts-node src/seed.ts",
     "test": "jest --runInBand"
   },
   "dependencies": {
