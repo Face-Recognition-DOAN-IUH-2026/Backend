@@ -159,6 +159,28 @@ def create_app() -> FastAPI:
     app.include_router(camera.router)
     app.include_router(kiosk.router)
 
+    @app.get("/internal/face/{user_id}/status")
+    async def check_face_enrollment(user_id: str):
+        from infra.milvus_client import MilvusClient
+        from infra.config import settings
+        mc = MilvusClient(
+            host=settings.milvus_host,
+            port=settings.milvus_port,
+            collection_name=settings.milvus_collection,
+            dim=512,
+        )
+        try:
+            results = mc.client.query(
+                mc.collection_name,
+                filter=f'user_id == "{user_id}"',
+                output_fields=["user_id"],
+                limit=1,
+            )
+            enrolled = len(results) > 0
+        except Exception:
+            enrolled = False
+        return {"enrolled": enrolled}
+
     @app.get("/healthz")
     async def healthz() -> dict:
         return {"ok": True}
