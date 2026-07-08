@@ -49,6 +49,7 @@ function normalizeBookCode(value: string) {
 async function lookupBookAndCopy(repo: BorrowRepository, barcode: string, isbn?: string) {
   const lookupIsbn = isbn || barcode;
   const book = lookupIsbn ? await repo.getBookByIsbn(lookupIsbn) : null;
+
   if (!book) return { book: null, copy: null, reason: 'Khong co sach nay trong thu vien' };
 
   const totalCopies = await repo.countCopies(book.id, false);
