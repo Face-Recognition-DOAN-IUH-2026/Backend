@@ -15,8 +15,8 @@ export async function expireWaitlistNotifications(
 
     let advanced = 0;
 
-    for (const entry of expired) {
-      try {
+    const results = await Promise.allSettled(
+      expired.map(async (entry: any) => {
         const advanceData = await borrowClient.advanceWaitlist(entry.id);
 
         if (advanceData?.next) {
@@ -28,16 +28,17 @@ export async function expireWaitlistNotifications(
             data: { bookId: advanceData.next.book_id },
           });
 
-          try {
-            await borrowClient.batchNotifyWaitlist([advanceData.next.id]);
-          } catch (err) {
-            console.warn('[expireWaitlistNotifications] Failed to advance waitlist:', (err as Error)?.message || err);
-          }
+          await borrowClient.batchNotifyWaitlist([advanceData.next.id]).catch((err: any) => {
+            console.warn('[expireWaitlistNotifications] Failed to batch notify waitlist:', (err as Error)?.message || err);
+          });
           advanced++;
         }
-      } catch (err) {
-        console.warn('[expireWaitlistNotifications] Advance failed:', (err as Error)?.message || err);
-      }
+      })
+    );
+
+    const failCount = results.filter(r => r.status === 'rejected').length;
+    if (failCount > 0) {
+      console.warn(`[expireWaitlistNotifications] ${failCount}/${expired.length} waitlist advancements failed`);
     }
 
     return { expired: expired.length, advanced };

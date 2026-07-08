@@ -29,17 +29,14 @@ export async function stalePatronCleanup(config: Record<string, any>): Promise<a
     return { checked: 1, cleaned: 0, message: `No stale patrons (>${maxHours}h)` };
   }
 
-  let cleaned = 0;
-  let failed = 0;
+  const results = await Promise.allSettled(
+    stalePatrons.map((patron: any) =>
+      accessClient.forceExitPatron(patron.id || patron.patron_id)
+    )
+  );
 
-  for (const patron of stalePatrons) {
-    try {
-      await accessClient.forceExitPatron(patron.id || patron.patron_id);
-      cleaned++;
-    } catch {
-      failed++;
-    }
-  }
+  const cleaned = results.filter(r => r.status === 'fulfilled').length;
+  const failed = results.filter(r => r.status === 'rejected').length;
 
   return {
     checked: 1,

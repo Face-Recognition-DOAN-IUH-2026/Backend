@@ -10,13 +10,28 @@ interface RequestOptions {
   timeout?: number;
 }
 
-const circuit = new CircuitBreaker(5, 60_000);
+const circuits = new Map<string, CircuitBreaker>();
+
+function getCircuit(serviceName: string): CircuitBreaker {
+  if (!circuits.has(serviceName)) {
+    circuits.set(serviceName, new CircuitBreaker(5, 60_000));
+  }
+  return circuits.get(serviceName)!;
+}
+
+function serviceNameFromUrl(url: string): string {
+  const match = url.match(/https?:\/\/([^.]+)/);
+  return match ? match[1] : 'unknown';
+}
 
 async function request(url: string, options: RequestOptions = {}): Promise<any> {
   const { method = 'GET', body, timeout = 5000 } = options;
 
+  const serviceName = serviceNameFromUrl(url);
+  const circuit = getCircuit(serviceName);
+
   if (!circuit.canRequest()) {
-    throw new Error(`Circuit breaker open for ${url.split('//')[1]?.split('/')[0] || 'downstream service'}`);
+    throw new Error(`Circuit breaker open for ${serviceName}`);
   }
 
   const controller = new AbortController();
@@ -91,19 +106,20 @@ export const notificationClient = {
       data?: Record<string, any>;
     }>
   ) {
-    let publishedCount = 0;
     try {
-      for (const input of notifications) {
-        const published = await amqpClient.publish('notification.send', {
-          emailType: 'push',
-          userId: input.userId,
-          type: input.type,
-          title: input.title,
-          body: input.body,
-          data: input.data || {},
-        });
-        if (published) publishedCount++;
-      }
+      const results = await Promise.allSettled(
+        notifications.map(input =>
+          amqpClient.publish('notification.send', {
+            emailType: 'push',
+            userId: input.userId,
+            type: input.type,
+            title: input.title,
+            body: input.body,
+            data: input.data || {},
+          })
+        )
+      );
+      const publishedCount = results.filter(r => r.status === 'fulfilled' && r.value).length;
       if (publishedCount > 0) {
         return { success: true, via: 'rabbitmq', count: publishedCount };
       }
@@ -174,6 +190,26 @@ export const scheduleClient = {
     return request(`${config.services.scheduleService}/schedules/internal/auto-checkout`, {
       method: 'POST',
       timeout,
+    });
+  },
+
+  async getStaleBids(warnHours: number, expireHours: number) {
+    return request(`${config.services.scheduleService}/schedules/internal/stale-bids?warn_hours=${warnHours}&expire_hours=${expireHours}`);
+  },
+
+  async expireBid(bidId: string) {
+    return request(`${config.services.scheduleService}/schedules/internal/bids/${bidId}/expire`, {
+      method: 'POST',
+    });
+  },
+
+  async getStaleSwaps(warnHours: number, expireHours: number) {
+    return request(`${config.services.scheduleService}/schedules/internal/stale-swaps?warn_hours=${warnHours}&expire_hours=${expireHours}`);
+  },
+
+  async expireSwap(swapId: string) {
+    return request(`${config.services.scheduleService}/schedules/internal/swaps/${swapId}/expire`, {
+      method: 'POST',
     });
   },
 };
