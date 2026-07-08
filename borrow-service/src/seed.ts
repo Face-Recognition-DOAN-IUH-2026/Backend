@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { AppDataSource } from './data-source';
 import { Book } from './entities/Book';
 import { BookCopy } from './entities/BookCopy';
+import { SystemConfig } from './entities/SystemConfig';
 
 const BOOKS_DATA = [
   { isbn: '9780132350884', title: 'Clean Code', subtitle: 'A Handbook of Agile Software Craftsmanship', author: 'Robert C. Martin', publisher: 'Prentice Hall', publishedDate: '2008', pageCount: 464, categories: 'Programming', language: 'en', isbn10: '0132350882', isbn13: '9780132350884', shelfLocation: 'A-01-01' },
@@ -36,6 +37,27 @@ const BOOKS_DATA = [
   { isbn: '9781593271442', title: 'The Art of Exploitation', subtitle: '', author: 'Jon Erickson', publisher: 'No Starch Press', publishedDate: '2008', pageCount: 520, categories: 'Security', language: 'en', isbn10: '1593271441', isbn13: '9781593271442', shelfLocation: 'C-02-03' },
 ];
 
+const SETTINGS_SEED = [
+  { category: 'borrow', configKey: 'max_borrow_days', configValue: 14, label: 'Số ngày mượn tối đa', description: 'Thời gian mượn sách tối đa (ngày)' },
+  { category: 'borrow', configKey: 'max_borrow_books', configValue: 3, label: 'Số sách mượn tối đa', description: 'Số lượng sách có thể mượn cùng lúc' },
+  { category: 'borrow', configKey: 'max_borrow_books_per_slip', configValue: 5, label: 'Số sách tối đa mỗi phiếu', description: 'Số lượng sách tối đa trên một phiếu mượn' },
+  { category: 'borrow', configKey: 'max_renewals', configValue: 1, label: 'Số lần gia hạn tối đa', description: 'Số lần gia hạn sách tối đa' },
+  { category: 'fine', configKey: 'fine_brackets', configValue: [{ from: 1, to: 7, amount: 10000 }, { from: 8, to: 14, amount: 20000 }, { from: 15, to: 30, amount: 50000 }, { from: 31, to: null, amount: 100000 }], label: 'Biểu phí phạt theo bậc', description: 'Các mức phí phạt dựa trên số ngày quá hạn' },
+  { category: 'fine', configKey: 'fine_per_day', configValue: 5000, label: 'Phí phạt mỗi ngày', description: 'Phí phạt tuyến tính mỗi ngày quá hạn (VND)' },
+  { category: 'smtp', configKey: 'host', configValue: 'smtp.gmail.com', label: 'SMTP Host', description: 'Địa chỉ host máy chủ SMTP', isEncrypted: false },
+  { category: 'smtp', configKey: 'port', configValue: 587, label: 'SMTP Port', description: 'Cổng kết nối SMTP' },
+  { category: 'smtp', configKey: 'secure', configValue: false, label: 'SMTP SSL/TLS', description: 'Bật SSL/TLS cho kết nối SMTP (dùng cho port 465)' },
+  { category: 'smtp', configKey: 'user', configValue: '', label: 'SMTP Username', description: 'Tên đăng nhập SMTP' },
+  { category: 'smtp', configKey: 'pass', configValue: '', label: 'SMTP Password', description: 'Mật khẩu SMTP', isEncrypted: true },
+  { category: 'smtp', configKey: 'from', configValue: 'Thu Vien IUH <noreply@iuh.edu.vn>', label: 'Địa chỉ email gửi', description: 'Địa chỉ email người gửi' },
+  { category: 'automation', configKey: 'overdue_cron', configValue: '0 9 * * *', label: 'Cron kiểm tra quá hạn', description: 'Lịch chạy kiểm tra sách quá hạn' },
+  { category: 'automation', configKey: 'overdue_days_before', configValue: 3, label: 'Nhắc trước ngày', description: 'Số ngày trước hạn để gửi nhắc nhở' },
+  { category: 'automation', configKey: 'membership_expiry_days_before', configValue: 7, label: 'Nhắc gia hạn thẻ trước', description: 'Số ngày trước hạn để gửi nhắc gia hạn thẻ' },
+  { category: 'automation', configKey: 'stale_cleanup_hours', configValue: 24, label: 'Dọn dẹp patron ở lại', description: 'Số giờ tối đa patron ở lại thư viện trước khi bị dọn dẹp' },
+  { category: 'automation', configKey: 'notify_roles', configValue: ['admin', 'staff'], label: 'Roles nhận thông báo', description: 'Các role được nhận thông báo hệ thống' },
+  { category: 'access', configKey: 'max_entry_hours', configValue: 24, label: 'Giờ tối đa trong thư viện', description: 'Số giờ tối đa cho phép ở lại thư viện' },
+];
+
 async function seed() {
   try {
     await AppDataSource.initialize();
@@ -43,13 +65,15 @@ async function seed() {
 
     const bookRepo = AppDataSource.getRepository(Book);
     const copyRepo = AppDataSource.getRepository(BookCopy);
+    const configRepo = AppDataSource.getRepository(SystemConfig);
 
     let booksCreated = 0;
     let booksSkipped = 0;
     let copiesCreated = 0;
     let copiesSkipped = 0;
+    let configsCreated = 0;
+    let configsSkipped = 0;
 
-    // Seed books
     for (const data of BOOKS_DATA) {
       const existing = await bookRepo.findOne({ where: { isbn: data.isbn } });
       if (existing) {
@@ -76,11 +100,8 @@ async function seed() {
         shelfLocation: data.shelfLocation,
       });
       await bookRepo.save(book);
-      console.log(`[seed] Created book: ${data.title}`);
-      booksCreated++;
 
-      // Create 2-3 copies per book
-      const copiesCount = 2 + Math.floor(Math.random() * 2); // 2 or 3
+      const copiesCount = 2 + Math.floor(Math.random() * 2);
       for (let i = 1; i <= copiesCount; i++) {
         const barcode = `BC-${data.isbn.slice(-4)}-${String(i).padStart(2, '0')}`;
         const existingCopy = await copyRepo.findOne({ where: { barcode } });
@@ -97,9 +118,22 @@ async function seed() {
         await copyRepo.save(copy);
         copiesCreated++;
       }
+
+      console.log(`[seed] Created book: ${data.title}`);
+      booksCreated++;
     }
 
-    console.log(`[seed] Done. Books: ${booksCreated} created, ${booksSkipped} skipped. Copies: ${copiesCreated} created, ${copiesSkipped} skipped.`);
+    for (const s of SETTINGS_SEED) {
+      const existing = await configRepo.findOne({ where: { category: s.category, configKey: s.configKey } });
+      if (existing) {
+        configsSkipped++;
+        continue;
+      }
+      await configRepo.save(configRepo.create(s));
+      configsCreated++;
+    }
+
+    console.log(`[seed] Done. Books: ${booksCreated} created, ${booksSkipped} skipped. Copies: ${copiesCreated} created, ${copiesSkipped} skipped. Configs: ${configsCreated} created, ${configsSkipped} skipped.`);
     await AppDataSource.destroy();
     process.exit(0);
   } catch (error) {

@@ -48,10 +48,8 @@ router.post('/bulk', async (req, res, next) => {
   try {
     const input = createManySchema.parse(req.body);
     const notifications = await notificationService.createMany(input.notifications);
-    // Push each notification to its user
-    for (const n of notifications) {
-      await notificationHub.publish(n.userId, n);
-    }
+    // Push each notification to its user in parallel
+    await Promise.all(notifications.map(n => notificationHub.publish(n.userId, n)));
     res.json({ created: notifications.length, notifications });
   } catch (error) {
     next(error);

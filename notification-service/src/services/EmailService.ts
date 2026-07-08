@@ -13,6 +13,8 @@ export class EmailService {
         user: config.smtp.user,
         pass: config.smtp.pass,
       },
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
     });
   }
 

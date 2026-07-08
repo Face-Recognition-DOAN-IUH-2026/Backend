@@ -50,6 +50,9 @@ export async function checkStaffAbsence(config: Record<string, any>): Promise<an
     } catch (err) {
       console.warn('[checkStaffAbsence] Failed to fetch admin users:', (err as Error)?.message || err);
     }
+  }
+
+  if (adminUserIds.length > 0) {
     const absentList = absentStaff
       .map((s) => `- ${s.staffId} (${s.shiftName} lúc ${s.scheduledTime})`)
       .join('\n');

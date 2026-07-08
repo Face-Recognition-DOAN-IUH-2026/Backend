@@ -167,14 +167,18 @@ router.put('/read-all', async (req: AuthRequest, res, next) => {
  *             schema:
  *               type: string
  */
-router.get('/events', (req: AuthRequest, res) => {
-  const userId = req.user!.userId;
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
-  notificationHub.addSseClient(userId, res);
+router.get('/events', (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user!.userId;
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+    notificationHub.addSseClient(userId, res);
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

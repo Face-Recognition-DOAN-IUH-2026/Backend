@@ -11,6 +11,7 @@ import libraryRoutes from './routes/library.routes';
 import bookRoutes from './routes/book.routes';
 import staffRoutes from './routes/staff.routes';
 import waitlistRoutes from './routes/waitlist.routes';
+import adminSettingsRoutes from './routes/admin-settings.routes';
 import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 import { amqpClient } from './clients/AmqpClient';
 
@@ -24,6 +25,7 @@ app.use('/borrow', bookRoutes);
 app.use('/borrow', staffRoutes);
 app.use('/borrow', waitlistRoutes);
 app.use('/library', libraryRoutes);
+app.use('/borrow/admin', adminSettingsRoutes);
 
 app.get('/healthz', (_req, res) => {
   res.json({ status: 'ok', service: config.serviceName });

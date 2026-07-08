@@ -12,6 +12,7 @@
     "test": "jest --runInBand"
   },
   "dependencies": {
+    "amqplib": "^0.10.3",
     "axios": "^1.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -20,13 +21,13 @@
     "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
+    "nodemailer": "^9.0.3",
     "pg": "^8.11.3",
     "reflect-metadata": "^0.2.2",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1",
     "typeorm": "^0.3.30",
-    "zod": "^3.22.4",
-    "amqplib": "^0.10.3"
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@types/amqplib": "^0.10.5",
@@ -36,6 +37,7 @@
     "@types/jsonwebtoken": "^9.0.5",
     "@types/multer": "^1.4.12",
     "@types/node": "^20.10.0",
+    "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.10.9",
     "@types/supertest": "^6.0.2",
     "@types/swagger-jsdoc": "^6.0.4",

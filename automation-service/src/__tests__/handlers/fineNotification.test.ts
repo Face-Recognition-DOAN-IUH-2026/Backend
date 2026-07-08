@@ -43,7 +43,7 @@ describe('fineNotification', () => {
     expect(mockNotificationClient.createNotification).toHaveBeenCalledWith({
       userId: 'p1',
       type: 'fine_notice',
-      title: 'Phí phạt trễ hạn',
+      title: 'Nhắc phí quá hạn',
       body: expect.stringContaining('Tran Van B'),
       data: expect.objectContaining({ fineAmount: 10000, daysOverdue: 5 }),
     });

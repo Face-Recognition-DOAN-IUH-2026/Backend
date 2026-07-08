@@ -36,6 +36,9 @@ export async function accessAnomalyAlert(config: Record<string, any>): Promise<a
     } catch (err) {
       console.warn('[accessAnomalyAlert] Failed to fetch admin users:', (err as Error)?.message || err);
     }
+  }
+
+  if (adminUserIds.length > 0) {
     const formattedList = stalePatrons
       .map((p: any) => {
         const entryTime = new Date(p.last_entry_at || p.lastEntryAt || p.entered_at).getTime();
