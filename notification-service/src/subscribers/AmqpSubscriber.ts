@@ -7,8 +7,12 @@ const emailService = new EmailService();
 
 export async function startAmqpSubscriber(): Promise<void> {
   try {
-    // Verify SMTP at startup
-    await emailService.verifyConnection();
+    // Verify SMTP at startup — log warning instead of blocking
+    try {
+      await emailService.verifyConnection();
+    } catch (err: any) {
+      console.warn(`[AMQP] SMTP verification failed (email notifications disabled): ${err.message}`);
+    }
 
     await amqpClient.connect();
 
