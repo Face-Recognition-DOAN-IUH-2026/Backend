@@ -2,7 +2,7 @@ import { Response } from 'express';
 import type { AuthRequest } from '../../shared/auth/types';
 import { userService } from '../services';
 
-const AVATAR_MAX_SIZE = 2 * 1024 * 1024;
+const AVATAR_MAX_SIZE = 5 * 1024 * 1024;
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 
 export class UserController {
@@ -233,14 +233,14 @@ export class UserController {
       }
 
       if (file.size > AVATAR_MAX_SIZE) {
-        res.status(400).json({ error: 'Kich thu?c ?nh t?i �a 2MB' });
+        res.status(400).json({ error: 'Kich thuoc anh toi da 5MB' });
         return;
       }
 
       const avatarUrl = await userService.updateAvatar(req.user.userId, file.buffer, file.mimetype);
       res.json({ avatarUrl, avatar_url: avatarUrl });
     } catch (error: any) {
-        console.error('Delete User Error:', error);
+      console.error('Upload Avatar Error:', error);
       res.status(error.statusCode || 500).json({ error: error.message || 'Upload avatar that bai' });
     }
   }
@@ -255,7 +255,7 @@ export class UserController {
       await userService.deleteAvatar(req.user.userId);
       res.json({ message: 'Xoa avatar thanh cong' });
     } catch (error: any) {
-        console.error('Delete User Error:', error);
+      console.error('Delete Avatar Error:', error);
       res.status(error.statusCode || 500).json({ error: error.message || 'Xoa avatar that bai' });
     }
   }

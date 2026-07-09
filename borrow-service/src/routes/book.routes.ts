@@ -82,7 +82,18 @@ router.get('/book/:isbn', async (req, res, next) => {
     if (!book) {
       const meta = await fetchGoogleBooks(req.params.isbn);
       if (!meta) throw new HttpError(404, 'Khong tim thay sach');
-      book = await repo.createBook(req.params.isbn, meta.title, meta.author, meta.coverUrl);
+      book = await repo.createBook(req.params.isbn, meta.title, meta.author, meta.coverUrl, undefined, {
+        subtitle: meta.subtitle,
+        publisher: meta.publisher,
+        publishedDate: meta.publishedDate,
+        description: meta.description,
+        pageCount: meta.pageCount,
+        categories: meta.categories,
+        averageRating: meta.averageRating,
+        language: meta.language,
+        isbn10: meta.isbn10,
+        isbn13: meta.isbn13,
+      });
     }
     const total = await repo.countCopies(book.id);
     const available = await repo.countCopies(book.id, true);

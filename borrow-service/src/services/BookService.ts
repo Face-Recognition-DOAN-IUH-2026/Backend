@@ -16,7 +16,18 @@ export class BookService {
     if (!book) {
       const meta = await fetchGoogleBooks(isbn);
       if (!meta) throw new HttpError(404, 'Khong tim thay sach');
-      book = await this.repo.createBook(isbn, meta.title, meta.author, meta.coverUrl);
+      book = await this.repo.createBook(isbn, meta.title, meta.author, meta.coverUrl, undefined, {
+        subtitle: meta.subtitle,
+        publisher: meta.publisher,
+        publishedDate: meta.publishedDate,
+        description: meta.description,
+        pageCount: meta.pageCount,
+        categories: meta.categories,
+        averageRating: meta.averageRating,
+        language: meta.language,
+        isbn10: meta.isbn10,
+        isbn13: meta.isbn13,
+      });
     }
     const total = await this.repo.countCopies(book.id);
     const available = await this.repo.countCopies(book.id, true);
