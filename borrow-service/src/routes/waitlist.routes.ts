@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { AuthRequest, requireRole } from '../middlewares/auth';
+import { auth, AuthRequest, requireRole } from '../middlewares/auth';
 import { WaitlistService } from '../services/WaitlistService';
 
 const router = Router();
+router.use(auth);
 const waitlistService = new WaitlistService();
 
 function patronIdFrom(user: AuthRequest['user']) {

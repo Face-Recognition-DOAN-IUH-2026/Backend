@@ -20,10 +20,10 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 app.use('/borrow/internal', borrowInternalRoutes);
+app.use('/borrow/waitlist', waitlistRoutes);
 app.use('/borrow', borrowRoutes);
 app.use('/borrow', bookRoutes);
 app.use('/borrow', staffRoutes);
-app.use('/borrow', waitlistRoutes);
 app.use('/library', libraryRoutes);
 app.use('/borrow/admin', adminSettingsRoutes);
 
