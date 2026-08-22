@@ -648,6 +648,10 @@ if (config.nodeEnv !== 'production') {
 
 // Frontend - proxy all other requests to Next.js dev server
 app.all('/*', (req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Not found', message: `API route ${req.path} not configured in gateway` });
+  }
+
   const targetUrl = new URL(req.originalUrl, config.frontendUrl);
   const options: http.RequestOptions = {
     hostname: targetUrl.hostname,

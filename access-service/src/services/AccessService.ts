@@ -216,15 +216,27 @@ export class AccessService {
     return results;
   }
 
-  async getFrequency(days = 7) {
-    const since = new Date();
-    since.setDate(since.getDate() - Math.max(1, Math.min(days, 31)));
+  async getFrequency(options?: { days?: number; dateFrom?: string; dateTo?: string }) {
+    const days = options?.days ?? 7;
+    let since: Date;
+    let until: Date;
+    if (options?.dateFrom) {
+      since = new Date(options.dateFrom);
+      since.setHours(0, 0, 0, 0);
+      until = options?.dateTo ? new Date(options.dateTo) : new Date();
+      until.setHours(23, 59, 59, 999);
+    } else {
+      since = new Date();
+      since.setDate(since.getDate() - Math.max(1, Math.min(days, 31)));
+      until = new Date();
+    }
     const rows = await logRepo()
       .createQueryBuilder('log')
       .select(`DATE_TRUNC('day', log.accessTime)`, 'date')
       .addSelect('log.accessType', 'access_type')
       .addSelect('COUNT(*)', 'count')
       .where('log.accessTime >= :since', { since })
+      .andWhere('log.accessTime <= :until', { until })
       .andWhere('log.cameraId IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
       .groupBy('date')
       .addGroupBy('log.accessType')

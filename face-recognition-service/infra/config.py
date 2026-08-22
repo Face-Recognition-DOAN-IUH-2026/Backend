@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     entry_cam_url: str = ""
     exit_cam_url: str = ""
     relay_api_url: str = ""
-    face_match_threshold: float = 0.5
+    face_match_threshold: float = 0.45
     access_cooldown_seconds: int = 10
     max_entry_hours: int = 24
     enable_person_detection: bool = True

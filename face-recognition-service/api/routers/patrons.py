@@ -14,7 +14,12 @@ from core.schemas import PatronCreate, PatronPublic, PatronUpdate, PatronRegiste
 from core.service_token import get_auth_headers
 from infra.config import settings
 from infra.patron_repository import PatronRepository
+from pydantic import BaseModel
 from worker.tasks import _upload_temp_frame, batch_enroll_task
+
+
+class BatchEnrollmentStatusRequest(BaseModel):
+    user_ids: list[str]
 
 router = APIRouter(prefix="/patrons", tags=["patrons"])
 
@@ -168,6 +173,39 @@ async def lookup_patron(
         user_id = uuid.UUID(result["patron"]["id"])
         result["has_face"] = await repo.get_active_face(user_id) is not None
     return result
+
+
+@router.post("/internal/batch-status")
+async def batch_enrollment_status(
+    body: BatchEnrollmentStatusRequest,
+):
+    from infra.milvus_client import MilvusClient
+
+    user_ids = body.user_ids
+    statuses: dict[str, bool] = {uid: False for uid in user_ids}
+    if not user_ids:
+        return {"statuses": statuses}
+
+    try:
+        mc = MilvusClient(
+            host=settings.milvus_host,
+            port=settings.milvus_port,
+            collection_name=settings.milvus_collection,
+            dim=512,
+        )
+        rows = mc.client.query(
+            mc.collection_name,
+            filter='user_id != ""',
+            output_fields=["user_id"],
+            limit=10000,
+        )
+        enrolled = {r["user_id"] for r in rows}
+        for uid in user_ids:
+            statuses[uid] = uid in enrolled
+    except Exception:
+        pass
+
+    return {"statuses": statuses}
 
 
 @router.get("/{patron_id}")

@@ -725,6 +725,174 @@ describe('ScheduleService — Coverage Part 2', () => {
       // Template-matched staff should be assigned first
       expect(result.proposed[0].staffId).toBe('staff-2');
     });
+
+    // ─── SCHED-FIX1: Full-week generation ──────────────────────────────────
+
+    it('should generate proposals for ALL 7 days of a week (SCHED-FIX1)', async () => {
+      const shiftRepo = createMockRepo();
+      const zoneRepo = createMockRepo();
+      const scheduleRepo = createMockRepo();
+      const templateRepo = createMockRepo();
+      const prefRepo = createMockRepo();
+
+      shiftRepo.findBy.mockResolvedValue([
+        { id: 'sh1', minStaff: 2, maxStaff: 4, isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' },
+        { id: 'sh2', minStaff: 2, maxStaff: 4, isActive: true, startTime: '13:00', endTime: '17:00', name: 'Afternoon' },
+      ]);
+      zoneRepo.findBy.mockResolvedValue([
+        { id: 'z1', isActive: true },
+        { id: 'z2', isActive: true },
+      ]);
+      scheduleRepo.find.mockResolvedValue([]);
+      templateRepo.findBy.mockResolvedValue([]);
+      prefRepo.find.mockResolvedValue([]);
+
+      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
+        const name = entity?.name || String(entity);
+        if (name === 'StaffShift') return shiftRepo;
+        if (name === 'LibraryZone') return zoneRepo;
+        if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffScheduleTemplate') return templateRepo;
+        if (name === 'StaffShiftPreference') return prefRepo;
+        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
+        return mockRepos[name];
+      });
+
+      service = new ScheduleService();
+      // 7-day range: from tomorrow to tomorrow+6
+      const result = await service.autoSchedule('admin-1', futureDate(1), futureDate(7));
+
+      // Should have proposals for all 7 days
+      const uniqueDates = [...new Set(result.proposed.map((p: any) => p.workDate))];
+      expect(uniqueDates.length).toBe(7);
+
+      // Total should be significant (3 staff × 2 shifts × 2 zones × 7 days, minus constraints)
+      expect(result.total).toBeGreaterThan(20);
+    });
+
+    it('should generate proposals for 14-day range (SCHED-FIX1)', async () => {
+      const shiftRepo = createMockRepo();
+      const zoneRepo = createMockRepo();
+      const scheduleRepo = createMockRepo();
+      const templateRepo = createMockRepo();
+      const prefRepo = createMockRepo();
+
+      shiftRepo.findBy.mockResolvedValue([
+        { id: 'sh1', minStaff: 1, maxStaff: 3, isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' },
+      ]);
+      zoneRepo.findBy.mockResolvedValue([{ id: 'z1', isActive: true }]);
+      scheduleRepo.find.mockResolvedValue([]);
+      templateRepo.findBy.mockResolvedValue([]);
+      prefRepo.find.mockResolvedValue([]);
+
+      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
+        const name = entity?.name || String(entity);
+        if (name === 'StaffShift') return shiftRepo;
+        if (name === 'LibraryZone') return zoneRepo;
+        if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffScheduleTemplate') return templateRepo;
+        if (name === 'StaffShiftPreference') return prefRepo;
+        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
+        return mockRepos[name];
+      });
+
+      service = new ScheduleService();
+      const result = await service.autoSchedule('admin-1', futureDate(1), futureDate(14));
+
+      // Should have proposals for all 14 days
+      const uniqueDates = [...new Set(result.proposed.map((p: any) => p.workDate))];
+      expect(uniqueDates.length).toBe(14);
+    });
+
+    it('should still enforce zone conflict per day (SCHED-FIX1)', async () => {
+      const shiftRepo = createMockRepo();
+      const zoneRepo = createMockRepo();
+      const scheduleRepo = createMockRepo();
+      const templateRepo = createMockRepo();
+      const prefRepo = createMockRepo();
+
+      shiftRepo.findBy.mockResolvedValue([
+        { id: 'sh1', minStaff: 1, maxStaff: 3, isActive: true, startTime: '08:00', endTime: '12:00', name: 'Morning' },
+      ]);
+      zoneRepo.findBy.mockResolvedValue([
+        { id: 'z1', isActive: true },
+        { id: 'z2', isActive: true },
+      ]);
+      scheduleRepo.find.mockResolvedValue([]);
+      templateRepo.findBy.mockResolvedValue([]);
+      prefRepo.find.mockResolvedValue([]);
+
+      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
+        const name = entity?.name || String(entity);
+        if (name === 'StaffShift') return shiftRepo;
+        if (name === 'LibraryZone') return zoneRepo;
+        if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffScheduleTemplate') return templateRepo;
+        if (name === 'StaffShiftPreference') return prefRepo;
+        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
+        return mockRepos[name];
+      });
+
+      service = new ScheduleService();
+      const result = await service.autoSchedule('admin-1', futureDate(1), futureDate(1));
+
+      // Each staff should be in at most 1 zone per day
+      const staffDayZones = new Map<string, Set<string>>();
+      for (const p of result.proposed) {
+        const key = `${p.staffId}:${p.workDate}`;
+        if (!staffDayZones.has(key)) staffDayZones.set(key, new Set());
+        staffDayZones.get(key)!.add(p.zoneId);
+      }
+      for (const [, zones] of staffDayZones) {
+        expect(zones.size).toBeLessThanOrEqual(1);
+      }
+    });
+
+    it('should still enforce time overlap check (SCHED-FIX1)', async () => {
+      const shiftRepo = createMockRepo();
+      const zoneRepo = createMockRepo();
+      const scheduleRepo = createMockRepo();
+      const templateRepo = createMockRepo();
+      const prefRepo = createMockRepo();
+
+      // Two overlapping shifts (08:00-13:00 and 12:00-17:00 overlap at 12:00-13:00)
+      shiftRepo.findBy.mockResolvedValue([
+        { id: 'sh1', minStaff: 1, maxStaff: 3, isActive: true, startTime: '08:00', endTime: '13:00', name: 'Morning' },
+        { id: 'sh2', minStaff: 1, maxStaff: 3, isActive: true, startTime: '12:00', endTime: '17:00', name: 'Afternoon' },
+      ]);
+      zoneRepo.findBy.mockResolvedValue([{ id: 'z1', isActive: true }]);
+      scheduleRepo.find.mockResolvedValue([]);
+      templateRepo.findBy.mockResolvedValue([]);
+      prefRepo.find.mockResolvedValue([]);
+
+      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
+        const name = entity?.name || String(entity);
+        if (name === 'StaffShift') return shiftRepo;
+        if (name === 'LibraryZone') return zoneRepo;
+        if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffScheduleTemplate') return templateRepo;
+        if (name === 'StaffShiftPreference') return prefRepo;
+        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
+        return mockRepos[name];
+      });
+
+      service = new ScheduleService();
+      const result = await service.autoSchedule('admin-1', futureDate(1), futureDate(1));
+
+      // No staff should have both sh1 and sh2 on the same day
+      const staffDayShifts = new Map<string, Set<string>>();
+      for (const p of result.proposed) {
+        const key = `${p.staffId}:${p.workDate}`;
+        if (!staffDayShifts.has(key)) staffDayShifts.set(key, new Set());
+        staffDayShifts.get(key)!.add(p.shiftId);
+      }
+      for (const [, shifts] of staffDayShifts) {
+        // sh1 and sh2 overlap, so staff should have at most 1 of them
+        if (shifts.has('sh1') && shifts.has('sh2')) {
+          fail('Staff has overlapping shifts on the same day');
+        }
+      }
+    });
   });
 
   // ─── Geofence ────────────────────────────────────────────────────────────

@@ -40,7 +40,7 @@
     "@types/swagger-ui-express": "^4.1.8",
     "jest": "^30.4.2",
     "supertest": "^7.2.2",
-    "ts-jest": "^29.4.11",
+    "ts-jest": "^29.4.12",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typeorm-ts-node-commonjs": "^0.3.20",

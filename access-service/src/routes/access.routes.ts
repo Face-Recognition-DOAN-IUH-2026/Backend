@@ -89,8 +89,8 @@ router.get('/logs', auth, requireRole(['admin', 'staff']), async (req, res, next
   try {
     res.json(await accessService.getLogs({
       patronId: req.query.patron_id as string | undefined,
-      dateFrom: req.query.dateFrom as string | undefined,
-      dateTo: req.query.dateTo as string | undefined,
+      dateFrom: (req.query.date_from ?? req.query.dateFrom) as string | undefined,
+      dateTo: (req.query.date_to ?? req.query.dateTo) as string | undefined,
       limit: Number(req.query.limit || 200),
     }));
   } catch (error) {
@@ -138,7 +138,11 @@ router.get('/active', auth, requireRole(['admin', 'staff']), async (_req, res, n
  */
 router.get('/frequency', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
-    res.json(await accessService.getFrequency(Number(req.query.days || 7)));
+    res.json(await accessService.getFrequency({
+      days: Number(req.query.days || 7),
+      dateFrom: (req.query.date_from ?? req.query.dateFrom) as string | undefined,
+      dateTo: (req.query.date_to ?? req.query.dateTo) as string | undefined,
+    }));
   } catch (error) {
     next(error);
   }

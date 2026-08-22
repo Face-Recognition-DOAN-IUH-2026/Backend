@@ -927,6 +927,7 @@ def enroll_face(self, patron_id: str, object_key: str, angle: str = "frontal") -
 def _resolve_best_match(results: list[dict], threshold: float) -> dict | None:
     from collections import Counter
     if not results:
+        logger.debug("Milvus returned 0 results")
         return None
     counts: Counter[str] = Counter()
     scores: dict[str, float] = {}
@@ -935,8 +936,12 @@ def _resolve_best_match(results: list[dict], threshold: float) -> dict | None:
         counts[pid] += 1
         scores[pid] = max(scores.get(pid, 0.0), r["score"])
     best_pid = max(scores, key=lambda pid: (counts[pid], scores[pid]))
+    logger.info("Face match: best_user=%s score=%.4f votes=%d threshold=%.4f (all_scores=%s)",
+                best_pid[:8], scores[best_pid], counts[best_pid], threshold,
+                {k[:8]: round(v, 4) for k, v in scores.items()})
     if scores[best_pid] >= threshold:
         return {"user_id": best_pid, "score": scores[best_pid], "votes": counts[best_pid]}
+    logger.warning("Face match REJECTED: best_score=%.4f < threshold=%.4f", scores[best_pid], threshold)
     return None
 
 
@@ -1194,7 +1199,18 @@ def _process_single_face(
     landmarks = face.kps.tolist() if hasattr(face, "kps") and face.kps is not None else None
     if orig_scale:
         bbox, landmarks = _scale_bbox_landmarks(bbox, landmarks, orig_scale[0], orig_scale[1])
+
+    # Check if embedding is valid (not zero vector)
+    import numpy as _np
+    emb_sum = float(_np.sum(_np.abs(norm_vec)))
+    if emb_sum < 0.1:
+        logger.warning("Near-zero embedding for face in camera %s (bbox=%s), skipping Milvus search", camera_id, bbox)
+        return None
+
     results = _get_milvus().search(embedding=norm_vec, top_k=5)
+    logger.info("Milvus search returned %d results for camera %s (threshold=%.4f)", len(results), camera_id, settings.face_match_threshold)
+    for r in results[:3]:
+        logger.info("  candidate: user=%s score=%.4f", r["user_id"][:8], r["score"])
     best = _resolve_best_match(results, settings.face_match_threshold)
     if not best:
         event = {
@@ -1383,6 +1399,8 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
         # Step 3: Detect all faces (filtered by min_face_size)
         resized_h, resized_w = img.shape[:2]
         all_faces = detect_all_faces(img, min_face_size=settings.min_face_size)
+        logger.info("Face detection: %d face(s) found in frame from %s (min_face_size=%d)",
+                     len(all_faces), camera_id, settings.min_face_size)
         if not all_faces:
             result = {"camera_id": camera_id, "status": "no_match"}
             _publish_camera_event(result)
@@ -1393,6 +1411,7 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
         scale_y = orig_h / resized_h if resized_h else 1.0
         granted_events = []
         for face_data in all_faces:
+            logger.info("Processing face: bbox=%s det_score=%.3f", face_data.get("bbox"), face_data.get("det_score"))
             event = _process_single_face(camera_id, img, face_data, raw_bytes=raw, orig_scale=(scale_x, scale_y))
             if event is not None:
                 granted_events.append(event)
@@ -1402,6 +1421,7 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
             _publish_camera_event(event)
 
         if not granted_events:
+            logger.warning("All %d face(s) in frame from %s did not match any enrolled user", len(all_faces), camera_id)
             return {"camera_id": camera_id, "status": "no_match"}
 
         return {
