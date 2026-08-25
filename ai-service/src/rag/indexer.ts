@@ -27,7 +27,9 @@ function getDocTitle(filePath: string): string {
 }
 
 function extractFrontmatter(content: string): { metadata: Record<string, string>; body: string } {
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  // Handle both LF and CRLF (Windows) line endings
+  const normalized = content.replace(/\r\n/g, '\n');
+  const frontmatterMatch = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
   if (frontmatterMatch) {
     const metadata: Record<string, string> = {};
     const frontmatterLines = frontmatterMatch[1].split('\n');
@@ -41,7 +43,7 @@ function extractFrontmatter(content: string): { metadata: Record<string, string>
     }
     return { metadata, body: frontmatterMatch[2] };
   }
-  return { metadata: { roles: 'patron' }, body: content };
+  return { metadata: { roles: 'patron' }, body: normalized };
 }
 
 function parseRoles(rolesStr: string): string[] {
@@ -54,7 +56,7 @@ function parseRoles(rolesStr: string): string[] {
 export async function indexDocuments(): Promise<void> {
   console.log('Starting document indexing...');
 
-  const docsPath = path.join(__dirname, '..', '..', 'src', 'docs');
+  const docsPath = path.join(__dirname, '..', '..', '..', '..', 'src', 'docs');
   const files = fs.readdirSync(docsPath).filter(f => f.endsWith('.md'));
 
   if (files.length === 0) {

@@ -56,4 +56,16 @@ export const config = {
   },
 
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || [],
+
+  // TTS (Text-to-Speech)
+  tts: {
+    provider: process.env.TTS_PROVIDER || 'mock',
+    apiKey: process.env.TTS_API_KEY || '',
+  },
+
+  // ASR (Automatic Speech Recognition)
+  asr: {
+    provider: process.env.ASR_PROVIDER || 'mock',
+    apiKey: process.env.ASR_API_KEY || '',
+  },
 };

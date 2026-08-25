@@ -207,6 +207,30 @@ class OpenRouterClient implements LLMClient {
   }
 }
 
+class MockLLMClient implements LLMClient {
+  async createChatCompletion(
+    messages: ChatMessage[],
+    _options: { temperature?: number; maxTokens?: number } = {}
+  ): Promise<string> {
+    const lastUser = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+    const lower = lastUser.toLowerCase();
+
+    // Simple rule-based mock: if user asks about books / search, return tool call
+    if (/(sách|book|tìm|tim|tra cứu|lookup|isbn)/i.test(lastUser) && !/đã tìm/i.test(lower)) {
+      const queryMatch = lastUser.match(/(?:tìm|sách|book)\s*(.*)/i);
+      const query = queryMatch?.[1]?.trim() || lastUser.slice(0, 40);
+      if (query.length > 2) {
+        return `{"tool": "search_books", "arguments": {"query": "${query.replace(/"/g, "'").slice(0, 80)}"}}`;
+      }
+    }
+    if (/(giờ|mo cua|dong cua|dia chi|lien he)/i.test(lower)) {
+      return 'Thư viện IUH mở cửa Thứ 2 - Thứ 6: 6:30 - 21:00, Thứ 7 - CN: 8:00 - 19:30. Địa chỉ liên hệ library@iuh.edu.vn. (Mock AI)';
+    }
+    // Default mock answer in Vietnamese
+    return `Xin chào! Tôi là TVTL - trợ lý thư viện IUH (Mock mode).\n\nBạn hỏi: "${lastUser.slice(0, 120)}"\n\nThư viện mở cửa T2-T6 6:30-21:00, T7-CN 8:00-19:30. Tôi có thể giúp tìm sách, tra cứu vị trí tầng, quy định mượn trả, và lịch trực. Bạn cần hỗ trợ gì thêm?`;
+  }
+}
+
 class FallbackLLMClient implements LLMClient {
   private primary: LLMClient;
   private fallback: LLMClient | null;
@@ -214,6 +238,13 @@ class FallbackLLMClient implements LLMClient {
   private fallbackName: string;
 
   constructor() {
+    if (config.ai.mockMode) {
+      this.primary = new MockLLMClient();
+      this.primaryName = 'Mock';
+      this.fallback = null;
+      this.fallbackName = '';
+      return;
+    }
     if (config.nvidiaApiKey) {
       this.primary = new NvidiaNIMClient();
       this.primaryName = 'NVIDIA NIM';

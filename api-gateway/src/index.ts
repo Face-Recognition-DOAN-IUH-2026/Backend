@@ -287,10 +287,24 @@ const aiProxyOpts = {
   pathRewrite: stripApiPrefixFromOriginalPath,
 };
 
+const aiSSEProxyOpts = {
+  target: config.services.aiService,
+  changeOrigin: true,
+  timeout: 0,
+  proxyTimeout: 0,
+  pathRewrite: stripApiPrefixFromOriginalPath,
+  on: {
+    proxyReq: (proxyReq: any) => {
+      proxyReq.setHeader('X-Legacy-Routed', 'true');
+    },
+  },
+};
+
 const patronAiLimiter = rateLimit({ windowMs: 60000, max: 60, message: { error: 'Too many requests from patron' } });
 const staffAiLimiter = rateLimit({ windowMs: 60000, max: 120, message: { error: 'Too many requests from staff' } });
 const adminAiLimiter = rateLimit({ windowMs: 60000, max: 200, message: { error: 'Too many requests from admin' } });
 
+app.use('/api/ai/companion/stream', createProxyMiddleware(aiSSEProxyOpts));
 app.use('/api/ai/patrons', patronAiLimiter, createProxyMiddleware(aiProxyOpts));
 app.use('/api/ai/staff', staffAiLimiter, createProxyMiddleware(aiProxyOpts));
 app.use('/api/ai/admin', adminAiLimiter, createProxyMiddleware(aiProxyOpts));
