@@ -1,6 +1,8 @@
 import { nvidiaClient } from '../clients/nvidia';
 import { ToolDef, patronToolDefs, getToolDefsForRole } from '../tools/registry';
 import { retrieve, RetrievedDocument } from '../rag/retriever';
+import { MemoryService } from '../services/MemoryService';
+import { TTSClient } from '../clients/TTSClient';
 
 type ChatRole = 'system' | 'user' | 'assistant';
 
@@ -288,4 +290,185 @@ export async function processMessage(
   };
 }
 
-export default { processMessage };
+export interface CompanionMessageInput {
+  message?: string;
+  audioBase64?: string;
+  sessionId: string;
+  role: string;
+  patronId: string;
+  sessionHistory?: Array<{ role: string; content: string }>;
+}
+
+export interface CompanionChunk {
+  type: 'text' | 'audio' | 'viseme' | 'tool_result' | 'book_card' | 'companion_done';
+  data: any;
+}
+
+export async function* processCompanionMessage(
+  input: CompanionMessageInput,
+): AsyncGenerator<CompanionChunk> {
+  const memoryService = new MemoryService();
+  const ttsClient = new TTSClient();
+
+  let message = input.message || '';
+
+  if (input.audioBase64 && !message) {
+    const { ASRClient } = await import('../clients/ASRClient');
+    const asrClient = new ASRClient();
+    const audioBuffer = Buffer.from(input.audioBase64, 'base64');
+    const result = await asrClient.transcribeAudio(audioBuffer);
+    message = result.transcript;
+    yield { type: 'text', data: { content: `[Voice] ${message}` } };
+  }
+
+  let memories: Record<string, string> = {};
+  try {
+    memories = await memoryService.getMemoriesForPatron(input.patronId);
+  } catch (e) {
+    console.warn('[Companion] getMemoriesForPatron failed, using empty:', (e as Error).message);
+    memories = {};
+  }
+  const memoryContext = Object.entries(memories)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join('\n');
+
+  const contextDocs = await retrieve(message, 5, input.role);
+  const availableTools = getToolDefsForRole(input.role);
+
+  let systemPrompt = buildSystemPrompt(contextDocs, {
+    userId: input.patronId,
+    email: '',
+    role: input.role,
+  }, availableTools);
+
+  if (memoryContext) {
+    systemPrompt += `\n\nLong-term Memory:\n${memoryContext}`;
+  }
+
+  const messages: Array<{ role: ChatRole; content: string }> = [
+    { role: 'system', content: systemPrompt },
+  ];
+
+  if (input.sessionHistory && input.sessionHistory.length > 0) {
+    for (const msg of input.sessionHistory.slice(-10)) {
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        messages.push({ role: msg.role as ChatRole, content: msg.content });
+      }
+    }
+  }
+
+  messages.push({ role: 'user', content: message });
+
+  let maxIterations = 3;
+  let toolResults: Array<{ name: string; result: any }> = [];
+
+  while (maxIterations > 0) {
+    maxIterations--;
+
+    const response = await nvidiaClient.createChatCompletion(messages, {
+      temperature: 0.7,
+      maxTokens: 2048,
+    });
+
+    messages.push({ role: 'assistant', content: response });
+
+    const toolCalls = parseToolCalls(response || '');
+
+    if (!response || toolCalls.length === 0) {
+      let finalResponse = (response || '').trim();
+      if (!finalResponse && toolResults.length > 0) {
+        const toolSummary = toolResults
+          .filter(t => t.result?.success && t.result?.data)
+          .map(t => {
+            const data = t.result.data;
+            if (Array.isArray(data)) {
+              if (data.length === 0) return `Khong tim thay ket qua tu ${t.name}.`;
+              return `Tu ${t.name}: ${data.length} ket qua.`;
+            }
+            return `Ket qua tu ${t.name}.`;
+          })
+          .join('\n');
+        finalResponse = toolSummary || 'Da truy van xong.';
+      }
+      if (!finalResponse) {
+        finalResponse = 'Xin loi, toi da gap su co khi xu ly cau hoi cua ban. Vui long thu lai.';
+      }
+
+      const ttsResult = await ttsClient.synthesizeSpeech(finalResponse);
+
+      yield { type: 'text', data: { content: finalResponse } };
+      yield { type: 'audio', data: { audioBase64: ttsResult.audioBase64, durationMs: ttsResult.durationMs } };
+      yield { type: 'viseme', data: { visemes: ttsResult.visemes } };
+
+      if (finalResponse.includes(':::book_card')) {
+        const bookCardMatch = finalResponse.match(/:::book_card\s*(\{.*?\})/s);
+        if (bookCardMatch) {
+          try {
+            const bookCard = JSON.parse(bookCardMatch[1]);
+            yield { type: 'book_card', data: bookCard };
+          } catch {}
+        }
+      }
+
+      memoryService.consolidateNewMemories(input.patronId, [
+        { role: 'user', content: message },
+        { role: 'assistant', content: finalResponse },
+      ]).catch(() => {});
+
+      yield { type: 'companion_done', data: { sessionId: input.sessionId } };
+      return;
+    }
+
+    const callsToProcess = toolCalls.slice(0, 1);
+
+    for (const call of callsToProcess) {
+      const tool = availableTools.find(t => t.name === call.name);
+
+      if (!tool) {
+        toolResults.push({
+          name: call.name,
+          result: { error: `Unknown tool: ${call.name}. Access denied for role: ${input.role}` },
+        });
+        messages.push({
+          role: 'user',
+          content: `[He thong] Tool "${call.name}" khong ton tai hoac ban khong co quyen su dung. Chi su dung cac tool: ${availableTools.map(t => t.name).join(', ')}`,
+        });
+        continue;
+      }
+
+      try {
+        const fn = tool.func as (...args: any[]) => any;
+
+        let result: any;
+        if (tool.injectUserId) {
+          result = await fn(input.patronId);
+        } else {
+          const argValues = Object.values(call.args);
+          result = await fn(...argValues);
+        }
+
+        toolResults.push({ name: call.name, result });
+
+        yield { type: 'tool_result', data: { name: call.name, result } };
+
+        const resultStr = JSON.stringify(result, null, 2);
+        messages.push({
+          role: 'user',
+          content: `[He thong] Ket qua tu tool "${call.name}":\n${resultStr}\n\nDua tren ket qua tren, tra loi nguoi dung bang tieng Viet. Neu da co du thong tin, tong hop va tra loi. Neu can them thong tin, goi tool tiep theo.`,
+        });
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        toolResults.push({ name: call.name, result: { error: errorMsg } });
+        messages.push({
+          role: 'user',
+          content: `[He thong] Loi khi goi tool "${call.name}": ${errorMsg}`,
+        });
+      }
+    }
+  }
+
+  yield { type: 'text', data: { content: 'Da dat den gioi han so buoc xu ly. Vui long thu lai voi cau hoi ngan hon.' } };
+  yield { type: 'companion_done', data: { sessionId: input.sessionId } };
+}
+
+export default { processMessage, processCompanionMessage };

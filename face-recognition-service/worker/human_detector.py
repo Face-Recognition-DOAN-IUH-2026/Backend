@@ -16,8 +16,8 @@ PROTOTXT_PATH = os.path.join(MODEL_DIR, "MobileNetSSD_deploy.prototxt")
 MODEL_PATH = os.path.join(MODEL_DIR, "MobileNetSSD_deploy.caffemodel")
 MODEL_INPUT_SIZE = (300, 300)
 PERSON_CLASS_ID = 15
-CONFIDENCE_THRESHOLD = 0.5
-MIN_PERSON_AREA = 0.015
+CONFIDENCE_THRESHOLD = 0.3
+MIN_PERSON_AREA = 0.008
 
 _net = None
 

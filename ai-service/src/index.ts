@@ -8,6 +8,8 @@ import cardParserRouter from './routes/card-parser';
 import patronChatRouter from './routes/chat.patron';
 import staffChatRouter from './routes/chat.staff';
 import adminChatRouter from './routes/chat.admin';
+import companionRouter from './routes/companion';
+import legacyChatRouter from './routes/chat.legacy';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
@@ -59,6 +61,13 @@ app.get('/ai/health', async (_req, res) => {
     chromadb: { connected: chromaOk, documents: chromaCount },
   });
 });
+
+// Companion streaming (SSE) — used by AIWidget store: POST /api/ai/companion/stream
+app.use('/ai/companion', auth, companionRouter);
+
+// Legacy unified chat endpoint: POST /api/ai/chat (backward compatibility)
+// The gateway docs previously showed POST /api/ai/chat → keep alias to avoid 404
+app.use('/ai/chat', auth, legacyChatRouter);
 
 // Role-specific chat routes (NEW: role-isolated tool registries)
 app.use('/ai/patrons/chat', auth, requireRole(['patron']), patronChatRouter);

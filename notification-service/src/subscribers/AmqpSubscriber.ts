@@ -104,6 +104,12 @@ export async function startAmqpSubscriber(): Promise<void> {
           }
         } catch (err: any) {
           console.error(`[AMQP] Processing error on ${eventType}: ${err.message}`);
+          // Don't re-throw email errors — log and ack to prevent channel close crash
+          // Email failures (SMTP auth, network) should not kill the service
+          if (err.message?.includes('SMTP') || err.message?.includes('Username and Password not accepted') || err.message?.includes('ECONNREFUSED')) {
+            console.warn(`[AMQP] Email send failed (non-fatal): ${err.message}`);
+            return;
+          }
           throw err;
         }
       }

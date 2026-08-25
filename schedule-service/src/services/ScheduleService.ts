@@ -855,11 +855,6 @@ export class ScheduleService {
             if (proposed.some((p) => p.staffId === s.id && p.workDate === workDate && p.shiftId === shift.id && p.zoneId === zone.id)) continue;
             if (existing.some((e) => e.staffId === s.id)) continue;
 
-            const existingCount = existingAssignments.filter((a) => a.staffId === s.id).length;
-            const proposedCount = staffWorkload.get(s.id) || 0;
-            const maxShifts = config.maxShiftsPerWeek;
-            if (existingCount + proposedCount >= maxShifts) { skipped.push(`max:${s.id}:${workDate}`); continue; }
-
             const sameDayAssignments = getStaffDayAssignments(s.id, workDate);
 
             let hasZoneConflict = false;

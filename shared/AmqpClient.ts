@@ -174,7 +174,7 @@ export class AmqpClient {
             });
             this.channel?.ack(msg);
           } else {
-            this.channel?.publish(dlq, '', msg.content, { persistent: true });
+            this.channel?.publish('', dlq, msg.content, { persistent: true });
             this.channel?.ack(msg);
           }
         }
@@ -236,7 +236,7 @@ export class AmqpClient {
             ch.ack(msg);
           } else {
             console.error(`[AMQP] DLQ after 3 retries on ${queueName}: ${err.message}`);
-            ch.publish(dlq, msg.fields.routingKey, msg.content, { persistent: true });
+            ch.publish('', dlq, msg.content, { persistent: true });
             ch.ack(msg);
           }
         }
