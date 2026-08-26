@@ -154,6 +154,26 @@ export class RedisService {
     const key = `pre_register_token:${email.toLowerCase()}`;
     await this.client.del(key);
   }
+
+  async checkRateLimit(key: string, limit: number, windowSeconds: number): Promise<boolean> {
+    const current = await this.client.incr(key);
+    if (current === 1) {
+      await this.client.expire(key, windowSeconds);
+    }
+    return current <= limit;
+  }
+
+  async incrementFailedAttempt(key: string, windowSeconds: number): Promise<number> {
+    const current = await this.client.incr(key);
+    if (current === 1) {
+      await this.client.expire(key, windowSeconds);
+    }
+    return current;
+  }
+
+  async deleteFailedAttempt(key: string): Promise<void> {
+    await this.client.del(key);
+  }
 }
 
 export function verifyUserDeletedEvent(

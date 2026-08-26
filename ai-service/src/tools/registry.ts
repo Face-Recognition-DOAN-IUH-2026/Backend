@@ -25,9 +25,9 @@ export const patronToolDefs: ToolDef[] = [
 
 export const staffToolDefs: ToolDef[] = [
   ...patronBase,
-  { name: 'get_patron_info', description: 'Tra cuu thong tin doc gia theo ma sinh vien. Input: student_code', func: getPatronInfoById },
-  { name: 'get_patron_borrows', description: 'Tra cuu sach dang muon cua mot doc gia theo ma sinh vien. Input: student_code', func: getPatronBorrowsById },
-  { name: 'get_patron_history', description: 'Tra cuu lich su muon tra cua mot doc gia theo ma sinh vien. Input: student_code', func: getPatronHistoryById },
+  { name: 'get_patron_info', description: 'Tra cứu thông tin độc giả theo mã sinh viên. Input: student_code', func: getPatronInfoById },
+  { name: 'get_patron_borrows', description: 'Tra cứu sách đang mượn của một độc giả theo ma sinh vien. Input: student_code', func: getPatronBorrowsById },
+  { name: 'get_patron_history', description: 'Tra cứu lịch sử mượn trả của một độc giả theo ma sinh vien. Input: student_code', func: getPatronHistoryById },
   { name: 'get_overdue_borrows', description: 'Xem danh sach sach tre han trong toan he thong. Khong can tham so.', func: getOverdueBorrows },
   { name: 'get_schedule_today', description: 'Xem lich truc cua nhan vien hom nay. Khong can tham so.', func: getScheduleToday },
 ];

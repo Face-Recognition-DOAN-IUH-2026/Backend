@@ -74,15 +74,15 @@ export class UserController {
       }
       const { old_password, new_password } = req.body;
       if (!old_password || !new_password) {
-        res.status(400).json({ error: 'Vui long nhap mat khau cu va moi' });
+        res.status(400).json({ error: 'Vui lòng nhập mật khẩu cũ và mới' });
         return;
       }
       if (new_password.length < 6) {
-        res.status(400).json({ error: 'Mat khau moi phai it nhat 6 ki tu' });
+        res.status(400).json({ error: 'Mật khẩu mới phải ít nhất 6 ký tự' });
         return;
       }
       await userService.changePassword(req.user.userId, old_password, new_password);
-      res.json({ message: 'Doi mat khau thanh cong' });
+      res.json({ message: 'Đổi mật khẩu thành công' });
     } catch (error: any) {
         console.error('Delete User Error:', error);
       res.status(error.statusCode || 400).json({ error: error.message });
@@ -120,7 +120,7 @@ export class UserController {
         return;
       }
       await userService.verifyAndChangeEmail(req.user.userId, new_email, code);
-      res.json({ message: 'Doi email thanh cong' });
+      res.json({ message: 'Đổi email thành công' });
     } catch (error: any) {
         console.error('Delete User Error:', error);
       res.status(error.statusCode || 400).json({ error: error.message });
@@ -241,7 +241,7 @@ export class UserController {
       res.json({ avatarUrl, avatar_url: avatarUrl });
     } catch (error: any) {
       console.error('Upload Avatar Error:', error);
-      res.status(error.statusCode || 500).json({ error: error.message || 'Upload avatar that bai' });
+      res.status(error.statusCode || 500).json({ error: error.message || 'Tải lên ảnh đại diện thất bại' });
     }
   }
 
@@ -253,10 +253,10 @@ export class UserController {
       }
 
       await userService.deleteAvatar(req.user.userId);
-      res.json({ message: 'Xoa avatar thanh cong' });
+      res.json({ message: 'Xóa ảnh đại diện thành công' });
     } catch (error: any) {
       console.error('Delete Avatar Error:', error);
-      res.status(error.statusCode || 500).json({ error: error.message || 'Xoa avatar that bai' });
+      res.status(error.statusCode || 500).json({ error: error.message || 'Xóa ảnh đại diện thất bại' });
     }
   }
 }

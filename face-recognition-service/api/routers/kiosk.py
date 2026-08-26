@@ -250,12 +250,12 @@ async def kiosk_batch_enroll(
         except Exception:
             pass
         await _proxy_delete_user(user_data["id"])
-        raise HTTPException(400, f"Dang ky that bai. Loi cac goc: {', '.join(error_msgs)}")
+        raise HTTPException(400, f"Đăng ký thất bại. Lỗi các góc: {', '.join(error_msgs)}")
 
     user = await _proxy_get_user(user_data["id"])
     return KioskResult(
         success=True,
-        message="Da tao doc gia voi day du 4 goc khuon mat.",
+        message="Đã tạo độc giả với đầy đủ 4 góc khuôn mặt.",
         patron=await _patron_to_public(user, repo),
     )
 

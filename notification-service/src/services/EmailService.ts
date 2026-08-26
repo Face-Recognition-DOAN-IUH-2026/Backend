@@ -29,14 +29,14 @@ export class EmailService {
     const mailOptions = {
       from: config.smtp.from,
       to: toEmail,
-      subject: '[ThuVienIUH] Ma reset mat khau',
+      subject: '[ThuVienIUH] Mã khôi phục mật khẩu',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
           <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; text-align: center; border-radius: 12px 12px 0 0;">
             <h1 style="color: white; margin: 0; font-size: 24px;">Thu Vien IUH</h1>
           </div>
           <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px; border: 1px solid #e0e0e0;">
-            <h2 style="color: #333; margin: 0 0 16px; font-size: 20px;">Ma reset mat khau cua ban</h2>
+            <h2 style="color: #333; margin: 0 0 16px; font-size: 20px;">Mã khôi phục mật khẩu của bạn</h2>
             <div style="background: #f5f5f5; padding: 24px; text-align: center; border-radius: 8px; margin: 24px 0;">
               <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #667eea;">${code}</span>
             </div>
@@ -45,7 +45,7 @@ export class EmailService {
             </p>
             <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 16px; margin: 24px 0;">
               <p style="color: #856404; font-size: 13px; margin: 0;">
-                <strong>Luu y:</strong> Neu ban khong yeu cau dat lai mat khau, vui long bo qua email nay va dam bao tai khoan cua ban van an toan.
+                <strong>Luu y:</strong> Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.va dam bao tai khoan cua ban van an toan.
               </p>
             </div>
             <p style="color: #999; font-size: 12px; text-align: center; margin: 24px 0 0;">
@@ -61,7 +61,7 @@ Ma reset cua ban la: ${code}
 
 Ma co hieu luc trong 15 phut.
 
-Neu ban khong yeu cau dat lai mat khau, vui long bo qua email nay.
+Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.
       `,
     };
 
@@ -169,7 +169,7 @@ Neu ban khong yeu cau dat lai mat khau, vui long bo qua email nay.
               The thanh vien cua ban se het han vao ngay <strong>${formattedDate}</strong>.
             </p>
             <p style="color: #666; font-size: 14px; line-height: 1.6;">
-              Vui long den thu vien de nap tien gia han the. Sau khi het han, ban se khong the muon sach cho den khi nap tien gia han.
+              Vui lòng đến thư viện để nạp tiền gia hạn thẻ. Sau khi hết hạn, bạn sẽ không thể mượn sách cho đến khi nạp tiền.
             </p>
             <div style="background: #e3f2fd; border: 1px solid #1976d2; border-radius: 8px; padding: 16px; margin: 24px 0;">
               <p style="color: #0d47a1; font-size: 13px; margin: 0;">

@@ -103,7 +103,7 @@ export class AuthController {
       }
       const isValid = await authService.verifyResetCode(email, code);
       if (!isValid) {
-        res.status(400).json({ error: 'Ma reset khong hop le hoac da het han' });
+        res.status(400).json({ error: 'Mã khôi phục không hợp lệ hoặc đã hết hạn' });
         return;
       }
       res.json({ valid: true });
@@ -116,15 +116,15 @@ export class AuthController {
     try {
       const { email, code, new_password } = req.body;
       if (!email || !code || !new_password) {
-        res.status(400).json({ error: 'Email, ma reset, va mat khau moi la bat buoc' });
+        res.status(400).json({ error: 'Email, mã khôi phục, và mật khẩu mới là bắt buộc' });
         return;
       }
       if (new_password.length < 6) {
-        res.status(400).json({ error: 'Mat khau moi phai it nhat 6 ki tu' });
+        res.status(400).json({ error: 'Mật khẩu mới phải ít nhất 6 ký tự' });
         return;
       }
       await authService.resetPassword(email, code, new_password);
-      res.json({ message: 'Dat lai mat khau thanh cong' });
+      res.json({ message: 'Đặt lại mật khẩu thành công' });
     } catch (error: any) {
       res.status(error.statusCode || 400).json({ error: error.message });
     }
@@ -138,7 +138,7 @@ export class AuthController {
         return;
       }
       await authService.verifyEmail(email, code);
-      res.json({ message: 'Xac thuc email thanh cong' });
+      res.json({ message: 'Xác thực email thành công' });
     } catch (error: any) {
       res.status(error.statusCode || 400).json({ error: error.message });
     }
@@ -180,7 +180,7 @@ export class AuthController {
         return;
       }
       await authService.verifyEmailAndCorrect(current_email, new_email, code);
-      res.json({ message: 'Doi email va xac thuc thanh cong' });
+      res.json({ message: 'Đổi email và xác thực thành công' });
     } catch (error: any) {
       res.status(error.statusCode || 400).json({ error: error.message });
     }
