@@ -523,7 +523,7 @@ router.post('/return', async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: result.fineAmount > 0 ? `Tra sach thanh cong. Phi phat: ${result.fineAmount.toLocaleString('vi-VN')}d` : 'Tra sach thanh cong',
+      message: result.fineAmount > 0 ? `Trả sách thành công. Phí phạt: ${result.fineAmount.toLocaleString('vi-VN')}d` : 'Trả sách thành công',
       data: {
         record_id: result.id,
         book_title: result.book?.title,
@@ -589,7 +589,7 @@ router.post('/renew', async (req: Request, res: Response) => {
     const currentDue = new Date(record.dueAt);
     const now = new Date();
     if (currentDue <= now) {
-      res.status(400).json({ success: false, detail: 'Phieu muon da qua han, khong the gia han.' });
+      res.status(400).json({ success: false, detail: 'Phiếu mượn đã quá hạn, không thể gia hạn.' });
       return;
     }
 
@@ -601,7 +601,7 @@ router.post('/renew', async (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      message: `Gia han thanh cong (${record.renewalCount}/${config.maxRenewals})`,
+      message: `Gia hạn thành công (${record.renewalCount}/${config.maxRenewals})`,
       data: {
         record_id: record.id,
         book_title: record.book?.title,

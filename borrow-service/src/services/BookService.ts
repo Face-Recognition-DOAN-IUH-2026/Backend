@@ -59,7 +59,7 @@ export class BookService {
 
   async getBookById(bookId: string) {
     const book = await this.repo.getBookById(bookId);
-    if (!book) throw new HttpError(404, 'Sach khong ton tai');
+    if (!book) throw new HttpError(404, 'Sách không tồn tại');
     const total = await this.repo.countCopies(book.id);
     const available = await this.repo.countCopies(book.id, true);
     return serializeBookWithStats(book, total, available);
@@ -84,7 +84,7 @@ export class BookService {
     if (fields.cover_url !== undefined) updateFields.coverUrl = fields.cover_url;
     
     const updated = await this.repo.updateBook(book.id, updateFields);
-    if (!updated) throw new HttpError(500, 'Cap nhat sach that bai');
+    if (!updated) throw new HttpError(500, 'Cập nhật sách thất bại');
     
     const total = await this.repo.countCopies(book.id);
     const available = await this.repo.countCopies(book.id, true);

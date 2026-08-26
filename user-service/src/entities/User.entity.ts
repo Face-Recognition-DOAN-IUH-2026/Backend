@@ -86,4 +86,10 @@ export class User {
 
   @Column({ type: 'text', nullable: true, name: 'suspended_reason' })
   suspendedReason: string | null;
+
+  @Column({ type: 'boolean', default: false, name: 'has_face' })
+  hasFace: boolean;
+
+  @Column({ type: 'text', nullable: true, name: 'face_descriptor' })
+  faceDescriptor: string | null;
 }

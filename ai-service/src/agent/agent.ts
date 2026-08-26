@@ -66,7 +66,9 @@ QUY TAC CHO STAFF/ADMIN:
     }
   }
 
-  return `Ban la tro ly thu vien cua IUH (Vien Dao tao Quoc te - Dai hoc Cong nghe TP.HCM), ten "TVTL".
+  const basePrompt = `Ban la tro ly thu vien cua IUH (Vien Dao tao Quoc te - Dai hoc Cong nghe TP.HCM), ten "TVTL".`;
+
+  return `${basePrompt}
 
 Nhiem vu chinh:
 - Tra loi cau hoi ve thu vien (gio mo cua, quy dinh, chinh sach)
@@ -249,7 +251,7 @@ export async function processMessage(
         });
         messages.push({
           role: 'user',
-          content: `[He thong] Tool "${call.name}" khong ton tai hoac ban khong co quyen su dung. Chi su dung cac tool: ${availableTools.map(t => t.name).join(', ')}`,
+          content: `[He thong] Tool "${call.name}" không tồn tại hoac ban khong co quyen su dung. Chi su dung cac tool: ${availableTools.map(t => t.name).join(', ')}`,
         });
         continue;
       }
@@ -431,7 +433,7 @@ export async function* processCompanionMessage(
         });
         messages.push({
           role: 'user',
-          content: `[He thong] Tool "${call.name}" khong ton tai hoac ban khong co quyen su dung. Chi su dung cac tool: ${availableTools.map(t => t.name).join(', ')}`,
+          content: `[He thong] Tool "${call.name}" không tồn tại hoac ban khong co quyen su dung. Chi su dung cac tool: ${availableTools.map(t => t.name).join(', ')}`,
         });
         continue;
       }

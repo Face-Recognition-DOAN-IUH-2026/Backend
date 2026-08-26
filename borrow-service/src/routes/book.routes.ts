@@ -178,7 +178,7 @@ router.get('/books/:book_id', async (req, res, next) => {
   try {
     const repo = new BorrowRepository();
     const book = await repo.getBookById(req.params.book_id);
-    if (!book) throw new HttpError(404, 'Sach khong ton tai');
+    if (!book) throw new HttpError(404, 'Sách không tồn tại');
     const total = await repo.countCopies(book.id);
     const available = await repo.countCopies(book.id, true);
     res.json(serializeBookWithStats(book, total, available));
@@ -221,7 +221,7 @@ router.put('/books/:book_id', requireRole(['admin', 'staff'], 'Chi quan tri vien
     if (body.shelf_location !== undefined) fields.shelfLocation = body.shelf_location;
     if (body.cover_url !== undefined) fields.coverUrl = body.cover_url;
     const updated = await repo.updateBook(book.id, fields);
-    if (!updated) throw new HttpError(500, 'Cap nhat sach that bai');
+    if (!updated) throw new HttpError(500, 'Cập nhật sách thất bại');
     const total = await repo.countCopies(book.id);
     const available = await repo.countCopies(book.id, true);
     res.json(serializeBookWithStats(updated, total, available));

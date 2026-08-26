@@ -233,7 +233,7 @@ export class UserService {
     if (!user) throw new NotFoundError('User not found');
 
     const isMatch = await bcrypt.compare(oldPass, user.passwordHash);
-    if (!isMatch) throw new UnauthorizedError('Mat khau hien tai khong dung');
+    if (!isMatch) throw new UnauthorizedError('Mật khẩu hiện tại không đúng');
 
     const passwordHash = await bcrypt.hash(newPass, 10);
     await this.userRepo.update(id, { passwordHash });
@@ -280,7 +280,7 @@ export class UserService {
       }, 2, 500);
     } catch (e: any) {
       console.error('[UserService] Failed to send email change OTP:', e.response?.status, e.response?.data || e.message);
-      throw new Error('Khong the gui email, vui long thu lai sau');
+      throw new Error('Không thể gửi email, vui lòng thử lại sau');
     }
   }
 
@@ -292,7 +292,7 @@ export class UserService {
     const storedCode = await this.redis.getEmailVerificationCode(normalizedEmail);
     
     if (!storedCode || storedCode !== code) {
-      throw new BadRequestError('Ma xac thuc khong hop le hoac da het han');
+      throw new BadRequestError('Mã xác thực không hợp lệ hoặc đã hết hạn');
     }
 
     const existing = await this.userRepo.findByEmail(normalizedEmail);

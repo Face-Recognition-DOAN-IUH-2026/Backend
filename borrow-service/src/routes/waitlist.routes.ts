@@ -12,7 +12,7 @@ function patronIdFrom(user: AuthRequest['user']) {
   return user.id;
 }
 
-router.post('/', requireRole(['patron', 'admin', 'staff'], 'Chi doc gia, admin, nhan vien moi vao danh sach cho'), async (req: AuthRequest, res, next) => {
+router.post('/', requireRole(['patron', 'admin', 'staff'], 'Chỉ độc giả, admin, nhân viên mới vào danh sách chờ'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ book_id: z.string().uuid() }).parse(req.body);
     const userId = patronIdFrom(req.user);
@@ -31,7 +31,7 @@ router.post('/', requireRole(['patron', 'admin', 'staff'], 'Chi doc gia, admin, 
   }
 });
 
-router.delete('/:id', requireRole(['patron', 'admin', 'staff'], 'Chi doc gia, admin, nhan vien moi huy danh sach cho'), async (req: AuthRequest, res, next) => {
+router.delete('/:id', requireRole(['patron', 'admin', 'staff'], 'Chỉ độc giả, admin, nhân viên mới hủy danh sách chờ'), async (req: AuthRequest, res, next) => {
   try {
     const userId = patronIdFrom(req.user);
     await waitlistService.cancelWaitlist(req.params.id, userId);

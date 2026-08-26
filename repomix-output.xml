@@ -96,22 +96,35 @@ ai-service/
   migrations/
     1720200000000-CreateAiSchema.ts
     1720200000001-AddInsightFields.ts
+    1720200000002-CreateAiMemoryTable.ts
   src/
     __tests__/
       agent/
         agent.test.ts
+      clients/
+        ASRClient.test.ts
+        TTSClient.test.ts
+      entities/
+        AiMemory.test.ts
+      migrations/
+        CreateAiMemoryTable.test.ts
       routes/
         card-parser.test.ts
+        companion-stream.test.ts
+      services/
+        MemoryService.test.ts
       tools/
         tools.test.ts
       swagger.test.ts
     agent/
       agent.ts
     clients/
+      ASRClient.ts
       chromadb.ts
       embedding.ts
       nvidia.ts
       OpenRouterClient.ts
+      TTSClient.ts
     config/
       swagger.ts
     docs/
@@ -126,6 +139,7 @@ ai-service/
       vi-tri-tang.md
     entities/
       AiInsight.ts
+      AiMemory.ts
       AiRun.ts
     rag/
       embedder.ts
@@ -135,11 +149,14 @@ ai-service/
       ai.routes.ts
       card-parser.ts
       chat.admin.ts
+      chat.legacy.ts
       chat.patron.ts
       chat.staff.ts
+      companion.ts
     services/
       AiService.ts
       DataCollector.ts
+      MemoryService.ts
       types.ts
     tools/
       registry.ts
@@ -1654,27 +1671,6 @@ export interface BookRecommendationResponse {
   generated_at: string;
   model: string;
 }
-</file>
-
-<file path="ai-service/src/data-source.ts">
-import 'reflect-metadata';
-import { DataSource } from 'typeorm';
-import { config } from './config';
-import { AiInsight } from './entities/AiInsight';
-import { AiRun } from './entities/AiRun';
-
-export const AppDataSource = new DataSource({
-  type: 'postgres',
-  host: config.db.host,
-  port: config.db.port,
-  database: config.db.database,
-  username: config.db.user,
-  password: config.db.password,
-  entities: [AiInsight, AiRun],
-  migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
-  synchronize: false,
-  logging: process.env.TYPEORM_LOGGING === 'true',
-});
 </file>
 
 <file path="api-gateway/src/__tests__/error-report.test.ts">
@@ -11791,6 +11787,32 @@ jest.mock('./src/realtime/RealtimeHub', () => ({
 }));
 </file>
 
+<file path="ai-service/migrations/1720200000002-CreateAiMemoryTable.ts">
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+export class CreateAiMemoryTable1720200000002 implements MigrationInterface {
+  name = 'CreateAiMemoryTable1720200000002';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS ai.ai_memories (
+        id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        patron_id uuid NOT NULL,
+        memory_key varchar(100) NOT NULL,
+        memory_value text NOT NULL,
+        updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await queryRunner.query('CREATE INDEX IF NOT EXISTS idx_ai_memories_patron_id ON ai.ai_memories(patron_id)');
+    await queryRunner.query('CREATE UNIQUE INDEX IF NOT EXISTS uniq_ai_memories_patron_key ON ai.ai_memories(patron_id, memory_key)');
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query('DROP TABLE IF EXISTS ai.ai_memories');
+  }
+}
+</file>
+
 <file path="ai-service/src/__tests__/agent/agent.test.ts">
 jest.mock('../../config', () => ({
   config: {
@@ -11908,6 +11930,263 @@ describe('processMessage', () => {
     expect(result.sessionId).toBe('s1');
     expect(result.response).toBeTruthy();
     expect(typeof result.response).toBe('string');
+  });
+});
+</file>
+
+<file path="ai-service/src/__tests__/clients/ASRClient.test.ts">
+jest.mock('../../config', () => ({
+  config: {
+    port: 3004,
+    nodeEnv: 'test',
+    jwtSecret: 'test-jwt-secret',
+    jwtIssuer: 'test-issuer',
+    jwtAudience: 'test-audience',
+    serviceJwtSecret: 'test-service-jwt',
+    accessServiceUrl: 'http://access-service:3003',
+    borrowServiceUrl: 'http://borrow-service:8000',
+    scheduleServiceUrl: 'http://schedule-service:3002',
+    userServiceUrl: 'http://user-service:3001',
+    openRouter: { apiKey: '', model: 'openai/gpt-4.1-mini', baseUrl: 'https://openrouter.ai/api/v1' },
+    nvidiaApiKey: '',
+    nvidiaModel: 'meta/llama-3.1-70b-instruct',
+    nvidiaEmbedModel: 'nvidia/nv-embedqa-e5-v5',
+    chromaDbUrl: 'http://localhost:8000',
+    chromaCollection: 'library-kb',
+    ai: { refreshMinutes: 15, mockMode: true },
+    db: { host: 'localhost', port: 5432, database: 'aidb', schema: 'ai', user: 'test', password: 'test' },
+    corsOrigins: [],
+    asr: { provider: 'mock', apiKey: '' },
+  },
+}));
+
+import { ASRClient } from '../../clients/ASRClient';
+
+describe('ASRClient', () => {
+  let asrClient: ASRClient;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    asrClient = new ASRClient();
+  });
+
+  describe('transcribeAudio', () => {
+    it('should return mock transcript in mock mode', async () => {
+      const mockAudioBuffer = Buffer.from('mock audio data');
+      const result = await asrClient.transcribeAudio(mockAudioBuffer);
+
+      expect(result).toBeDefined();
+      expect(result.transcript).toBeDefined();
+      expect(typeof result.transcript).toBe('string');
+      expect(result.confidence).toBeGreaterThanOrEqual(0);
+      expect(result.confidence).toBeLessThanOrEqual(1);
+      expect(result.language).toBe('vi');
+    });
+
+    it('should handle different audio buffer sizes', async () => {
+      const smallBuffer = Buffer.from('small');
+      const largeBuffer = Buffer.from('x'.repeat(10000));
+
+      const smallResult = await asrClient.transcribeAudio(smallBuffer);
+      const largeResult = await asrClient.transcribeAudio(largeBuffer);
+
+      expect(smallResult).toBeDefined();
+      expect(largeResult).toBeDefined();
+    });
+
+    it('should return Vietnamese language code', async () => {
+      const mockAudioBuffer = Buffer.from('mock audio data');
+      const result = await asrClient.transcribeAudio(mockAudioBuffer);
+
+      expect(result.language).toBe('vi');
+    });
+  });
+});
+</file>
+
+<file path="ai-service/src/__tests__/clients/TTSClient.test.ts">
+jest.mock('../../config', () => ({
+  config: {
+    port: 3004,
+    nodeEnv: 'test',
+    jwtSecret: 'test-jwt-secret',
+    jwtIssuer: 'test-issuer',
+    jwtAudience: 'test-audience',
+    serviceJwtSecret: 'test-service-jwt',
+    accessServiceUrl: 'http://access-service:3003',
+    borrowServiceUrl: 'http://borrow-service:8000',
+    scheduleServiceUrl: 'http://schedule-service:3002',
+    userServiceUrl: 'http://user-service:3001',
+    openRouter: { apiKey: '', model: 'openai/gpt-4.1-mini', baseUrl: 'https://openrouter.ai/api/v1' },
+    nvidiaApiKey: '',
+    nvidiaModel: 'meta/llama-3.1-70b-instruct',
+    nvidiaEmbedModel: 'nvidia/nv-embedqa-e5-v5',
+    chromaDbUrl: 'http://localhost:8000',
+    chromaCollection: 'library-kb',
+    ai: { refreshMinutes: 15, mockMode: true },
+    db: { host: 'localhost', port: 5432, database: 'aidb', schema: 'ai', user: 'test', password: 'test' },
+    corsOrigins: [],
+    tts: { provider: 'mock', apiKey: '' },
+  },
+}));
+
+import { TTSClient } from '../../clients/TTSClient';
+
+describe('TTSClient', () => {
+  let ttsClient: TTSClient;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    ttsClient = new TTSClient();
+  });
+
+  describe('synthesizeSpeech', () => {
+    it('should return mock audio data in mock mode', async () => {
+      const result = await ttsClient.synthesizeSpeech('Xin chào');
+
+      expect(result).toBeDefined();
+      expect(result.audioBase64).toBeDefined();
+      expect(result.visemes).toBeDefined();
+      expect(result.durationMs).toBeGreaterThan(0);
+    });
+
+    it('should generate visemes array', async () => {
+      const result = await ttsClient.synthesizeSpeech('Hello world');
+
+      expect(Array.isArray(result.visemes)).toBe(true);
+      expect(result.visemes.length).toBeGreaterThan(0);
+    });
+
+    it('should handle empty text', async () => {
+      const result = await ttsClient.synthesizeSpeech('');
+
+      expect(result).toBeDefined();
+      expect(result.audioBase64).toBeDefined();
+    });
+
+    it('should generate consistent audio length based on text', async () => {
+      const shortText = await ttsClient.synthesizeSpeech('Hi');
+      const longText = await ttsClient.synthesizeSpeech('Đây là một câu văn dài hơn nhiều để kiểm tra thời lượng audio');
+
+      expect(longText.durationMs).toBeGreaterThanOrEqual(shortText.durationMs);
+    });
+  });
+});
+</file>
+
+<file path="ai-service/src/__tests__/entities/AiMemory.test.ts">
+jest.mock('../../config', () => ({
+  config: {
+    port: 3004,
+    nodeEnv: 'test',
+    jwtSecret: 'test-jwt-secret',
+    jwtIssuer: 'test-issuer',
+    jwtAudience: 'test-audience',
+    serviceJwtSecret: 'test-service-jwt',
+    accessServiceUrl: 'http://access-service:3003',
+    borrowServiceUrl: 'http://borrow-service:8000',
+    scheduleServiceUrl: 'http://schedule-service:3002',
+    userServiceUrl: 'http://user-service:3001',
+    openRouter: { apiKey: '', model: 'openai/gpt-4.1-mini', baseUrl: 'https://openrouter.ai/api/v1' },
+    nvidiaApiKey: '',
+    nvidiaModel: 'meta/llama-3.1-70b-instruct',
+    nvidiaEmbedModel: 'nvidia/nv-embedqa-e5-v5',
+    chromaDbUrl: 'http://localhost:8000',
+    chromaCollection: 'library-kb',
+    ai: { refreshMinutes: 15, mockMode: true },
+    db: { host: 'localhost', port: 5432, database: 'aidb', schema: 'ai', user: 'test', password: 'test' },
+    corsOrigins: [],
+  },
+}));
+
+import { AiMemory } from '../../entities/AiMemory';
+
+describe('AiMemory Entity', () => {
+  it('should create instance with all properties', () => {
+    const instance = new AiMemory();
+    expect(instance).toBeDefined();
+    expect(instance).toBeInstanceOf(AiMemory);
+  });
+
+  it('should have correct property types', () => {
+    const instance = new AiMemory();
+    expect(typeof instance.id).toBe('undefined');
+    expect(typeof instance.patronId).toBe('undefined');
+    expect(typeof instance.memoryKey).toBe('undefined');
+    expect(typeof instance.memoryValue).toBe('undefined');
+    expect(typeof instance.updatedAt).toBe('undefined');
+  });
+});
+</file>
+
+<file path="ai-service/src/__tests__/migrations/CreateAiMemoryTable.test.ts">
+import { CreateAiMemoryTable1720200000002 } from '../../../migrations/1720200000002-CreateAiMemoryTable';
+
+describe('CreateAiMemoryTable Migration', () => {
+  let migration: CreateAiMemoryTable1720200000002;
+
+  beforeEach(() => {
+    migration = new CreateAiMemoryTable1720200000002();
+  });
+
+  it('should have correct migration name', () => {
+    expect(migration.name).toBe('CreateAiMemoryTable1720200000002');
+  });
+
+  it('should have up method', () => {
+    expect(typeof migration.up).toBe('function');
+  });
+
+  it('should have down method', () => {
+    expect(typeof migration.down).toBe('function');
+  });
+
+  it('should create ai_memories table with correct columns', async () => {
+    const mockQueryRunner = {
+      query: jest.fn().mockResolvedValue(undefined),
+    };
+
+    await migration.up(mockQueryRunner as any);
+
+    expect(mockQueryRunner.query).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TABLE IF NOT EXISTS ai.ai_memories')
+    );
+  });
+
+  it('should create indexes on patron_id', async () => {
+    const mockQueryRunner = {
+      query: jest.fn().mockResolvedValue(undefined),
+    };
+
+    await migration.up(mockQueryRunner as any);
+
+    expect(mockQueryRunner.query).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE INDEX IF NOT EXISTS idx_ai_memories_patron_id')
+    );
+  });
+
+  it('should create unique constraint on patron_id and memory_key', async () => {
+    const mockQueryRunner = {
+      query: jest.fn().mockResolvedValue(undefined),
+    };
+
+    await migration.up(mockQueryRunner as any);
+
+    expect(mockQueryRunner.query).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE UNIQUE INDEX IF NOT EXISTS uniq_ai_memories_patron_key')
+    );
+  });
+
+  it('should drop table on down migration', async () => {
+    const mockQueryRunner = {
+      query: jest.fn().mockResolvedValue(undefined),
+    };
+
+    await migration.down(mockQueryRunner as any);
+
+    expect(mockQueryRunner.query).toHaveBeenCalledWith(
+      expect.stringContaining('DROP TABLE IF EXISTS ai.ai_memories')
+    );
   });
 });
 </file>
@@ -12048,6 +12327,407 @@ HKTT: 123 Nguyễn Trãi, P.5, Q.5, TP.HCM`;
 });
 </file>
 
+<file path="ai-service/src/__tests__/routes/companion-stream.test.ts">
+jest.mock('../../config', () => ({
+  config: {
+    port: 3004,
+    nodeEnv: 'test',
+    jwtSecret: 'test-jwt-secret',
+    jwtIssuer: 'test-issuer',
+    jwtAudience: 'test-audience',
+    serviceJwtSecret: 'test-service-jwt',
+    accessServiceUrl: 'http://access-service:3003',
+    borrowServiceUrl: 'http://borrow-service:8000',
+    scheduleServiceUrl: 'http://schedule-service:3002',
+    userServiceUrl: 'http://user-service:3001',
+    openRouter: { apiKey: '', model: 'openai/gpt-4.1-mini', baseUrl: 'https://openrouter.ai/api/v1' },
+    nvidiaApiKey: '',
+    nvidiaModel: 'meta/llama-3.1-70b-instruct',
+    nvidiaEmbedModel: 'nvidia/nv-embedqa-e5-v5',
+    chromaDbUrl: 'http://localhost:8000',
+    chromaCollection: 'library-kb',
+    ai: { refreshMinutes: 15, mockMode: true },
+    db: { host: 'localhost', port: 5432, database: 'aidb', schema: 'ai', user: 'test', password: 'test' },
+    corsOrigins: [],
+    tts: { provider: 'mock', apiKey: '' },
+    asr: { provider: 'mock', apiKey: '' },
+  },
+}));
+
+const mockRetrieve = jest.fn().mockResolvedValue([]);
+jest.mock('../../rag/retriever', () => ({
+  retrieve: (...args: any[]) => mockRetrieve(...args),
+}));
+
+const mockCreateChatCompletion = jest.fn();
+jest.mock('../../clients/nvidia', () => ({
+  nvidiaClient: {
+    createChatCompletion: (...args: any[]) => mockCreateChatCompletion(...args),
+  },
+}));
+
+const mockGetMemoriesForPatron = jest.fn().mockResolvedValue({});
+const mockConsolidateNewMemories = jest.fn().mockResolvedValue(undefined);
+jest.mock('../../services/MemoryService', () => ({
+  MemoryService: jest.fn().mockImplementation(() => ({
+    getMemoriesForPatron: (...args: any[]) => mockGetMemoriesForPatron(...args),
+    consolidateNewMemories: (...args: any[]) => mockConsolidateNewMemories(...args),
+  })),
+}));
+
+const mockSynthesizeSpeech = jest.fn().mockResolvedValue({
+  audioBase64: 'mock-audio-base64',
+  visemes: [{ time: 0, value: 0 }],
+  durationMs: 1000,
+});
+jest.mock('../../clients/TTSClient', () => ({
+  TTSClient: jest.fn().mockImplementation(() => ({
+    synthesizeSpeech: (...args: any[]) => mockSynthesizeSpeech(...args),
+  })),
+}));
+
+const mockSearchBooks = jest.fn().mockResolvedValue({ success: true, data: [{ title: 'Lập trình TypeScript' }] });
+jest.mock('../../tools/registry', () => ({
+  patronToolDefs: [
+    { name: 'search_books', description: 'Tìm kiếm sách', func: mockSearchBooks },
+  ],
+  getToolDefsForRole: jest.fn().mockReturnValue([
+    { name: 'search_books', description: 'Tìm kiếm sách', func: mockSearchBooks },
+  ]),
+}));
+
+import { processCompanionMessage } from '../../agent/agent';
+
+describe('processCompanionMessage', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRetrieve.mockResolvedValue([]);
+    mockGetMemoriesForPatron.mockResolvedValue({});
+  });
+
+  it('should yield text chunks via SSE', async () => {
+    mockCreateChatCompletion.mockResolvedValue('Xin chào!');
+
+    const chunks: any[] = [];
+    for await (const chunk of processCompanionMessage({
+      message: 'Xin chào',
+      sessionId: 'test-session',
+      role: 'patron',
+      patronId: 'patron-123',
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.some(c => c.type === 'text')).toBe(true);
+    expect(chunks.some(c => c.type === 'companion_done')).toBe(true);
+  });
+
+  it('should include memories in system prompt', async () => {
+    mockGetMemoriesForPatron.mockResolvedValue({ favorite_genre: 'sci-fi' });
+    mockCreateChatCompletion.mockResolvedValue('Hello!');
+
+    const chunks: any[] = [];
+    for await (const chunk of processCompanionMessage({
+      message: 'Hi',
+      sessionId: 'test-session',
+      role: 'patron',
+      patronId: 'patron-123',
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(mockGetMemoriesForPatron).toHaveBeenCalledWith('patron-123');
+  });
+
+  it('should call TTS for text chunks', async () => {
+    mockCreateChatCompletion.mockResolvedValue('Xin chào bạn!');
+
+    const chunks: any[] = [];
+    for await (const chunk of processCompanionMessage({
+      message: 'Xin chào',
+      sessionId: 'test-session',
+      role: 'patron',
+      patronId: 'patron-123',
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(mockSynthesizeSpeech).toHaveBeenCalled();
+  });
+
+  it('should handle tool calls mid-stream', async () => {
+    mockCreateChatCompletion
+      .mockResolvedValueOnce('Để tôi tìm sách cho bạn...')
+      .mockResolvedValueOnce('{"tool": "search_books", "arguments": {"query": "lập trình"}}')
+      .mockResolvedValueOnce('Tôi đã tìm thấy sách về lập trình.');
+
+    const chunks: any[] = [];
+    for await (const chunk of processCompanionMessage({
+      message: 'Tìm sách lập trình',
+      sessionId: 'test-session',
+      role: 'patron',
+      patronId: 'patron-123',
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.some(c => c.type === 'tool_result' || c.type === 'text')).toBe(true);
+  });
+
+  it('should emit companion_done at the end', async () => {
+    mockCreateChatCompletion.mockResolvedValue('Kết thúc!');
+
+    const chunks: any[] = [];
+    for await (const chunk of processCompanionMessage({
+      message: 'Tạm biệt',
+      sessionId: 'test-session',
+      role: 'patron',
+      patronId: 'patron-123',
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks[chunks.length - 1].type).toBe('companion_done');
+  });
+
+  it('should consolidate memories after response', async () => {
+    mockCreateChatCompletion.mockResolvedValue('Cảm ơn bạn!');
+
+    const chunks: any[] = [];
+    for await (const chunk of processCompanionMessage({
+      message: 'Tôi thích thể loại khoa học viễn tưởng',
+      sessionId: 'test-session',
+      role: 'patron',
+      patronId: 'patron-123',
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(mockConsolidateNewMemories).toHaveBeenCalled();
+  });
+});
+</file>
+
+<file path="ai-service/src/__tests__/services/MemoryService.test.ts">
+const mockRepository = {
+  find: jest.fn(),
+  findOne: jest.fn(),
+  create: jest.fn(),
+  save: jest.fn(),
+  update: jest.fn(),
+  delete: jest.fn(),
+};
+
+jest.mock('../../data-source', () => ({
+  AppDataSource: {
+    getRepository: jest.fn().mockReturnValue(mockRepository),
+  },
+}));
+
+jest.mock('../../config', () => ({
+  config: {
+    port: 3004,
+    nodeEnv: 'test',
+    jwtSecret: 'test-jwt-secret',
+    jwtIssuer: 'test-issuer',
+    jwtAudience: 'test-audience',
+    serviceJwtSecret: 'test-service-jwt',
+    accessServiceUrl: 'http://access-service:3003',
+    borrowServiceUrl: 'http://borrow-service:8000',
+    scheduleServiceUrl: 'http://schedule-service:3002',
+    userServiceUrl: 'http://user-service:3001',
+    openRouter: { apiKey: '', model: 'openai/gpt-4.1-mini', baseUrl: 'https://openrouter.ai/api/v1' },
+    nvidiaApiKey: '',
+    nvidiaModel: 'meta/llama-3.1-70b-instruct',
+    nvidiaEmbedModel: 'nvidia/nv-embedqa-e5-v5',
+    chromaDbUrl: 'http://localhost:8000',
+    chromaCollection: 'library-kb',
+    ai: { refreshMinutes: 15, mockMode: true },
+    db: { host: 'localhost', port: 5432, database: 'aidb', schema: 'ai', user: 'test', password: 'test' },
+    corsOrigins: [],
+  },
+}));
+
+import { MemoryService } from '../../services/MemoryService';
+import { AppDataSource } from '../../data-source';
+
+describe('MemoryService', () => {
+  let memoryService: MemoryService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    memoryService = new MemoryService();
+  });
+
+  describe('getMemoriesForPatron', () => {
+    it('should return memories as key-value map', async () => {
+      const mockMemories = [
+        { memoryKey: 'favorite_genre', memoryValue: 'sci-fi' },
+        { memoryKey: 'preferred_language', memoryValue: 'Vietnamese' },
+      ];
+      mockRepository.find.mockResolvedValue(mockMemories);
+
+      const result = await memoryService.getMemoriesForPatron('patron-123');
+
+      expect(result).toEqual({
+        favorite_genre: 'sci-fi',
+        preferred_language: 'Vietnamese',
+      });
+      expect(mockRepository.find).toHaveBeenCalledWith({
+        where: { patronId: 'patron-123' },
+      });
+    });
+
+    it('should return empty object when no memories exist', async () => {
+      mockRepository.find.mockResolvedValue([]);
+
+      const result = await memoryService.getMemoriesForPatron('patron-123');
+
+      expect(result).toEqual({});
+    });
+  });
+
+  describe('saveMemoryForPatron', () => {
+    it('should create new memory if not exists', async () => {
+      mockRepository.findOne.mockResolvedValue(null);
+      mockRepository.create.mockReturnValue({
+        patronId: 'patron-123',
+        memoryKey: 'favorite_genre',
+        memoryValue: 'sci-fi',
+      });
+      mockRepository.save.mockResolvedValue({
+        id: 'mem-1',
+        patronId: 'patron-123',
+        memoryKey: 'favorite_genre',
+        memoryValue: 'sci-fi',
+      });
+
+      await memoryService.saveMemoryForPatron('patron-123', 'favorite_genre', 'sci-fi');
+
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
+        where: { patronId: 'patron-123', memoryKey: 'favorite_genre' },
+      });
+      expect(mockRepository.create).toHaveBeenCalled();
+      expect(mockRepository.save).toHaveBeenCalled();
+    });
+
+    it('should update existing memory', async () => {
+      const existingMemory = {
+        id: 'mem-1',
+        patronId: 'patron-123',
+        memoryKey: 'favorite_genre',
+        memoryValue: 'old-value',
+      };
+      mockRepository.findOne.mockResolvedValue(existingMemory);
+      mockRepository.save.mockResolvedValue({
+        ...existingMemory,
+        memoryValue: 'new-value',
+      });
+
+      await memoryService.saveMemoryForPatron('patron-123', 'favorite_genre', 'new-value');
+
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
+        where: { patronId: 'patron-123', memoryKey: 'favorite_genre' },
+      });
+      expect(mockRepository.save).toHaveBeenCalledWith({
+        ...existingMemory,
+        memoryValue: 'new-value',
+      });
+    });
+  });
+
+  describe('consolidateNewMemories', () => {
+    it('should extract and save memories from chat history', async () => {
+      const chatHistory = [
+        { role: 'user', content: 'Tôi thích thể loại khoa học viễn tưởng' },
+        { role: 'assistant', content: 'Cảm ơn bạn đã chia sẻ!' },
+      ];
+      mockRepository.findOne.mockResolvedValue(null);
+      mockRepository.create.mockReturnValue({
+        patronId: 'patron-123',
+        memoryKey: 'favorite_genre',
+        memoryValue: 'sci-fi',
+      });
+      mockRepository.save.mockResolvedValue({});
+
+      await memoryService.consolidateNewMemories('patron-123', chatHistory);
+
+      expect(mockRepository.save).toHaveBeenCalled();
+    });
+
+    it('should handle empty chat history', async () => {
+      await memoryService.consolidateNewMemories('patron-123', []);
+
+      expect(mockRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteMemoryForPatron', () => {
+    it('should delete memory by patron and key', async () => {
+      mockRepository.delete.mockResolvedValue({ affected: 1 });
+
+      await memoryService.deleteMemoryForPatron('patron-123', 'favorite_genre');
+
+      expect(mockRepository.delete).toHaveBeenCalledWith({
+        patronId: 'patron-123',
+        memoryKey: 'favorite_genre',
+      });
+    });
+  });
+});
+</file>
+
+<file path="ai-service/src/clients/ASRClient.ts">
+import { config } from '../config';
+
+export interface ASRResult {
+  transcript: string;
+  confidence: number;
+  language: string;
+}
+
+export class ASRClient {
+  private mockMode: boolean;
+
+  constructor() {
+    this.mockMode = config.asr?.provider === 'mock' || !config.asr?.apiKey;
+  }
+
+  async transcribeAudio(audioBuffer: Buffer): Promise<ASRResult> {
+    if (this.mockMode) {
+      return this.mockTranscribe(audioBuffer);
+    }
+
+    return this.realTranscribe(audioBuffer);
+  }
+
+  private async mockTranscribe(audioBuffer: Buffer): Promise<ASRResult> {
+    // Mock transcription that returns a sample Vietnamese phrase
+    const mockTranscripts = [
+      'Xin chào, tôi muốn tìm sách về lập trình',
+      'Bạn có thể giúp tôi tìm sách không?',
+      'Tôi muốn mượn cuốn sách này',
+      'Cảm ơn bạn đã giúp đỡ',
+      'Cho tôi xem danh sách sách mới',
+    ];
+
+    const randomIndex = Math.floor(Math.random() * mockTranscripts.length);
+
+    return {
+      transcript: mockTranscripts[randomIndex],
+      confidence: 0.85 + Math.random() * 0.15,
+      language: 'vi',
+    };
+  }
+
+  private async realTranscribe(audioBuffer: Buffer): Promise<ASRResult> {
+    // TODO: Implement real ASR integration (Whisper API, NVIDIA NIM ASR)
+    // For now, fall back to mock
+    return this.mockTranscribe(audioBuffer);
+  }
+}
+</file>
+
 <file path="ai-service/src/clients/chromadb.ts">
 import { ChromaClient, Collection } from 'chromadb';
 import { config } from '../config';
@@ -12116,269 +12796,94 @@ export async function resetAllCollections(): Promise<void> {
 export default { getChromaClient, getCollection, resetCollection, resetAllCollections };
 </file>
 
-<file path="ai-service/src/clients/nvidia.ts">
-import axios, { AxiosInstance } from 'axios';
+<file path="ai-service/src/clients/TTSClient.ts">
 import { config } from '../config';
 
-interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+export interface TTSResult {
+  audioBase64: string;
+  visemes: Array<{ time: number; value: number }>;
+  durationMs: number;
 }
 
-interface ChatCompletionRequest {
-  model: string;
-  messages: ChatMessage[];
-  temperature?: number;
-  max_tokens?: number;
-  stream?: boolean;
-}
-
-interface ChatCompletionResponse {
-  id: string;
-  choices: Array<{
-    message: {
-      role: string;
-      content: string;
-    };
-    finish_reason: string;
-  }>;
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  };
-}
-
-interface LLMClient {
-  createChatCompletion(
-    messages: ChatMessage[],
-    options?: { temperature?: number; maxTokens?: number }
-  ): Promise<string>;
-}
-
-class NvidiaNIMClient implements LLMClient {
-  private client: AxiosInstance;
-  private maxRetries: number = 3;
+export class TTSClient {
+  private mockMode: boolean;
 
   constructor() {
-    this.client = axios.create({
-      baseURL: 'https://integrate.api.nvidia.com/v1',
-      headers: {
-        'Authorization': `Bearer ${config.nvidiaApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 120000,
-    });
+    this.mockMode = config.tts?.provider === 'mock' || !config.tts?.apiKey;
   }
 
-  async createChatCompletion(
-    messages: ChatMessage[],
-    options: { temperature?: number; maxTokens?: number } = {}
-  ): Promise<string> {
-    const { temperature = 0.7, maxTokens = 2048 } = options;
+  async synthesizeSpeech(text: string): Promise<TTSResult> {
+    if (this.mockMode) {
+      return this.mockSynthesize(text);
+    }
 
-    const request: ChatCompletionRequest = {
-      model: config.nvidiaModel,
-      messages,
-      temperature,
-      max_tokens: maxTokens,
-      stream: false,
+    return this.realSynthesize(text);
+  }
+
+  private async mockSynthesize(text: string): Promise<TTSResult> {
+    const durationMs = Math.max(500, text.length * 100);
+    const visemes = this.generateMockVisemes(text, durationMs);
+    const audioBase64 = this.generateMockAudio(durationMs);
+
+    return {
+      audioBase64,
+      visemes,
+      durationMs,
     };
-
-    let lastError: Error | null = null;
-
-    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
-      try {
-        const response = await this.client.post<ChatCompletionResponse>(
-          '/chat/completions',
-          request
-        );
-
-        if (response.data.choices && response.data.choices.length > 0) {
-          const content = response.data.choices[0].message.content;
-          if (content && content.trim() !== '') {
-            return content;
-          }
-        }
-
-        throw new Error('Empty or invalid response content from NVIDIA NIM');
-      } catch (error: any) {
-        lastError = error;
-
-        const status = error.response?.status;
-        const retryAfter = error.response?.headers?.['retry-after'];
-
-        if (status === 429) {
-          const backoffMs = retryAfter
-            ? parseInt(retryAfter, 10) * 1000
-            : Math.min(2000 * Math.pow(2, attempt - 1) + Math.random() * 1000, 30000);
-
-          console.log(`[NVIDIA NIM] 429 rate limited, attempt ${attempt}/${this.maxRetries}, retrying in ${backoffMs}ms`);
-
-          if (attempt < this.maxRetries) {
-            await this.delay(backoffMs);
-            continue;
-          }
-        }
-
-        if (status && status >= 400 && status < 500 && status !== 429) {
-          throw new Error(`NVIDIA NIM client error ${status}: ${error.response?.data?.error?.message || error.message}`);
-        }
-
-        if (attempt < this.maxRetries) {
-          const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-          await this.delay(backoffMs);
-        }
-      }
-    }
-
-    throw new Error(`NVIDIA NIM request failed after ${this.maxRetries} attempts: ${lastError?.message}`);
   }
 
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  private async realSynthesize(text: string): Promise<TTSResult> {
+    // TODO: Implement real TTS integration (Azure TTS, ElevenLabs, or NVIDIA NIM TTS)
+    // For now, fall back to mock
+    return this.mockSynthesize(text);
+  }
+
+  private generateMockVisemes(text: string, durationMs: number): Array<{ time: number; value: number }> {
+    const visemes: Array<{ time: number; value: number }> = [];
+    const syllableCount = Math.max(1, Math.ceil(text.length / 3));
+    const interval = durationMs / syllableCount;
+
+    for (let i = 0; i < syllableCount; i++) {
+      visemes.push({
+        time: Math.floor(i * interval),
+        value: Math.floor(Math.random() * 10),
+      });
+    }
+
+    return visemes;
+  }
+
+  private generateMockAudio(durationMs: number): string {
+    // Generate a simple sine wave as mock audio (WAV format)
+    const sampleRate = 22050;
+    const numSamples = Math.floor((durationMs / 1000) * sampleRate);
+    const buffer = Buffer.alloc(44 + numSamples * 2);
+
+    // WAV header
+    buffer.write('RIFF', 0);
+    buffer.writeUInt32LE(36 + numSamples * 2, 4);
+    buffer.write('WAVE', 8);
+    buffer.write('fmt ', 12);
+    buffer.writeUInt32LE(16, 16);
+    buffer.writeUInt16LE(1, 20);
+    buffer.writeUInt16LE(1, 22);
+    buffer.writeUInt32LE(sampleRate, 24);
+    buffer.writeUInt32LE(sampleRate * 2, 28);
+    buffer.writeUInt16LE(2, 32);
+    buffer.writeUInt16LE(16, 34);
+    buffer.write('data', 36);
+    buffer.writeUInt32LE(numSamples * 2, 40);
+
+    // Generate simple sine wave
+    for (let i = 0; i < numSamples; i++) {
+      const t = i / sampleRate;
+      const sample = Math.sin(2 * Math.PI * 440 * t) * 0.3;
+      buffer.writeInt16LE(Math.floor(sample * 32767), 44 + i * 2);
+    }
+
+    return buffer.toString('base64');
   }
 }
-
-class OpenRouterClient implements LLMClient {
-  private client: AxiosInstance;
-  private maxRetries: number = 3;
-
-  constructor() {
-    this.client = axios.create({
-      baseURL: config.openRouter.baseUrl,
-      headers: {
-        'Authorization': `Bearer ${config.openRouter.apiKey}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://library-iuh.edu.vn',
-        'X-Title': 'IUH Library AI',
-      },
-      timeout: 120000,
-    });
-  }
-
-  async createChatCompletion(
-    messages: ChatMessage[],
-    options: { temperature?: number; maxTokens?: number } = {}
-  ): Promise<string> {
-    const { temperature = 0.7, maxTokens = 2048 } = options;
-
-    const request: ChatCompletionRequest = {
-      model: config.openRouter.model,
-      messages,
-      temperature,
-      max_tokens: maxTokens,
-      stream: false,
-    };
-
-    let lastError: Error | null = null;
-
-    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
-      try {
-        const response = await this.client.post<ChatCompletionResponse>(
-          '/chat/completions',
-          request
-        );
-
-        if (response.data.choices && response.data.choices.length > 0) {
-          const content = response.data.choices[0].message.content;
-          if (content && content.trim() !== '') {
-            return content;
-          }
-        }
-
-        throw new Error('Empty or invalid response content from OpenRouter');
-      } catch (error: any) {
-        lastError = error;
-
-        const status = error.response?.status;
-        const retryAfter = error.response?.headers?.['retry-after'];
-
-        if (status === 429) {
-          const backoffMs = retryAfter
-            ? parseInt(retryAfter, 10) * 1000
-            : Math.min(2000 * Math.pow(2, attempt - 1) + Math.random() * 1000, 30000);
-
-          console.log(`[OpenRouter] 429 rate limited, attempt ${attempt}/${this.maxRetries}, retrying in ${backoffMs}ms`);
-
-          if (attempt < this.maxRetries) {
-            await this.delay(backoffMs);
-            continue;
-          }
-        }
-
-        if (status && status >= 400 && status < 500 && status !== 429) {
-          throw new Error(`OpenRouter client error ${status}: ${error.response?.data?.error?.message || error.message}`);
-        }
-
-        if (attempt < this.maxRetries) {
-          const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-          await this.delay(backoffMs);
-        }
-      }
-    }
-
-    throw new Error(`OpenRouter request failed after ${this.maxRetries} attempts: ${lastError?.message}`);
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-}
-
-class FallbackLLMClient implements LLMClient {
-  private primary: LLMClient;
-  private fallback: LLMClient | null;
-  private primaryName: string;
-  private fallbackName: string;
-
-  constructor() {
-    if (config.nvidiaApiKey) {
-      this.primary = new NvidiaNIMClient();
-      this.primaryName = 'NVIDIA NIM';
-      if (config.openRouter.apiKey) {
-        this.fallback = new OpenRouterClient();
-        this.fallbackName = 'OpenRouter';
-      } else {
-        this.fallback = null;
-        this.fallbackName = '';
-      }
-    } else if (config.openRouter.apiKey) {
-      this.primary = new OpenRouterClient();
-      this.primaryName = 'OpenRouter';
-      this.fallback = null;
-      this.fallbackName = '';
-    } else {
-      throw new Error('No LLM API key configured (OPENROUTER_API_KEY or NVIDIA_API_KEY required)');
-    }
-  }
-
-  async createChatCompletion(
-    messages: ChatMessage[],
-    options: { temperature?: number; maxTokens?: number } = {}
-  ): Promise<string> {
-    try {
-      return await this.primary.createChatCompletion(messages, options);
-    } catch (primaryError: any) {
-      console.log(`[LLM] Primary (${this.primaryName}) failed: ${primaryError.message}`);
-
-      if (this.fallback) {
-        console.log(`[LLM] Falling back to ${this.fallbackName}`);
-        try {
-          return await this.fallback.createChatCompletion(messages, options);
-        } catch (fallbackError: any) {
-          console.log(`[LLM] Fallback (${this.fallbackName}) also failed: ${fallbackError.message}`);
-          throw new Error(`Both LLM providers failed. Primary: ${primaryError.message}. Fallback: ${fallbackError.message}`);
-        }
-      }
-
-      throw primaryError;
-    }
-  }
-}
-
-export const nvidiaClient = new FallbackLLMClient();
-export default nvidiaClient;
 </file>
 
 <file path="ai-service/src/docs/bao-cao-tai-chinh.md">
@@ -12803,124 +13308,27 @@ Ví dụ: `A-12` = Kệ số 12, Tầng A
 Mỗi kệ có nhiều tầng (tầng 1, 2, 3...)
 </file>
 
-<file path="ai-service/src/rag/indexer.ts">
-import fs from 'fs';
-import path from 'path';
-import { getCollection, resetCollection } from '../clients/chromadb';
-import { chunkText } from './embedder';
-import { v4 as uuidv4 } from 'uuid';
+<file path="ai-service/src/entities/AiMemory.ts">
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { config } from '../config';
 
-interface DocMetadata {
-  source: string;
-  doc_title: string;
-  roles: string;
+@Entity({ schema: config.db.schema, name: 'ai_memories' })
+export class AiMemory {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @Column({ name: 'patron_id', type: 'uuid' })
+  patronId!: string;
+
+  @Column({ name: 'memory_key', type: 'varchar', length: 100 })
+  memoryKey!: string;
+
+  @Column({ name: 'memory_value', type: 'text' })
+  memoryValue!: string;
+
+  @Column({ name: 'updated_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
+  updatedAt!: Date;
 }
-
-function getDocTitle(filePath: string): string {
-  const fileName = path.basename(filePath, '.md');
-  const titles: Record<string, string> = {
-    'gio-mo-cua': 'Giờ Mở Cửa',
-    'quy-dinh-muon-tra': 'Quy Định Mượn Trả',
-    'vi-tri-tang': 'Vị Trí Tầng',
-    'cau-hoi-thuong-gap': 'Câu Hỏi Thường Gặp',
-    'the-loai-sach': 'Thể Loại Sách',
-    'quy-dinh-the': 'Quy Định Thẻ',
-    'chinh-sach-phat': 'Chính Sách Phạt',
-    'quy-dinh-nhan-vien': 'Quy Định Nhân Viên',
-    'bao-cao-tai-chinh': 'Báo Cáo Tài Chính',
-  };
-  return titles[fileName] || fileName;
-}
-
-function extractFrontmatter(content: string): { metadata: Record<string, string>; body: string } {
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-  if (frontmatterMatch) {
-    const metadata: Record<string, string> = {};
-    const frontmatterLines = frontmatterMatch[1].split('\n');
-    for (const line of frontmatterLines) {
-      const colonIndex = line.indexOf(':');
-      if (colonIndex > 0) {
-        const key = line.substring(0, colonIndex).trim();
-        const value = line.substring(colonIndex + 1).trim();
-        metadata[key] = value;
-      }
-    }
-    return { metadata, body: frontmatterMatch[2] };
-  }
-  return { metadata: { roles: 'patron' }, body: content };
-}
-
-function parseRoles(rolesStr: string): string[] {
-  return rolesStr
-    .split(',')
-    .map(r => r.trim())
-    .filter(r => r.length > 0 && ['patron', 'staff', 'admin'].includes(r));
-}
-
-export async function indexDocuments(): Promise<void> {
-  console.log('Starting document indexing...');
-
-  const docsPath = path.join(__dirname, '..', '..', 'src', 'docs');
-  const files = fs.readdirSync(docsPath).filter(f => f.endsWith('.md'));
-
-  if (files.length === 0) {
-    console.log('No documents found to index');
-    return;
-  }
-
-  console.log(`Found ${files.length} documents to index`);
-
-  const roleCollections = ['patron', 'staff', 'admin'];
-
-  for (const role of roleCollections) {
-    await resetCollection(role);
-  }
-
-  let totalChunks = 0;
-
-  for (const file of files) {
-    const filePath = path.join(docsPath, file);
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const { metadata, body } = extractFrontmatter(content);
-    const docTitle = getDocTitle(filePath);
-    const roles = parseRoles(metadata.roles || '');
-
-    console.log(`Processing "${docTitle}": roles=${roles.join(', ') || 'none'}`);
-
-    if (roles.length === 0) {
-      console.log(`  => Skipped (no roles assigned)`);
-      continue;
-    }
-
-    const chunks = chunkText(body);
-    console.log(`  => ${chunks.length} chunks`);
-
-    if (chunks.length === 0) continue;
-
-    for (const role of roles) {
-      const collection = await getCollection(role);
-      const ids = chunks.map(() => uuidv4());
-      const metadatas: DocMetadata[] = chunks.map(() => ({
-        source: file,
-        doc_title: docTitle,
-        roles: roles.join(', '),
-      }));
-
-      await collection.add({
-        ids,
-        documents: chunks,
-        metadatas: metadatas as any,
-      });
-
-      console.log(`  => Indexed into "${role}_kb": ${chunks.length} chunks`);
-      totalChunks += chunks.length;
-    }
-  }
-
-  console.log(`Indexing complete: ${totalChunks} total chunks indexed across ${roleCollections.length} collections`);
-}
-
-export default { indexDocuments };
 </file>
 
 <file path="ai-service/src/rag/retriever.ts">
@@ -13005,6 +13413,362 @@ export async function retrieve(query: string, topK: number = 5, role?: string): 
 export default { retrieve };
 </file>
 
+<file path="ai-service/src/routes/chat.legacy.ts">
+import { Router, Response } from 'express';
+import type { AuthRequest } from '../../../shared/auth/types';
+import { sessionStore } from '../sessions';
+import { processMessage } from '../agent/agent';
+import { getToolDefsForRole } from '../tools/registry';
+
+const router = Router();
+
+// Legacy unified chat endpoint: POST /ai/chat
+// Dispatches to role-appropriate tool registry based on JWT role.
+// Kept for backward compatibility — frontend should prefer /ai/patrons|staff|admin/chat
+router.post('/', async (req: AuthRequest, res: Response) => {
+  try {
+    const { message, sessionId } = req.body as { message: string; sessionId?: string };
+
+    if (!message || typeof message !== 'string') {
+      res.status(400).json({ error: 'message is required and must be a string' });
+      return;
+    }
+
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+
+    const hasImageContent =
+      message.includes('data:image/') ||
+      /\bdata:image\/[^;]+;base64,/i.test(message) ||
+      /\bimage\/[^;\s]*/i.test(message);
+
+    if (hasImageContent) {
+      res.status(400).json({
+        error: 'Image input not supported',
+        message: 'Xin loi, tinh nang nay chi ho tro tin nhan van ban.',
+      });
+      return;
+    }
+
+    const trimmed = message.trim().toLowerCase();
+    if (trimmed === 'clipboard' || trimmed === 'paste' || trimmed === 'dan') {
+      res.json({
+        response: 'Xin loi, toi khong the truy cap clipboard cua ban. Ban vui long nhap noi dung truc tiep bang van ban.',
+        requiresConfirmation: false,
+        sessionId: undefined,
+        userRole: user.role,
+      });
+      return;
+    }
+
+    const effectivePatronId = user.userId;
+    let session = sessionId ? sessionStore.getOwned(sessionId, effectivePatronId) : undefined;
+    if (!session) {
+      session = sessionStore.create(effectivePatronId);
+    }
+
+    sessionStore.addMessage(session.id, {
+      role: 'user',
+      content: message,
+      timestamp: Date.now(),
+    });
+
+    const sessionHistory = session.messages.map(m => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    const userContext = {
+      userId: user.userId,
+      email: user.email,
+      role: user.role,
+      fullName: user.fullName || undefined,
+    };
+
+    const toolDefs = getToolDefsForRole(user.role);
+
+    const result = await processMessage(
+      message,
+      session.id,
+      user.role,
+      sessionHistory,
+      userContext,
+      toolDefs,
+    );
+
+    sessionStore.addMessage(session.id, {
+      role: 'assistant',
+      content: result.response,
+      timestamp: Date.now(),
+    });
+
+    if (result.requiresConfirmation && result.pendingTool) {
+      sessionStore.setConfirmation(session.id, {
+        action: message,
+        toolName: result.pendingTool.name,
+        toolArgs: result.pendingTool.args,
+        description: result.pendingTool.description,
+      });
+    } else if (session?.pendingConfirmation) {
+      sessionStore.setConfirmation(session.id, undefined);
+    }
+
+    res.json({
+      response: result.response,
+      requiresConfirmation: result.requiresConfirmation,
+      pendingAction: result.pendingTool ? {
+        action: result.pendingTool.name,
+        description: result.pendingTool.description,
+        params: result.pendingTool.args,
+      } : undefined,
+      toolResults: result.toolResults,
+      sessionId: session.id,
+      userRole: user.role,
+    });
+  } catch (error) {
+    console.error('Legacy chat error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const isBothFailed = errorMessage.includes('Both LLM providers failed');
+    const isRateLimit = errorMessage.includes('429') || errorMessage.includes('rate limit');
+    const userMessage = isRateLimit
+      ? 'He thong dang ban, vui long thu lai sau vai giay.'
+      : isBothFailed
+        ? 'Dich vu AI tam thoi khong kha dung, vui long thu lai sau.'
+        : 'Da xay ra loi, vui long thu lai.';
+    res.status(isRateLimit ? 429 : isBothFailed ? 503 : 500).json({
+      error: isRateLimit ? 'Rate limit exceeded' : isBothFailed ? 'Service unavailable' : 'Internal server error',
+      message: userMessage,
+      details: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
+    });
+  }
+});
+
+export default router;
+</file>
+
+<file path="ai-service/src/routes/companion.ts">
+import { Router, Response } from 'express';
+import type { AuthRequest } from '../../../shared/auth/types';
+import { sessionStore } from '../sessions';
+import { processCompanionMessage } from '../agent/agent';
+
+const router = Router();
+
+router.post('/stream', async (req: AuthRequest, res: Response) => {
+  try {
+    const { message, audioBase64, sessionId } = req.body as {
+      message?: string;
+      audioBase64?: string;
+      sessionId?: string;
+    };
+
+    if ((!message || typeof message !== 'string') && !audioBase64) {
+      res.status(400).json({ error: 'message or audioBase64 is required' });
+      return;
+    }
+
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ error: 'User not authenticated' });
+      return;
+    }
+
+    // Block image paste same as chat routes
+    if (message) {
+      const hasImageContent =
+        message.includes('data:image/') ||
+        /\bdata:image\/[^;]+;base64,/i.test(message) ||
+        /\bimage\/[^;\s]*/i.test(message);
+      if (hasImageContent) {
+        res.status(400).json({
+          error: 'Image input not supported',
+          message: 'Xin loi, tinh nang nay chi ho tro tin nhan van ban.',
+        });
+        return;
+      }
+      const trimmed = message.trim().toLowerCase();
+      if (trimmed === 'clipboard' || trimmed === 'paste' || trimmed === 'dan') {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders?.();
+        const payload = JSON.stringify({
+          type: 'text',
+          data: { content: 'Xin loi, toi khong the truy cap clipboard cua ban. Ban vui long nhap noi dung truc tiep bang van ban.' },
+        });
+        res.write(`data: ${payload}\n\n`);
+        const done = JSON.stringify({ type: 'companion_done', data: { sessionId: sessionId || '' } });
+        res.write(`data: ${done}\n\n`);
+        res.end();
+        return;
+      }
+    }
+
+    const effectivePatronId = user.userId;
+    const role = user.role || 'patron';
+    let session = sessionId ? sessionStore.getOwned(sessionId, effectivePatronId) : undefined;
+    if (!session) {
+      session = sessionStore.create(effectivePatronId);
+    }
+
+    if (message) {
+      sessionStore.addMessage(session.id, {
+        role: 'user',
+        content: message,
+        timestamp: Date.now(),
+      });
+    }
+
+    const sessionHistory = session.messages.map(m => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    // SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    // Disable nginx buffering if present
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    let finalText = '';
+    for await (const chunk of processCompanionMessage({
+      message: message || undefined,
+      audioBase64: audioBase64 || undefined,
+      sessionId: session.id,
+      role,
+      patronId: effectivePatronId,
+      sessionHistory,
+    })) {
+      if (chunk.type === 'text' && chunk.data?.content) {
+        finalText += chunk.data.content;
+      }
+      // Persist final assistant message on companion_done
+      if (chunk.type === 'companion_done') {
+        if (finalText) {
+          sessionStore.addMessage(session.id, {
+            role: 'assistant',
+            content: finalText,
+            timestamp: Date.now(),
+          });
+        }
+      }
+      res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      // flush if available
+      (res as any).flush?.();
+    }
+
+    res.end();
+  } catch (error) {
+    console.error('Companion stream error:', error);
+    if (!res.headersSent) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: 'Companion stream failed', message: msg });
+    } else {
+      try {
+        const errChunk = JSON.stringify({ type: 'error', data: { message: 'Companion stream failed' } });
+        res.write(`data: ${errChunk}\n\n`);
+        res.end();
+      } catch {
+        res.end();
+      }
+    }
+  }
+});
+
+export default router;
+</file>
+
+<file path="ai-service/src/services/MemoryService.ts">
+import { AppDataSource } from '../data-source';
+import { AiMemory } from '../entities/AiMemory';
+
+const memoryRepo = () => AppDataSource.getRepository(AiMemory);
+
+export class MemoryService {
+  async getMemoriesForPatron(patronId: string): Promise<Record<string, string>> {
+    const memories = await memoryRepo().find({
+      where: { patronId },
+    });
+
+    const result: Record<string, string> = {};
+    for (const memory of memories) {
+      result[memory.memoryKey] = memory.memoryValue;
+    }
+    return result;
+  }
+
+  async saveMemoryForPatron(patronId: string, key: string, value: string): Promise<void> {
+    const existing = await memoryRepo().findOne({
+      where: { patronId, memoryKey: key },
+    });
+
+    if (existing) {
+      existing.memoryValue = value;
+      existing.updatedAt = new Date();
+      await memoryRepo().save(existing);
+    } else {
+      const memory = memoryRepo().create({
+        patronId,
+        memoryKey: key,
+        memoryValue: value,
+      });
+      await memoryRepo().save(memory);
+    }
+  }
+
+  async consolidateNewMemories(patronId: string, chatHistory: Array<{ role: string; content: string }>): Promise<void> {
+    if (!chatHistory || chatHistory.length === 0) {
+      return;
+    }
+
+    const memoriesToSave = this.extractMemoriesFromChat(chatHistory);
+
+    for (const [key, value] of Object.entries(memoriesToSave)) {
+      await this.saveMemoryForPatron(patronId, key, value);
+    }
+  }
+
+  async deleteMemoryForPatron(patronId: string, key: string): Promise<void> {
+    await memoryRepo().delete({
+      patronId,
+      memoryKey: key,
+    });
+  }
+
+  private extractMemoriesFromChat(chatHistory: Array<{ role: string; content: string }>): Record<string, string> {
+    const memories: Record<string, string> = {};
+
+    for (const message of chatHistory) {
+      if (message.role !== 'user') continue;
+
+      const content = message.content.toLowerCase();
+
+      if (content.includes('thích') || content.includes(' yêu thích') || content.includes('thể loại')) {
+        memories['preference'] = message.content;
+      }
+
+      if (content.includes('tên tôi là') || content.includes('tôi tên')) {
+        const nameMatch = message.content.match(/(?:tên tôi là|tôi tên)\s+([A-Za-zÀ-ỹ\s]+)/i);
+        if (nameMatch) {
+          memories['user_name'] = nameMatch[1].trim();
+        }
+      }
+
+      if (content.includes('mượn') || content.includes('sách')) {
+        memories['recent_topic'] = 'book_borrowing';
+      }
+    }
+
+    return memories;
+  }
+}
+</file>
+
 <file path="ai-service/src/tools/registry.ts">
 import { ToolResult, searchBooks, getShelfLocation, lookupBook, getLibraryHours as getHoursFn, getMyPatronInfo, getMyBorrows, getMyHistory, getPatronInfoById, getPatronBorrowsById, getPatronHistoryById, getOverdueBorrows, getScheduleToday } from './tools';
 
@@ -13050,6 +13814,28 @@ export function getToolDefsForRole(role: string): ToolDef[] {
     default: return patronToolDefs;
   }
 }
+</file>
+
+<file path="ai-service/src/data-source.ts">
+import 'reflect-metadata';
+import { DataSource } from 'typeorm';
+import { config } from './config';
+import { AiInsight } from './entities/AiInsight';
+import { AiMemory } from './entities/AiMemory';
+import { AiRun } from './entities/AiRun';
+
+export const AppDataSource = new DataSource({
+  type: 'postgres',
+  host: config.db.host,
+  port: config.db.port,
+  database: config.db.database,
+  username: config.db.user,
+  password: config.db.password,
+  entities: [AiInsight, AiMemory, AiRun],
+  migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
+  synchronize: false,
+  logging: process.env.TYPEORM_LOGGING === 'true',
+});
 </file>
 
 <file path="ai-service/src/sessions.ts">
@@ -22649,6 +23435,302 @@ module.exports = {
 };
 </file>
 
+<file path="ai-service/src/clients/nvidia.ts">
+import axios, { AxiosInstance } from 'axios';
+import { config } from '../config';
+
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+interface ChatCompletionRequest {
+  model: string;
+  messages: ChatMessage[];
+  temperature?: number;
+  max_tokens?: number;
+  stream?: boolean;
+}
+
+interface ChatCompletionResponse {
+  id: string;
+  choices: Array<{
+    message: {
+      role: string;
+      content: string;
+    };
+    finish_reason: string;
+  }>;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+
+interface LLMClient {
+  createChatCompletion(
+    messages: ChatMessage[],
+    options?: { temperature?: number; maxTokens?: number }
+  ): Promise<string>;
+}
+
+class NvidiaNIMClient implements LLMClient {
+  private client: AxiosInstance;
+  private maxRetries: number = 3;
+
+  constructor() {
+    this.client = axios.create({
+      baseURL: 'https://integrate.api.nvidia.com/v1',
+      headers: {
+        'Authorization': `Bearer ${config.nvidiaApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 120000,
+    });
+  }
+
+  async createChatCompletion(
+    messages: ChatMessage[],
+    options: { temperature?: number; maxTokens?: number } = {}
+  ): Promise<string> {
+    const { temperature = 0.7, maxTokens = 2048 } = options;
+
+    const request: ChatCompletionRequest = {
+      model: config.nvidiaModel,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      stream: false,
+    };
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        const response = await this.client.post<ChatCompletionResponse>(
+          '/chat/completions',
+          request
+        );
+
+        if (response.data.choices && response.data.choices.length > 0) {
+          const content = response.data.choices[0].message.content;
+          if (content && content.trim() !== '') {
+            return content;
+          }
+        }
+
+        throw new Error('Empty or invalid response content from NVIDIA NIM');
+      } catch (error: any) {
+        lastError = error;
+
+        const status = error.response?.status;
+        const retryAfter = error.response?.headers?.['retry-after'];
+
+        if (status === 429) {
+          const backoffMs = retryAfter
+            ? parseInt(retryAfter, 10) * 1000
+            : Math.min(2000 * Math.pow(2, attempt - 1) + Math.random() * 1000, 30000);
+
+          console.log(`[NVIDIA NIM] 429 rate limited, attempt ${attempt}/${this.maxRetries}, retrying in ${backoffMs}ms`);
+
+          if (attempt < this.maxRetries) {
+            await this.delay(backoffMs);
+            continue;
+          }
+        }
+
+        if (status && status >= 400 && status < 500 && status !== 429) {
+          throw new Error(`NVIDIA NIM client error ${status}: ${error.response?.data?.error?.message || error.message}`);
+        }
+
+        if (attempt < this.maxRetries) {
+          const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+          await this.delay(backoffMs);
+        }
+      }
+    }
+
+    throw new Error(`NVIDIA NIM request failed after ${this.maxRetries} attempts: ${lastError?.message}`);
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+
+class OpenRouterClient implements LLMClient {
+  private client: AxiosInstance;
+  private maxRetries: number = 3;
+
+  constructor() {
+    this.client = axios.create({
+      baseURL: config.openRouter.baseUrl,
+      headers: {
+        'Authorization': `Bearer ${config.openRouter.apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://library-iuh.edu.vn',
+        'X-Title': 'IUH Library AI',
+      },
+      timeout: 120000,
+    });
+  }
+
+  async createChatCompletion(
+    messages: ChatMessage[],
+    options: { temperature?: number; maxTokens?: number } = {}
+  ): Promise<string> {
+    const { temperature = 0.7, maxTokens = 2048 } = options;
+
+    const request: ChatCompletionRequest = {
+      model: config.openRouter.model,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      stream: false,
+    };
+
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        const response = await this.client.post<ChatCompletionResponse>(
+          '/chat/completions',
+          request
+        );
+
+        if (response.data.choices && response.data.choices.length > 0) {
+          const content = response.data.choices[0].message.content;
+          if (content && content.trim() !== '') {
+            return content;
+          }
+        }
+
+        throw new Error('Empty or invalid response content from OpenRouter');
+      } catch (error: any) {
+        lastError = error;
+
+        const status = error.response?.status;
+        const retryAfter = error.response?.headers?.['retry-after'];
+
+        if (status === 429) {
+          const backoffMs = retryAfter
+            ? parseInt(retryAfter, 10) * 1000
+            : Math.min(2000 * Math.pow(2, attempt - 1) + Math.random() * 1000, 30000);
+
+          console.log(`[OpenRouter] 429 rate limited, attempt ${attempt}/${this.maxRetries}, retrying in ${backoffMs}ms`);
+
+          if (attempt < this.maxRetries) {
+            await this.delay(backoffMs);
+            continue;
+          }
+        }
+
+        if (status && status >= 400 && status < 500 && status !== 429) {
+          throw new Error(`OpenRouter client error ${status}: ${error.response?.data?.error?.message || error.message}`);
+        }
+
+        if (attempt < this.maxRetries) {
+          const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+          await this.delay(backoffMs);
+        }
+      }
+    }
+
+    throw new Error(`OpenRouter request failed after ${this.maxRetries} attempts: ${lastError?.message}`);
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+}
+
+class MockLLMClient implements LLMClient {
+  async createChatCompletion(
+    messages: ChatMessage[],
+    _options: { temperature?: number; maxTokens?: number } = {}
+  ): Promise<string> {
+    const lastUser = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+    const lower = lastUser.toLowerCase();
+
+    // Simple rule-based mock: if user asks about books / search, return tool call
+    if (/(sách|book|tìm|tim|tra cứu|lookup|isbn)/i.test(lastUser) && !/đã tìm/i.test(lower)) {
+      const queryMatch = lastUser.match(/(?:tìm|sách|book)\s*(.*)/i);
+      const query = queryMatch?.[1]?.trim() || lastUser.slice(0, 40);
+      if (query.length > 2) {
+        return `{"tool": "search_books", "arguments": {"query": "${query.replace(/"/g, "'").slice(0, 80)}"}}`;
+      }
+    }
+    if (/(giờ|mo cua|dong cua|dia chi|lien he)/i.test(lower)) {
+      return 'Thư viện IUH mở cửa Thứ 2 - Thứ 6: 6:30 - 21:00, Thứ 7 - CN: 8:00 - 19:30. Địa chỉ liên hệ library@iuh.edu.vn. (Mock AI)';
+    }
+    // Default mock answer in Vietnamese
+    return `Xin chào! Tôi là TVTL - trợ lý thư viện IUH (Mock mode).\n\nBạn hỏi: "${lastUser.slice(0, 120)}"\n\nThư viện mở cửa T2-T6 6:30-21:00, T7-CN 8:00-19:30. Tôi có thể giúp tìm sách, tra cứu vị trí tầng, quy định mượn trả, và lịch trực. Bạn cần hỗ trợ gì thêm?`;
+  }
+}
+
+class FallbackLLMClient implements LLMClient {
+  private primary: LLMClient;
+  private fallback: LLMClient | null;
+  private primaryName: string;
+  private fallbackName: string;
+
+  constructor() {
+    if (config.ai.mockMode) {
+      this.primary = new MockLLMClient();
+      this.primaryName = 'Mock';
+      this.fallback = null;
+      this.fallbackName = '';
+      return;
+    }
+    if (config.nvidiaApiKey) {
+      this.primary = new NvidiaNIMClient();
+      this.primaryName = 'NVIDIA NIM';
+      if (config.openRouter.apiKey) {
+        this.fallback = new OpenRouterClient();
+        this.fallbackName = 'OpenRouter';
+      } else {
+        this.fallback = null;
+        this.fallbackName = '';
+      }
+    } else if (config.openRouter.apiKey) {
+      this.primary = new OpenRouterClient();
+      this.primaryName = 'OpenRouter';
+      this.fallback = null;
+      this.fallbackName = '';
+    } else {
+      throw new Error('No LLM API key configured (OPENROUTER_API_KEY or NVIDIA_API_KEY required)');
+    }
+  }
+
+  async createChatCompletion(
+    messages: ChatMessage[],
+    options: { temperature?: number; maxTokens?: number } = {}
+  ): Promise<string> {
+    try {
+      return await this.primary.createChatCompletion(messages, options);
+    } catch (primaryError: any) {
+      console.log(`[LLM] Primary (${this.primaryName}) failed: ${primaryError.message}`);
+
+      if (this.fallback) {
+        console.log(`[LLM] Falling back to ${this.fallbackName}`);
+        try {
+          return await this.fallback.createChatCompletion(messages, options);
+        } catch (fallbackError: any) {
+          console.log(`[LLM] Fallback (${this.fallbackName}) also failed: ${fallbackError.message}`);
+          throw new Error(`Both LLM providers failed. Primary: ${primaryError.message}. Fallback: ${fallbackError.message}`);
+        }
+      }
+
+      throw primaryError;
+    }
+  }
+}
+
+export const nvidiaClient = new FallbackLLMClient();
+export default nvidiaClient;
+</file>
+
 <file path="ai-service/src/clients/OpenRouterClient.ts">
 import { z } from 'zod';
 import { config } from '../config';
@@ -22860,6 +23942,128 @@ export class OpenRouterClient {
     };
   }
 }
+</file>
+
+<file path="ai-service/src/rag/indexer.ts">
+import fs from 'fs';
+import path from 'path';
+import { getCollection, resetCollection } from '../clients/chromadb';
+import { chunkText } from './embedder';
+import { v4 as uuidv4 } from 'uuid';
+
+interface DocMetadata {
+  source: string;
+  doc_title: string;
+  roles: string;
+}
+
+function getDocTitle(filePath: string): string {
+  const fileName = path.basename(filePath, '.md');
+  const titles: Record<string, string> = {
+    'gio-mo-cua': 'Giờ Mở Cửa',
+    'quy-dinh-muon-tra': 'Quy Định Mượn Trả',
+    'vi-tri-tang': 'Vị Trí Tầng',
+    'cau-hoi-thuong-gap': 'Câu Hỏi Thường Gặp',
+    'the-loai-sach': 'Thể Loại Sách',
+    'quy-dinh-the': 'Quy Định Thẻ',
+    'chinh-sach-phat': 'Chính Sách Phạt',
+    'quy-dinh-nhan-vien': 'Quy Định Nhân Viên',
+    'bao-cao-tai-chinh': 'Báo Cáo Tài Chính',
+  };
+  return titles[fileName] || fileName;
+}
+
+function extractFrontmatter(content: string): { metadata: Record<string, string>; body: string } {
+  // Handle both LF and CRLF (Windows) line endings
+  const normalized = content.replace(/\r\n/g, '\n');
+  const frontmatterMatch = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  if (frontmatterMatch) {
+    const metadata: Record<string, string> = {};
+    const frontmatterLines = frontmatterMatch[1].split('\n');
+    for (const line of frontmatterLines) {
+      const colonIndex = line.indexOf(':');
+      if (colonIndex > 0) {
+        const key = line.substring(0, colonIndex).trim();
+        const value = line.substring(colonIndex + 1).trim();
+        metadata[key] = value;
+      }
+    }
+    return { metadata, body: frontmatterMatch[2] };
+  }
+  return { metadata: { roles: 'patron' }, body: normalized };
+}
+
+function parseRoles(rolesStr: string): string[] {
+  return rolesStr
+    .split(',')
+    .map(r => r.trim())
+    .filter(r => r.length > 0 && ['patron', 'staff', 'admin'].includes(r));
+}
+
+export async function indexDocuments(): Promise<void> {
+  console.log('Starting document indexing...');
+
+  const docsPath = path.join(__dirname, '..', '..', '..', '..', 'src', 'docs');
+  const files = fs.readdirSync(docsPath).filter(f => f.endsWith('.md'));
+
+  if (files.length === 0) {
+    console.log('No documents found to index');
+    return;
+  }
+
+  console.log(`Found ${files.length} documents to index`);
+
+  const roleCollections = ['patron', 'staff', 'admin'];
+
+  for (const role of roleCollections) {
+    await resetCollection(role);
+  }
+
+  let totalChunks = 0;
+
+  for (const file of files) {
+    const filePath = path.join(docsPath, file);
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const { metadata, body } = extractFrontmatter(content);
+    const docTitle = getDocTitle(filePath);
+    const roles = parseRoles(metadata.roles || '');
+
+    console.log(`Processing "${docTitle}": roles=${roles.join(', ') || 'none'}`);
+
+    if (roles.length === 0) {
+      console.log(`  => Skipped (no roles assigned)`);
+      continue;
+    }
+
+    const chunks = chunkText(body);
+    console.log(`  => ${chunks.length} chunks`);
+
+    if (chunks.length === 0) continue;
+
+    for (const role of roles) {
+      const collection = await getCollection(role);
+      const ids = chunks.map(() => uuidv4());
+      const metadatas: DocMetadata[] = chunks.map(() => ({
+        source: file,
+        doc_title: docTitle,
+        roles: roles.join(', '),
+      }));
+
+      await collection.add({
+        ids,
+        documents: chunks,
+        metadatas: metadatas as any,
+      });
+
+      console.log(`  => Indexed into "${role}_kb": ${chunks.length} chunks`);
+      totalChunks += chunks.length;
+    }
+  }
+
+  console.log(`Indexing complete: ${totalChunks} total chunks indexed across ${roleCollections.length} collections`);
+}
+
+export default { indexDocuments };
 </file>
 
 <file path="ai-service/src/routes/card-parser.ts">
@@ -23569,68 +24773,6 @@ router.get('/sessions/:sessionId', (req: AuthRequest, res: Response) => {
 });
 
 export default router;
-</file>
-
-<file path="ai-service/src/config.ts">
-import dotenv from 'dotenv';
-dotenv.config();
-
-// Validate required secrets at startup
-const jwtSecret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
-const serviceJwtSecret = process.env.SERVICE_JWT_SECRET || '';
-
-if (!jwtSecret) {
-  throw new Error('[Config] JWT_SECRET or JWT_ACCESS_SECRET must be set');
-}
-
-export const config = {
-  port: parseInt(process.env.PORT || '3004', 10),
-  nodeEnv: process.env.NODE_ENV || 'development',
-  jwtSecret,
-  jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
-  jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
-  serviceJwtSecret,
-
-  // Service URLs
-  accessServiceUrl: process.env.ACCESS_SERVICE_URL || 'http://access-service:3003',
-  borrowServiceUrl: process.env.BORROW_SERVICE_URL || 'http://borrow-service:8000',
-  scheduleServiceUrl: process.env.SCHEDULE_SERVICE_URL || 'http://schedule-service:3002',
-  userServiceUrl: process.env.USER_SERVICE_URL || 'http://user-service:3001',
-
-  // OpenRouter (for AI Command Center)
-  openRouter: {
-    apiKey: process.env.OPENROUTER_API_KEY || '',
-    model: process.env.OPENROUTER_MODEL || 'openai/gpt-4.1-mini',
-    baseUrl: (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, ''),
-  },
-
-  // NVIDIA NIM (for Agent Chat)
-  nvidiaApiKey: process.env.NVIDIA_API_KEY || '',
-  nvidiaModel: process.env.NVIDIA_MODEL || 'meta/llama-3.1-70b-instruct',
-  nvidiaEmbedModel: process.env.NVIDIA_EMBED_MODEL || 'nvidia/nv-embedqa-e5-v5',
-
-  // ChromaDB (for RAG)
-  chromaDbUrl: process.env.CHROMA_DB_URL || 'http://localhost:8000',
-  chromaCollection: process.env.CHROMA_COLLECTION || 'library-kb',
-
-  // AI Command Center settings
-  ai: {
-    refreshMinutes: parseInt(process.env.AI_REFRESH_MINUTES || '15', 10),
-    mockMode: (process.env.AI_MOCK_MODE || 'false').toLowerCase() === 'true',
-  },
-
-  // Database
-  db: {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    database: process.env.DB_NAME || 'aidb',
-    schema: process.env.DB_SCHEMA || 'ai',
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-  },
-
-  corsOrigins: process.env.CORS_ORIGINS?.split(',') || [],
-};
 </file>
 
 <file path="ai-service/jest.setup.js">
@@ -31005,6 +32147,80 @@ export class DataCollector {
     };
   }
 }
+</file>
+
+<file path="ai-service/src/config.ts">
+import dotenv from 'dotenv';
+dotenv.config();
+
+// Validate required secrets at startup
+const jwtSecret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
+const serviceJwtSecret = process.env.SERVICE_JWT_SECRET || '';
+
+if (!jwtSecret) {
+  throw new Error('[Config] JWT_SECRET or JWT_ACCESS_SECRET must be set');
+}
+
+export const config = {
+  port: parseInt(process.env.PORT || '3004', 10),
+  nodeEnv: process.env.NODE_ENV || 'development',
+  jwtSecret,
+  jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
+  jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
+  serviceJwtSecret,
+
+  // Service URLs
+  accessServiceUrl: process.env.ACCESS_SERVICE_URL || 'http://access-service:3003',
+  borrowServiceUrl: process.env.BORROW_SERVICE_URL || 'http://borrow-service:8000',
+  scheduleServiceUrl: process.env.SCHEDULE_SERVICE_URL || 'http://schedule-service:3002',
+  userServiceUrl: process.env.USER_SERVICE_URL || 'http://user-service:3001',
+
+  // OpenRouter (for AI Command Center)
+  openRouter: {
+    apiKey: process.env.OPENROUTER_API_KEY || '',
+    model: process.env.OPENROUTER_MODEL || 'openai/gpt-4.1-mini',
+    baseUrl: (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, ''),
+  },
+
+  // NVIDIA NIM (for Agent Chat)
+  nvidiaApiKey: process.env.NVIDIA_API_KEY || '',
+  nvidiaModel: process.env.NVIDIA_MODEL || 'meta/llama-3.1-70b-instruct',
+  nvidiaEmbedModel: process.env.NVIDIA_EMBED_MODEL || 'nvidia/nv-embedqa-e5-v5',
+
+  // ChromaDB (for RAG)
+  chromaDbUrl: process.env.CHROMA_DB_URL || 'http://localhost:8000',
+  chromaCollection: process.env.CHROMA_COLLECTION || 'library-kb',
+
+  // AI Command Center settings
+  ai: {
+    refreshMinutes: parseInt(process.env.AI_REFRESH_MINUTES || '15', 10),
+    mockMode: (process.env.AI_MOCK_MODE || 'false').toLowerCase() === 'true',
+  },
+
+  // Database
+  db: {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    database: process.env.DB_NAME || 'aidb',
+    schema: process.env.DB_SCHEMA || 'ai',
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+  },
+
+  corsOrigins: process.env.CORS_ORIGINS?.split(',') || [],
+
+  // TTS (Text-to-Speech)
+  tts: {
+    provider: process.env.TTS_PROVIDER || 'mock',
+    apiKey: process.env.TTS_API_KEY || '',
+  },
+
+  // ASR (Automatic Speech Recognition)
+  asr: {
+    provider: process.env.ASR_PROVIDER || 'mock',
+    apiKey: process.env.ASR_API_KEY || '',
+  },
+};
 </file>
 
 <file path="api-gateway/package.json">
@@ -44214,10 +45430,284 @@ export class AccessService {
 export const accessService = new AccessService();
 </file>
 
+<file path="automation-service/Dockerfile">
+FROM node:20-alpine
+
+WORKDIR /app/automation-service
+
+COPY automation-service/package*.json ./
+COPY automation-service/tsconfig.json ./
+RUN npm install
+
+COPY automation-service/src ./src
+COPY automation-service/migrations ./migrations
+COPY shared /app/shared
+RUN ln -s /app/shared ./shared
+RUN cd /app/shared && npm install
+
+RUN npm run build
+RUN cp -r migrations dist/migrations
+
+EXPOSE 3007
+
+CMD ["sh", "-c", "TYPEORM_MIGRATION_RUN=true npx typeorm-ts-node-commonjs migration:run -d src/data-source.ts && node dist/automation-service/src/index.js"]
+</file>
+
+<file path="borrow-service/src/index.ts">
+import 'reflect-metadata';
+import express from 'express';
+import cors from 'cors';
+import swaggerUi from 'swagger-ui-express';
+import { config } from './config';
+import { swaggerSpec } from './config/swagger';
+import { AppDataSource } from './data-source';
+import borrowRoutes from './routes/borrow.routes';
+import borrowInternalRoutes from './routes/borrow-internal.routes';
+import libraryRoutes from './routes/library.routes';
+import bookRoutes from './routes/book.routes';
+import staffRoutes from './routes/staff.routes';
+import waitlistRoutes from './routes/waitlist.routes';
+import adminSettingsRoutes from './routes/admin-settings.routes';
+import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
+import { amqpClient } from './clients/AmqpClient';
+
+const app = express();
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json());
+
+app.use('/borrow/internal', borrowInternalRoutes);
+app.use('/borrow/waitlist', waitlistRoutes);
+app.use('/borrow', borrowRoutes);
+app.use('/borrow', bookRoutes);
+app.use('/borrow', staffRoutes);
+app.use('/library', libraryRoutes);
+app.use('/borrow/admin', adminSettingsRoutes);
+
+app.get('/healthz', (_req, res) => {
+  res.json({ status: 'ok', service: config.serviceName });
+});
+
+app.get('/ready', async (_req, res) => {
+  try {
+    await AppDataSource.query('SELECT 1');
+    res.json({ status: 'ok', service: config.serviceName, db_ok: true });
+  } catch {
+    res.status(503).json({ status: 'degraded', service: config.serviceName, db_ok: false });
+  }
+});
+
+if (config.nodeEnv !== 'production') {
+  app.get('/api-docs/swagger.json', (_req, res) => {
+    res.json(swaggerSpec);
+  });
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
+
+app.use(errorHandler);
+
+async function start() {
+  try {
+    await AppDataSource.initialize();
+    setupProcessErrorHandlers();
+    await amqpClient.connect().catch((e) => console.error('[AMQP] Init failed:', e.message));
+    const server = app.listen(config.port, '0.0.0.0', () => {
+      console.log(`Borrow service running on port ${config.port}`);
+    });
+
+    const shutdown = async () => {
+      console.log('SIGTERM received, shutting down gracefully');
+      server.close(async () => {
+        await AppDataSource.destroy();
+        console.log('Database connections closed');
+        process.exit(0);
+      });
+      setTimeout(() => {
+        console.error('Forced shutdown after timeout');
+        process.exit(1);
+      }, 10000);
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+  } catch (error) {
+    console.error('Failed to start borrow-service:', error);
+    process.exit(1);
+  }
+}
+
+start();
+</file>
+
+<file path="notification-service/Dockerfile">
+FROM node:20-alpine
+
+WORKDIR /app/notification-service
+
+COPY notification-service/package*.json ./
+COPY notification-service/tsconfig.json ./
+RUN npm install
+
+COPY notification-service/src ./src
+COPY notification-service/migrations ./migrations
+COPY shared /app/shared
+RUN ln -s /app/shared ./shared
+RUN cd /app/shared && npm install
+
+RUN npm run build
+RUN npm prune --omit=dev
+
+EXPOSE 3006
+
+CMD ["node", "dist/notification-service/src/index.js"]
+</file>
+
+<file path="schedule-service/src/index.ts">
+import 'reflect-metadata';
+import express from 'express';
+import cors from 'cors';
+import { config } from './config';
+import { AppDataSource } from './data-source';
+import scheduleRoutes from './routes/schedule.routes';
+import scheduleInternalRoutes from './routes/schedule-internal.routes';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
+import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
+import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
+import { auditContextMiddleware } from './middlewares/auditContext';
+
+const app = express();
+
+app.use(cors({ origin: config.corsOrigins.includes('*') ? true : config.corsOrigins, credentials: true }));
+app.use(express.json());
+app.use(auditContextMiddleware);
+
+app.use('/schedules/internal', scheduleInternalRoutes);
+app.use('/schedules', scheduleRoutes);
+app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'schedule-service' }));
+
+if (config.nodeEnv !== 'production') {
+  app.get('/api-docs/swagger.json', (_req, res) => {
+    res.json(swaggerSpec);
+  });
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
+
+app.use(errorHandler);
+
+async function start() {
+  try {
+    await AppDataSource.initialize();
+    await startUserEventSubscriber();
+    setupProcessErrorHandlers();
+    const server = app.listen(config.port, () => {
+      console.log(`Schedule service running on port ${config.port}`);
+    });
+
+    const shutdown = async () => {
+      console.log('SIGTERM received, shutting down gracefully');
+      server.close(async () => {
+        await AppDataSource.destroy();
+        console.log('Database connections closed');
+        process.exit(0);
+      });
+      setTimeout(() => {
+        console.error('Forced shutdown after timeout');
+        process.exit(1);
+      }, 10000);
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+  } catch (error) {
+    console.error('Failed to start schedule-service:', error);
+    process.exit(1);
+  }
+}
+
+start();
+</file>
+
+<file path="user-service/src/index.ts">
+import 'reflect-metadata';
+import express from 'express';
+import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import { config } from './config';
+import { AppDataSource } from './data-source';
+import { authRoutes, userRoutes, patronRoutes, internalRoutes } from './routes';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
+import { errorHandler } from './middlewares/errorHandler';
+import { setupProcessErrorHandlers } from '../../shared/error-handler';
+
+const app = express();
+
+app.use(cors({ origin: config.corsOrigins, credentials: true }));
+app.use(cookieParser());
+app.use(express.json());
+
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', service: 'user-service' });
+});
+
+app.use('/auth', authRoutes);
+app.use('/users', userRoutes);
+app.use('/patrons', patronRoutes);
+app.use('/internal', internalRoutes);
+
+if (config.nodeEnv !== 'production') {
+  app.get('/api-docs/swagger.json', (_req, res) => {
+    res.json(swaggerSpec);
+  });
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
+
+app.use(errorHandler);
+
+async function start() {
+  try {
+    setupProcessErrorHandlers();
+    await AppDataSource.initialize();
+    console.log('Database initialized via TypeORM');
+
+    const { startAmqpSubscriber } = require('./subscribers/AmqpSubscriber');
+    startAmqpSubscriber().catch((e: any) => console.error('[AMQP] Subscriber error:', e.message));
+
+    const server = app.listen(config.port, () => {
+      console.log(`User service running on port ${config.port}`);
+      console.log(`Environment: ${config.nodeEnv}`);
+    });
+
+    const shutdown = async () => {
+      console.log('SIGTERM received, shutting down gracefully');
+      server.close(async () => {
+        await AppDataSource.destroy();
+        console.log('Database connections closed');
+        process.exit(0);
+      });
+      setTimeout(() => {
+        console.error('Forced shutdown after timeout');
+        process.exit(1);
+      }, 10000);
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+  } catch (error) {
+    console.error('Failed to start:', error);
+    process.exit(1);
+  }
+}
+
+start();
+</file>
+
 <file path="ai-service/src/agent/agent.ts">
 import { nvidiaClient } from '../clients/nvidia';
 import { ToolDef, patronToolDefs, getToolDefsForRole } from '../tools/registry';
 import { retrieve, RetrievedDocument } from '../rag/retriever';
+import { MemoryService } from '../services/MemoryService';
+import { TTSClient } from '../clients/TTSClient';
 
 type ChatRole = 'system' | 'user' | 'assistant';
 
@@ -44505,279 +45995,188 @@ export async function processMessage(
   };
 }
 
-export default { processMessage };
-</file>
-
-<file path="automation-service/Dockerfile">
-FROM node:20-alpine
-
-WORKDIR /app/automation-service
-
-COPY automation-service/package*.json ./
-COPY automation-service/tsconfig.json ./
-RUN npm install
-
-COPY automation-service/src ./src
-COPY automation-service/migrations ./migrations
-COPY shared /app/shared
-RUN ln -s /app/shared ./shared
-RUN cd /app/shared && npm install
-
-RUN npm run build
-RUN cp -r migrations dist/migrations
-
-EXPOSE 3007
-
-CMD ["sh", "-c", "TYPEORM_MIGRATION_RUN=true npx typeorm-ts-node-commonjs migration:run -d src/data-source.ts && node dist/automation-service/src/index.js"]
-</file>
-
-<file path="borrow-service/src/index.ts">
-import 'reflect-metadata';
-import express from 'express';
-import cors from 'cors';
-import swaggerUi from 'swagger-ui-express';
-import { config } from './config';
-import { swaggerSpec } from './config/swagger';
-import { AppDataSource } from './data-source';
-import borrowRoutes from './routes/borrow.routes';
-import borrowInternalRoutes from './routes/borrow-internal.routes';
-import libraryRoutes from './routes/library.routes';
-import bookRoutes from './routes/book.routes';
-import staffRoutes from './routes/staff.routes';
-import waitlistRoutes from './routes/waitlist.routes';
-import adminSettingsRoutes from './routes/admin-settings.routes';
-import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
-import { amqpClient } from './clients/AmqpClient';
-
-const app = express();
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
-
-app.use('/borrow/internal', borrowInternalRoutes);
-app.use('/borrow/waitlist', waitlistRoutes);
-app.use('/borrow', borrowRoutes);
-app.use('/borrow', bookRoutes);
-app.use('/borrow', staffRoutes);
-app.use('/library', libraryRoutes);
-app.use('/borrow/admin', adminSettingsRoutes);
-
-app.get('/healthz', (_req, res) => {
-  res.json({ status: 'ok', service: config.serviceName });
-});
-
-app.get('/ready', async (_req, res) => {
-  try {
-    await AppDataSource.query('SELECT 1');
-    res.json({ status: 'ok', service: config.serviceName, db_ok: true });
-  } catch {
-    res.status(503).json({ status: 'degraded', service: config.serviceName, db_ok: false });
-  }
-});
-
-if (config.nodeEnv !== 'production') {
-  app.get('/api-docs/swagger.json', (_req, res) => {
-    res.json(swaggerSpec);
-  });
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+export interface CompanionMessageInput {
+  message?: string;
+  audioBase64?: string;
+  sessionId: string;
+  role: string;
+  patronId: string;
+  sessionHistory?: Array<{ role: string; content: string }>;
 }
 
-app.use(errorHandler);
+export interface CompanionChunk {
+  type: 'text' | 'audio' | 'viseme' | 'tool_result' | 'book_card' | 'companion_done';
+  data: any;
+}
 
-async function start() {
+export async function* processCompanionMessage(
+  input: CompanionMessageInput,
+): AsyncGenerator<CompanionChunk> {
+  const memoryService = new MemoryService();
+  const ttsClient = new TTSClient();
+
+  let message = input.message || '';
+
+  if (input.audioBase64 && !message) {
+    const { ASRClient } = await import('../clients/ASRClient');
+    const asrClient = new ASRClient();
+    const audioBuffer = Buffer.from(input.audioBase64, 'base64');
+    const result = await asrClient.transcribeAudio(audioBuffer);
+    message = result.transcript;
+    yield { type: 'text', data: { content: `[Voice] ${message}` } };
+  }
+
+  let memories: Record<string, string> = {};
   try {
-    await AppDataSource.initialize();
-    setupProcessErrorHandlers();
-    await amqpClient.connect().catch((e) => console.error('[AMQP] Init failed:', e.message));
-    const server = app.listen(config.port, '0.0.0.0', () => {
-      console.log(`Borrow service running on port ${config.port}`);
+    memories = await memoryService.getMemoriesForPatron(input.patronId);
+  } catch (e) {
+    console.warn('[Companion] getMemoriesForPatron failed, using empty:', (e as Error).message);
+    memories = {};
+  }
+  const memoryContext = Object.entries(memories)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join('\n');
+
+  const contextDocs = await retrieve(message, 5, input.role);
+  const availableTools = getToolDefsForRole(input.role);
+
+  let systemPrompt = buildSystemPrompt(contextDocs, {
+    userId: input.patronId,
+    email: '',
+    role: input.role,
+  }, availableTools);
+
+  if (memoryContext) {
+    systemPrompt += `\n\nLong-term Memory:\n${memoryContext}`;
+  }
+
+  const messages: Array<{ role: ChatRole; content: string }> = [
+    { role: 'system', content: systemPrompt },
+  ];
+
+  if (input.sessionHistory && input.sessionHistory.length > 0) {
+    for (const msg of input.sessionHistory.slice(-10)) {
+      if (msg.role === 'user' || msg.role === 'assistant') {
+        messages.push({ role: msg.role as ChatRole, content: msg.content });
+      }
+    }
+  }
+
+  messages.push({ role: 'user', content: message });
+
+  let maxIterations = 3;
+  let toolResults: Array<{ name: string; result: any }> = [];
+
+  while (maxIterations > 0) {
+    maxIterations--;
+
+    const response = await nvidiaClient.createChatCompletion(messages, {
+      temperature: 0.7,
+      maxTokens: 2048,
     });
 
-    const shutdown = async () => {
-      console.log('SIGTERM received, shutting down gracefully');
-      server.close(async () => {
-        await AppDataSource.destroy();
-        console.log('Database connections closed');
-        process.exit(0);
-      });
-      setTimeout(() => {
-        console.error('Forced shutdown after timeout');
-        process.exit(1);
-      }, 10000);
-    };
+    messages.push({ role: 'assistant', content: response });
 
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
-  } catch (error) {
-    console.error('Failed to start borrow-service:', error);
-    process.exit(1);
+    const toolCalls = parseToolCalls(response || '');
+
+    if (!response || toolCalls.length === 0) {
+      let finalResponse = (response || '').trim();
+      if (!finalResponse && toolResults.length > 0) {
+        const toolSummary = toolResults
+          .filter(t => t.result?.success && t.result?.data)
+          .map(t => {
+            const data = t.result.data;
+            if (Array.isArray(data)) {
+              if (data.length === 0) return `Khong tim thay ket qua tu ${t.name}.`;
+              return `Tu ${t.name}: ${data.length} ket qua.`;
+            }
+            return `Ket qua tu ${t.name}.`;
+          })
+          .join('\n');
+        finalResponse = toolSummary || 'Da truy van xong.';
+      }
+      if (!finalResponse) {
+        finalResponse = 'Xin loi, toi da gap su co khi xu ly cau hoi cua ban. Vui long thu lai.';
+      }
+
+      const ttsResult = await ttsClient.synthesizeSpeech(finalResponse);
+
+      yield { type: 'text', data: { content: finalResponse } };
+      yield { type: 'audio', data: { audioBase64: ttsResult.audioBase64, durationMs: ttsResult.durationMs } };
+      yield { type: 'viseme', data: { visemes: ttsResult.visemes } };
+
+      if (finalResponse.includes(':::book_card')) {
+        const bookCardMatch = finalResponse.match(/:::book_card\s*(\{.*?\})/s);
+        if (bookCardMatch) {
+          try {
+            const bookCard = JSON.parse(bookCardMatch[1]);
+            yield { type: 'book_card', data: bookCard };
+          } catch {}
+        }
+      }
+
+      memoryService.consolidateNewMemories(input.patronId, [
+        { role: 'user', content: message },
+        { role: 'assistant', content: finalResponse },
+      ]).catch(() => {});
+
+      yield { type: 'companion_done', data: { sessionId: input.sessionId } };
+      return;
+    }
+
+    const callsToProcess = toolCalls.slice(0, 1);
+
+    for (const call of callsToProcess) {
+      const tool = availableTools.find(t => t.name === call.name);
+
+      if (!tool) {
+        toolResults.push({
+          name: call.name,
+          result: { error: `Unknown tool: ${call.name}. Access denied for role: ${input.role}` },
+        });
+        messages.push({
+          role: 'user',
+          content: `[He thong] Tool "${call.name}" khong ton tai hoac ban khong co quyen su dung. Chi su dung cac tool: ${availableTools.map(t => t.name).join(', ')}`,
+        });
+        continue;
+      }
+
+      try {
+        const fn = tool.func as (...args: any[]) => any;
+
+        let result: any;
+        if (tool.injectUserId) {
+          result = await fn(input.patronId);
+        } else {
+          const argValues = Object.values(call.args);
+          result = await fn(...argValues);
+        }
+
+        toolResults.push({ name: call.name, result });
+
+        yield { type: 'tool_result', data: { name: call.name, result } };
+
+        const resultStr = JSON.stringify(result, null, 2);
+        messages.push({
+          role: 'user',
+          content: `[He thong] Ket qua tu tool "${call.name}":\n${resultStr}\n\nDua tren ket qua tren, tra loi nguoi dung bang tieng Viet. Neu da co du thong tin, tong hop va tra loi. Neu can them thong tin, goi tool tiep theo.`,
+        });
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+        toolResults.push({ name: call.name, result: { error: errorMsg } });
+        messages.push({
+          role: 'user',
+          content: `[He thong] Loi khi goi tool "${call.name}": ${errorMsg}`,
+        });
+      }
+    }
   }
+
+  yield { type: 'text', data: { content: 'Da dat den gioi han so buoc xu ly. Vui long thu lai voi cau hoi ngan hon.' } };
+  yield { type: 'companion_done', data: { sessionId: input.sessionId } };
 }
 
-start();
-</file>
-
-<file path="notification-service/Dockerfile">
-FROM node:20-alpine
-
-WORKDIR /app/notification-service
-
-COPY notification-service/package*.json ./
-COPY notification-service/tsconfig.json ./
-RUN npm install
-
-COPY notification-service/src ./src
-COPY notification-service/migrations ./migrations
-COPY shared /app/shared
-RUN ln -s /app/shared ./shared
-RUN cd /app/shared && npm install
-
-RUN npm run build
-RUN npm prune --omit=dev
-
-EXPOSE 3006
-
-CMD ["node", "dist/notification-service/src/index.js"]
-</file>
-
-<file path="schedule-service/src/index.ts">
-import 'reflect-metadata';
-import express from 'express';
-import cors from 'cors';
-import { config } from './config';
-import { AppDataSource } from './data-source';
-import scheduleRoutes from './routes/schedule.routes';
-import scheduleInternalRoutes from './routes/schedule-internal.routes';
-import swaggerUi from 'swagger-ui-express';
-import { swaggerSpec } from './config/swagger';
-import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
-import { startUserEventSubscriber } from './subscribers/UserEventSubscriber';
-import { auditContextMiddleware } from './middlewares/auditContext';
-
-const app = express();
-
-app.use(cors({ origin: config.corsOrigins.includes('*') ? true : config.corsOrigins, credentials: true }));
-app.use(express.json());
-app.use(auditContextMiddleware);
-
-app.use('/schedules/internal', scheduleInternalRoutes);
-app.use('/schedules', scheduleRoutes);
-app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'schedule-service' }));
-
-if (config.nodeEnv !== 'production') {
-  app.get('/api-docs/swagger.json', (_req, res) => {
-    res.json(swaggerSpec);
-  });
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-}
-
-app.use(errorHandler);
-
-async function start() {
-  try {
-    await AppDataSource.initialize();
-    await startUserEventSubscriber();
-    setupProcessErrorHandlers();
-    const server = app.listen(config.port, () => {
-      console.log(`Schedule service running on port ${config.port}`);
-    });
-
-    const shutdown = async () => {
-      console.log('SIGTERM received, shutting down gracefully');
-      server.close(async () => {
-        await AppDataSource.destroy();
-        console.log('Database connections closed');
-        process.exit(0);
-      });
-      setTimeout(() => {
-        console.error('Forced shutdown after timeout');
-        process.exit(1);
-      }, 10000);
-    };
-
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
-  } catch (error) {
-    console.error('Failed to start schedule-service:', error);
-    process.exit(1);
-  }
-}
-
-start();
-</file>
-
-<file path="user-service/src/index.ts">
-import 'reflect-metadata';
-import express from 'express';
-import cors from 'cors';
-import cookieParser from 'cookie-parser';
-import { config } from './config';
-import { AppDataSource } from './data-source';
-import { authRoutes, userRoutes, patronRoutes, internalRoutes } from './routes';
-import swaggerUi from 'swagger-ui-express';
-import { swaggerSpec } from './config/swagger';
-import { errorHandler } from './middlewares/errorHandler';
-import { setupProcessErrorHandlers } from '../../shared/error-handler';
-
-const app = express();
-
-app.use(cors({ origin: config.corsOrigins, credentials: true }));
-app.use(cookieParser());
-app.use(express.json());
-
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'user-service' });
-});
-
-app.use('/auth', authRoutes);
-app.use('/users', userRoutes);
-app.use('/patrons', patronRoutes);
-app.use('/internal', internalRoutes);
-
-if (config.nodeEnv !== 'production') {
-  app.get('/api-docs/swagger.json', (_req, res) => {
-    res.json(swaggerSpec);
-  });
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-}
-
-app.use(errorHandler);
-
-async function start() {
-  try {
-    setupProcessErrorHandlers();
-    await AppDataSource.initialize();
-    console.log('Database initialized via TypeORM');
-
-    const { startAmqpSubscriber } = require('./subscribers/AmqpSubscriber');
-    startAmqpSubscriber().catch((e: any) => console.error('[AMQP] Subscriber error:', e.message));
-
-    const server = app.listen(config.port, () => {
-      console.log(`User service running on port ${config.port}`);
-      console.log(`Environment: ${config.nodeEnv}`);
-    });
-
-    const shutdown = async () => {
-      console.log('SIGTERM received, shutting down gracefully');
-      server.close(async () => {
-        await AppDataSource.destroy();
-        console.log('Database connections closed');
-        process.exit(0);
-      });
-      setTimeout(() => {
-        console.error('Forced shutdown after timeout');
-        process.exit(1);
-      }, 10000);
-    };
-
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
-  } catch (error) {
-    console.error('Failed to start:', error);
-    process.exit(1);
-  }
-}
-
-start();
+export default { processMessage, processCompanionMessage };
 </file>
 
 <file path="ai-service/src/tools/tools.ts">
@@ -45679,166 +47078,6 @@ export class UserService {
     };
   }
 }
-</file>
-
-<file path="ai-service/src/index.ts">
-import 'reflect-metadata';
-import express from 'express';
-import cors from 'cors';
-import { config } from './config';
-import { AppDataSource } from './data-source';
-import aiRoutes from './routes/ai.routes';
-import cardParserRouter from './routes/card-parser';
-import patronChatRouter from './routes/chat.patron';
-import staffChatRouter from './routes/chat.staff';
-import adminChatRouter from './routes/chat.admin';
-import swaggerUi from 'swagger-ui-express';
-import { swaggerSpec } from './config/swagger';
-import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
-import { createAuth, requireRole } from '../../shared/auth';
-import { getCollection } from './clients/chromadb';
-import { indexDocuments } from './rag/indexer';
-import { sessionStore } from './sessions';
-
-const auth = createAuth({
-  jwtSecret: config.jwtSecret,
-  jwtAudience: config.jwtAudience,
-  jwtIssuer: config.jwtIssuer,
-});
-
-const app = express();
-
-app.use(cors({ origin: config.corsOrigins.includes('*') ? true : config.corsOrigins, credentials: true }));
-app.use(express.json({ limit: '1mb' }));
-
-// Health check (no auth) - both /health and /ai/health
-app.get('/health', async (_req, res) => {
-  let chromaOk = false;
-  let chromaCount = 0;
-  try {
-    const collection = await getCollection('patron');
-    chromaCount = await collection.count();
-    chromaOk = true;
-  } catch {}
-  res.json({
-    status: 'ok',
-    service: 'ai-service',
-    mockMode: config.ai.mockMode,
-    chromadb: { connected: chromaOk, documents: chromaCount },
-  });
-});
-
-app.get('/ai/health', async (_req, res) => {
-  let chromaOk = false;
-  let chromaCount = 0;
-  try {
-    const collection = await getCollection('patron');
-    chromaCount = await collection.count();
-    chromaOk = true;
-  } catch {}
-  res.json({
-    status: 'ok',
-    service: 'ai-service',
-    mockMode: config.ai.mockMode,
-    chromadb: { connected: chromaOk, documents: chromaCount },
-  });
-});
-
-// Role-specific chat routes (NEW: role-isolated tool registries)
-app.use('/ai/patrons/chat', auth, requireRole(['patron']), patronChatRouter);
-app.use('/ai/staff/chat', auth, requireRole(['admin', 'staff']), staffChatRouter);
-app.use('/ai/admin/chat', auth, requireRole(['admin']), adminChatRouter);
-
-// Card text parsing (OCR result -> structured data via LLM)
-app.use('/ai', auth, cardParserRouter);
-
-// AI Command Center routes (admin/staff only) - /ai/command-center/*, /ai/insights/*, /ai/recommendations/*
-app.use('/ai', auth, aiRoutes);
-
-// Session retrieval - /ai/sessions/:sessionId
-app.get('/ai/sessions/:sessionId', auth, (req, res) => {
-  const session = sessionStore.get(req.params.sessionId);
-  if (!session) {
-    res.status(404).json({ error: 'Session not found' });
-    return;
-  }
-  res.json({
-    sessionId: session.id,
-    patronId: session.patronId,
-    messages: session.messages,
-    pendingConfirmation: session.pendingConfirmation,
-  });
-});
-
-if (config.nodeEnv !== 'production') {
-  app.get('/api-docs/swagger.json', (_req, res) => {
-    res.json(swaggerSpec);
-  });
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-}
-
-app.use(errorHandler);
-
-async function start() {
-  try {
-    // Initialize PostgreSQL
-    console.log('Connecting to PostgreSQL...');
-    await AppDataSource.initialize();
-    console.log('PostgreSQL connected');
-
-    // Initialize ChromaDB
-    console.log('Connecting to ChromaDB...');
-    try {
-      const collection = await getCollection('patron');
-      const count = await collection.count();
-      console.log(`ChromaDB connected. Collection "${config.chromaCollection}" has ${count} documents.`);
-    } catch (error) {
-      console.warn('ChromaDB connection warning:', error instanceof Error ? error.message : error);
-      console.log('Continuing without ChromaDB connection...');
-    }
-
-    // Index knowledge base documents
-    console.log('Indexing knowledge base documents...');
-    try {
-      await indexDocuments();
-    } catch (error) {
-      console.warn('Document indexing warning:', error instanceof Error ? error.message : error);
-      console.log('Continuing without document indexing...');
-    }
-
-    setupProcessErrorHandlers();
-    const server = app.listen(config.port, '0.0.0.0', () => {
-      console.log(`AI service running on port ${config.port}`);
-      console.log(`  Patron Chat:   /ai/patrons/chat (requireRole: patron)`);
-      console.log(`  Staff Chat:    /ai/staff/chat (requireRole: admin, staff)`);
-      console.log(`  Admin Chat:    /ai/admin/chat (requireRole: admin)`);
-      console.log(`  Command Center: /ai/command-center/*`);
-      console.log(`  LLM (OpenRouter): ${config.openRouter.model}`);
-      console.log(`  LLM (NVIDIA NIM): ${config.nvidiaModel}`);
-    });
-
-    const shutdown = async () => {
-      console.log('SIGTERM received, shutting down gracefully');
-      server.close(async () => {
-        await AppDataSource.destroy();
-        console.log('Database connections closed');
-        process.exit(0);
-      });
-      setTimeout(() => {
-        console.error('Forced shutdown after timeout');
-        process.exit(1);
-      }, 10000);
-    };
-
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
-  } catch (error) {
-    console.error('Failed to start ai-service:', error);
-    process.exit(1);
-  }
-}
-
-start();
 </file>
 
 <file path="borrow-service/src/routes/borrow-internal.routes.ts">
@@ -49221,6 +50460,175 @@ async function start() {
 start();
 </file>
 
+<file path="ai-service/src/index.ts">
+import 'reflect-metadata';
+import express from 'express';
+import cors from 'cors';
+import { config } from './config';
+import { AppDataSource } from './data-source';
+import aiRoutes from './routes/ai.routes';
+import cardParserRouter from './routes/card-parser';
+import patronChatRouter from './routes/chat.patron';
+import staffChatRouter from './routes/chat.staff';
+import adminChatRouter from './routes/chat.admin';
+import companionRouter from './routes/companion';
+import legacyChatRouter from './routes/chat.legacy';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
+import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
+import { createAuth, requireRole } from '../../shared/auth';
+import { getCollection } from './clients/chromadb';
+import { indexDocuments } from './rag/indexer';
+import { sessionStore } from './sessions';
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
+
+const app = express();
+
+app.use(cors({ origin: config.corsOrigins.includes('*') ? true : config.corsOrigins, credentials: true }));
+app.use(express.json({ limit: '1mb' }));
+
+// Health check (no auth) - both /health and /ai/health
+app.get('/health', async (_req, res) => {
+  let chromaOk = false;
+  let chromaCount = 0;
+  try {
+    const collection = await getCollection('patron');
+    chromaCount = await collection.count();
+    chromaOk = true;
+  } catch {}
+  res.json({
+    status: 'ok',
+    service: 'ai-service',
+    mockMode: config.ai.mockMode,
+    chromadb: { connected: chromaOk, documents: chromaCount },
+  });
+});
+
+app.get('/ai/health', async (_req, res) => {
+  let chromaOk = false;
+  let chromaCount = 0;
+  try {
+    const collection = await getCollection('patron');
+    chromaCount = await collection.count();
+    chromaOk = true;
+  } catch {}
+  res.json({
+    status: 'ok',
+    service: 'ai-service',
+    mockMode: config.ai.mockMode,
+    chromadb: { connected: chromaOk, documents: chromaCount },
+  });
+});
+
+// Companion streaming (SSE) — used by AIWidget store: POST /api/ai/companion/stream
+app.use('/ai/companion', auth, companionRouter);
+
+// Legacy unified chat endpoint: POST /api/ai/chat (backward compatibility)
+// The gateway docs previously showed POST /api/ai/chat → keep alias to avoid 404
+app.use('/ai/chat', auth, legacyChatRouter);
+
+// Role-specific chat routes (NEW: role-isolated tool registries)
+app.use('/ai/patrons/chat', auth, requireRole(['patron']), patronChatRouter);
+app.use('/ai/staff/chat', auth, requireRole(['admin', 'staff']), staffChatRouter);
+app.use('/ai/admin/chat', auth, requireRole(['admin']), adminChatRouter);
+
+// Card text parsing (OCR result -> structured data via LLM)
+app.use('/ai', auth, cardParserRouter);
+
+// AI Command Center routes (admin/staff only) - /ai/command-center/*, /ai/insights/*, /ai/recommendations/*
+app.use('/ai', auth, aiRoutes);
+
+// Session retrieval - /ai/sessions/:sessionId
+app.get('/ai/sessions/:sessionId', auth, (req, res) => {
+  const session = sessionStore.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'Session not found' });
+    return;
+  }
+  res.json({
+    sessionId: session.id,
+    patronId: session.patronId,
+    messages: session.messages,
+    pendingConfirmation: session.pendingConfirmation,
+  });
+});
+
+if (config.nodeEnv !== 'production') {
+  app.get('/api-docs/swagger.json', (_req, res) => {
+    res.json(swaggerSpec);
+  });
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
+
+app.use(errorHandler);
+
+async function start() {
+  try {
+    // Initialize PostgreSQL
+    console.log('Connecting to PostgreSQL...');
+    await AppDataSource.initialize();
+    console.log('PostgreSQL connected');
+
+    // Initialize ChromaDB
+    console.log('Connecting to ChromaDB...');
+    try {
+      const collection = await getCollection('patron');
+      const count = await collection.count();
+      console.log(`ChromaDB connected. Collection "${config.chromaCollection}" has ${count} documents.`);
+    } catch (error) {
+      console.warn('ChromaDB connection warning:', error instanceof Error ? error.message : error);
+      console.log('Continuing without ChromaDB connection...');
+    }
+
+    // Index knowledge base documents
+    console.log('Indexing knowledge base documents...');
+    try {
+      await indexDocuments();
+    } catch (error) {
+      console.warn('Document indexing warning:', error instanceof Error ? error.message : error);
+      console.log('Continuing without document indexing...');
+    }
+
+    setupProcessErrorHandlers();
+    const server = app.listen(config.port, '0.0.0.0', () => {
+      console.log(`AI service running on port ${config.port}`);
+      console.log(`  Patron Chat:   /ai/patrons/chat (requireRole: patron)`);
+      console.log(`  Staff Chat:    /ai/staff/chat (requireRole: admin, staff)`);
+      console.log(`  Admin Chat:    /ai/admin/chat (requireRole: admin)`);
+      console.log(`  Command Center: /ai/command-center/*`);
+      console.log(`  LLM (OpenRouter): ${config.openRouter.model}`);
+      console.log(`  LLM (NVIDIA NIM): ${config.nvidiaModel}`);
+    });
+
+    const shutdown = async () => {
+      console.log('SIGTERM received, shutting down gracefully');
+      server.close(async () => {
+        await AppDataSource.destroy();
+        console.log('Database connections closed');
+        process.exit(0);
+      });
+      setTimeout(() => {
+        console.error('Forced shutdown after timeout');
+        process.exit(1);
+      }, 10000);
+    };
+
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+  } catch (error) {
+    console.error('Failed to start ai-service:', error);
+    process.exit(1);
+  }
+}
+
+start();
+</file>
+
 <file path="automation-service/src/clients/serviceClients.ts">
 import { config } from '../config';
 import { amqpClient } from './AmqpClient';
@@ -51224,10 +52632,24 @@ const aiProxyOpts = {
   pathRewrite: stripApiPrefixFromOriginalPath,
 };
 
+const aiSSEProxyOpts = {
+  target: config.services.aiService,
+  changeOrigin: true,
+  timeout: 0,
+  proxyTimeout: 0,
+  pathRewrite: stripApiPrefixFromOriginalPath,
+  on: {
+    proxyReq: (proxyReq: any) => {
+      proxyReq.setHeader('X-Legacy-Routed', 'true');
+    },
+  },
+};
+
 const patronAiLimiter = rateLimit({ windowMs: 60000, max: 60, message: { error: 'Too many requests from patron' } });
 const staffAiLimiter = rateLimit({ windowMs: 60000, max: 120, message: { error: 'Too many requests from staff' } });
 const adminAiLimiter = rateLimit({ windowMs: 60000, max: 200, message: { error: 'Too many requests from admin' } });
 
+app.use('/api/ai/companion/stream', createProxyMiddleware(aiSSEProxyOpts));
 app.use('/api/ai/patrons', patronAiLimiter, createProxyMiddleware(aiProxyOpts));
 app.use('/api/ai/staff', staffAiLimiter, createProxyMiddleware(aiProxyOpts));
 app.use('/api/ai/admin', adminAiLimiter, createProxyMiddleware(aiProxyOpts));

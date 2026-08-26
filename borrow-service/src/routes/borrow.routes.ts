@@ -34,9 +34,9 @@ function patronIdFrom(user: AuthRequest['user']) {
 function patronSummary(patron: PatronSummary) {
   const id = patron.id;
   const studentCode = patron.student_code || patron.studentCode;
-  if (!id || !studentCode) throw new HttpError(502, 'Du lieu doc gia khong hop le');
+  if (!id || !studentCode) throw new HttpError(502, 'Dữ liệu độc giả không hợp lệ');
   if (!/^[0-9a-f]{32}$/i.test(id.replace(/-/g, ''))) {
-    throw new HttpError(502, 'ID doc gia khong hop le');
+    throw new HttpError(502, 'ID độc giả không hợp lệ');
   }
   return {
     id,
@@ -80,7 +80,7 @@ router.post('/', requireRole(['patron', 'admin', 'staff'], 'Chi nguoi dung hop l
     const accessStatus = await getPatronAccessStatus(userId);
     if (!accessStatus.inside) {
       if (accessStatus.isExpired) {
-        throw new HttpError(403, `Phien lam viec da het han (${config.maxEntryHours}h). Vui long vao lai qua cong de muon sach.`);
+        throw new HttpError(403, `Phiên làm việc đã hết hạn (${config.maxEntryHours}h). Vui lòng vào lại qua cổng.de muon sach.`);
       }
       throw new HttpError(403, 'Ban phai co mat trong thu vien de muon sach. Vui long quet the tai cua vao.');
     }
@@ -104,11 +104,11 @@ router.post('/', requireRole(['patron', 'admin', 'staff'], 'Chi nguoi dung hop l
         if (!copy) throw new HttpError(404, `Khong tim thay ban sao nao voi ma vach ${barcode}`);
         book = copy.book || await repo.getBookById(copy.bookId);
         if (!book) throw new HttpError(404, 'Khong tim thay sach');
-        if (!copy.isAvailable) throw new HttpError(409, 'Ban sao nay hien dang duoc muon');
+        if (!copy.isAvailable) throw new HttpError(409, 'Bản sao nay hien dang duoc muon');
       }
       if (!book || !copy) throw new HttpError(404, 'Khong tim thay sach');
       if (await repo.getActiveBorrow(userId, book.id)) throw new HttpError(409, 'Sach nay ban dang muon');
-      if ((await repo.getOverdueBorrows(userId)).length) throw new HttpError(409, 'Ban co sach qua han. Vui long tra sach truoc khi muon them.');
+      if ((await repo.getOverdueBorrows(userId)).length) throw new HttpError(409, 'Ban co sách quá hạn. Vui long tra sach truoc khi muon them.');
       if (await repo.countActiveBorrows(userId) >= config.maxBorrowBooks) throw new HttpError(409, `Da qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
 
       copy!.isAvailable = false;
@@ -182,7 +182,7 @@ router.post('/renew', auth, async (req: AuthRequest, res, next) => {
 
     const now = new Date();
     if (now > new Date(record.dueAt)) {
-      throw new HttpError(409, 'Khong the gia han sach qua han. Vui long tra sach va muon lai.');
+      throw new HttpError(409, 'Khong the gia han sách quá hạn. Vui long tra sach va muon lai.');
     }
 
     const newDueAt = new Date(record.dueAt);
@@ -193,7 +193,7 @@ router.post('/renew', auth, async (req: AuthRequest, res, next) => {
 
     res.json({
       status: 'success',
-      message: `Gia han thanh cong. Han tra moi: ${newDueAt.toLocaleDateString('vi-VN')}`,
+      message: `Gia hạn thành công. Han tra moi: ${newDueAt.toLocaleDateString('vi-VN')}`,
       record: serializeBorrowRecord(record),
     });
   } catch (error) {

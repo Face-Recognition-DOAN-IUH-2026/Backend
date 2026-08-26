@@ -15,9 +15,9 @@ function normalizeBookCode(value: string) {
 function patronSummary(patron: any) {
   const id = patron.id;
   const studentCode = patron.student_code || patron.studentCode;
-  if (!id || !studentCode) throw new HttpError(502, 'Du lieu doc gia khong hop le');
+  if (!id || !studentCode) throw new HttpError(502, 'Dữ liệu độc giả không hợp lệ');
   if (!/^[0-9a-f]{32}$/i.test(id.replace(/-/g, ''))) {
-    throw new HttpError(502, 'ID doc gia khong hop le');
+    throw new HttpError(502, 'ID độc giả không hợp lệ');
   }
   return {
     id,
@@ -68,7 +68,7 @@ export class ReturnService {
     if (!book) throw new HttpError(404, 'Khong tim thay sach voi ma vua quet');
 
     const records = await this.repo.getActiveBorrowsByPatronAndBook(patron.id, book.id);
-    if (!records.length) throw new HttpError(404, 'Doc gia nay khong muon sach co ma nay');
+    if (!records.length) throw new HttpError(404, 'Độc giả này không mượn sách có mã này');
     if (records.length > 1) throw new HttpError(409, 'Co nhieu ban ghi muon trung sach. Vui long chon ban ghi thu cong hoac dung barcode ban sao.');
 
     const record = records[0];
@@ -106,7 +106,7 @@ export class ReturnService {
         }
         const records = await this.repo.getActiveBorrowsByPatronAndBook(patron.id, book.id);
         if (!records.length) {
-          throw new HttpError(404, 'Doc gia nay khong muon sach co ma nay');
+          throw new HttpError(404, 'Độc giả này không mượn sách có mã này');
         }
         if (records.length > 1) {
           throw new HttpError(409, 'Co nhieu ban ghi muon trung sach. Vui long chon ban ghi thu cong hoac dung barcode ban sao.');
@@ -124,7 +124,7 @@ export class ReturnService {
           fineAmount: record.fineAmount || 0,
         });
 
-        results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'success', message: 'Tra sach thanh cong' });
+        results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'success', message: 'Trả sách thành công' });
         ok += 1;
       } catch (err) {
         const msg = err instanceof HttpError ? err.message : (err instanceof Error ? err.message : 'Loi khong xac dinh');

@@ -11,9 +11,9 @@ import { BookCopy } from '../entities/BookCopy';
 function patronSummary(patron: any) {
   const id = patron.id;
   const studentCode = patron.student_code || patron.studentCode;
-  if (!id || !studentCode) throw new HttpError(502, 'Du lieu doc gia khong hop le');
+  if (!id || !studentCode) throw new HttpError(502, 'Dữ liệu độc giả không hợp lệ');
   if (!/^[0-9a-f]{32}$/i.test(id.replace(/-/g, ''))) {
-    throw new HttpError(502, 'ID doc gia khong hop le');
+    throw new HttpError(502, 'ID độc giả không hợp lệ');
   }
   return {
     id,
@@ -48,16 +48,16 @@ export class SlipService {
 
   async lookup(patronId: string, items: Array<{ barcode: string; isbn?: string }>, isStaff: boolean = false) {
     const patron = await lookupPatronById(patronId);
-    if (!patron) throw new HttpError(404, 'Khong tim thay doc gia');
+    if (!patron) throw new HttpError(404, 'Không tìm thấy độc giả');
 
     const accessStatus = isStaff
       ? await getPatronRawAccessStatus(patronId)
       : await getPatronAccessStatus(patronId);
     if (!accessStatus.inside) {
       if (accessStatus.isExpired) {
-        throw new HttpError(403, `Phien lam viec da het han (${config.maxEntryHours}h). Vui long vao lai qua cong.`);
+        throw new HttpError(403, `Phiên làm việc đã hết hạn (${config.maxEntryHours}h). Vui lòng vào lại qua cổng.`);
       }
-      throw new HttpError(403, 'Doc gia khong co mat trong thu vien.');
+      throw new HttpError(403, 'Độc giả không có mặt trong thư viện.');
     }
 
     const results: {
@@ -84,7 +84,7 @@ export class SlipService {
       const active = await this.repo.getActiveBorrow(patronId, book.id);
       if (active) {
         results.push({ barcode, isbn, can_borrow: false, reason: `Sach "${book.title}" da duoc muon`, book: null, copy: null });
-        errors.push(`Sach "${book.title}" da duoc doc gia nay muon`);
+        errors.push(`Sach "${book.title}" đã được độc giả này mượn`);
         continue;
       }
 
@@ -99,7 +99,7 @@ export class SlipService {
     }
 
     const overdue = await this.repo.getOverdueBorrows(patronId);
-    if (overdue.length) errors.push(`Doc gia co ${overdue.length} sach qua han`);
+    if (overdue.length) errors.push(`Độc giả có ${overdue.length} sách quá hạn`);
 
     const activeCount = await this.repo.countActiveBorrows(patronId);
     const validItems = results.filter((r) => r.can_borrow).length;
@@ -122,14 +122,14 @@ export class SlipService {
 
   async confirm(patronId: string, items: Array<{ barcode: string; isbn?: string; book_id: string; copy_id: string }>, userId?: string | null, userEmail?: string | null, note?: string | null) {
     const patron = await lookupPatronById(patronId);
-    if (!patron) throw new HttpError(404, 'Khong tim thay doc gia');
+    if (!patron) throw new HttpError(404, 'Không tìm thấy độc giả');
 
     const accessStatus = await getPatronRawAccessStatus(patronId);
     if (!accessStatus.inside) {
       if (accessStatus.isExpired) {
-        throw new HttpError(403, `Phien lam viec da het han (${config.maxEntryHours}h). Vui long vao lai qua cong.`);
+        throw new HttpError(403, `Phiên làm việc đã hết hạn (${config.maxEntryHours}h). Vui lòng vào lại qua cổng.`);
       }
-      throw new HttpError(403, 'Doc gia khong co mat trong thu vien.');
+      throw new HttpError(403, 'Độc giả không có mặt trong thư viện.');
     }
 
     const bookIds: string[] = [];
@@ -149,17 +149,17 @@ export class SlipService {
 
     for (const item of items) {
       const copy = copiesMap.get(item.copy_id);
-      if (!copy) throw new HttpError(400, `Ban sao ${item.copy_id} khong ton tai`);
-      if (copy.bookId !== item.book_id) throw new HttpError(400, 'Du lieu khong hop le: copy_id khong khop voi book_id');
+      if (!copy) throw new HttpError(400, `Bản sao ${item.copy_id} không tồn tại`);
+      if (copy.bookId !== item.book_id) throw new HttpError(400, 'Dữ liệu không hợp lệ: copy_id không khớp với book_id');
 
       const book = booksMap.get(item.book_id);
-      if (!book) throw new HttpError(400, `Sach ${item.book_id} khong ton tai`);
+      if (!book) throw new HttpError(400, `Sach ${item.book_id} không tồn tại`);
 
-      if (!copy.isAvailable) throw new HttpError(409, `Ban sao ${item.barcode} dang duoc muon`);
-      if (copy.barcode !== item.barcode) throw new HttpError(400, 'Du lieu khong hop le: barcode khong khop');
+      if (!copy.isAvailable) throw new HttpError(409, `Bản sao ${item.barcode} dang duoc muon`);
+      if (copy.barcode !== item.barcode) throw new HttpError(400, 'Dữ liệu không hợp lệ: barcode không khớp');
 
       const active = await this.repo.getActiveBorrow(patronId, book.id);
-      if (active) throw new HttpError(409, `Sach "${book.title}" da duoc doc gia nay muon`);
+      if (active) throw new HttpError(409, `Sach "${book.title}" đã được độc giả này mượn`);
 
       bookIds.push(book.id);
       copyIds.push(copy.id);
@@ -167,7 +167,7 @@ export class SlipService {
     }
 
     const overdue = await this.repo.getOverdueBorrows(patronId);
-    if (overdue.length) throw new HttpError(409, 'Doc gia co sach qua han. Vui long tra sach truoc khi muon them.');
+    if (overdue.length) throw new HttpError(409, 'Độc giả có sách quá hạn. Vui long tra sach truoc khi muon them.');
 
     const activeCount = await this.repo.countActiveBorrows(patronId);
     if (activeCount + bookIds.length > config.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
@@ -218,16 +218,16 @@ export class SlipService {
 
   async create(patronId: string, items: Array<{ barcode: string; isbn?: string }>, userId?: string | null, userEmail?: string | null, note?: string | null, isStaff: boolean = false) {
     const patron = await lookupPatronById(patronId);
-    if (!patron) throw new HttpError(404, 'Khong tim thay doc gia');
+    if (!patron) throw new HttpError(404, 'Không tìm thấy độc giả');
 
     const accessStatus = isStaff
       ? await getPatronRawAccessStatus(patronId)
       : await getPatronAccessStatus(patronId);
     if (!accessStatus.inside) {
       if (accessStatus.isExpired) {
-        throw new HttpError(403, `Phien lam viec da het han (${config.maxEntryHours}h). Vui long vao lai qua cong.`);
+        throw new HttpError(403, `Phiên làm việc đã hết hạn (${config.maxEntryHours}h). Vui lòng vào lại qua cổng.`);
       }
-      throw new HttpError(403, 'Doc gia khong co mat trong thu vien.');
+      throw new HttpError(403, 'Độc giả không có mặt trong thư viện.');
     }
 
     const bookIds: string[] = [];
@@ -245,7 +245,7 @@ export class SlipService {
         if (existingCopy) {
           book = existingCopy.book || await this.repo.getBookById(existingCopy.bookId);
           copy = existingCopy;
-          if (!copy.isAvailable) throw new HttpError(409, `Ban sao ${barcode} dang duoc muon`);
+          if (!copy.isAvailable) throw new HttpError(409, `Bản sao ${barcode} dang duoc muon`);
         }
       }
       if (!book) {
@@ -253,7 +253,7 @@ export class SlipService {
         if (existingCopy) {
           book = existingCopy.book || await this.repo.getBookById(existingCopy.bookId);
           copy = existingCopy;
-          if (!copy.isAvailable) throw new HttpError(409, `Ban sao ${barcode} dang duoc muon`);
+          if (!copy.isAvailable) throw new HttpError(409, `Bản sao ${barcode} dang duoc muon`);
         }
       }
       if (!book && copy) {
@@ -266,7 +266,7 @@ export class SlipService {
       if (!book || !copy) throw new HttpError(404, 'Khong tim thay sach');
 
       const active = await this.repo.getActiveBorrow(patronId, book.id);
-      if (active) throw new HttpError(409, `Sach "${book.title}" da duoc doc gia nay muon`);
+      if (active) throw new HttpError(409, `Sach "${book.title}" đã được độc giả này mượn`);
 
       bookIds.push(book.id);
       copyIds.push(copy.id);
@@ -274,7 +274,7 @@ export class SlipService {
     }
 
     const overdue = await this.repo.getOverdueBorrows(patronId);
-    if (overdue.length) throw new HttpError(409, 'Doc gia co sach qua han. Vui long tra sach truoc khi muon them.');
+    if (overdue.length) throw new HttpError(409, 'Độc giả có sách quá hạn. Vui long tra sach truoc khi muon them.');
 
     const activeCount = await this.repo.countActiveBorrows(patronId);
     if (activeCount + bookIds.length > config.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);

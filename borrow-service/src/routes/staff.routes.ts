@@ -24,9 +24,9 @@ function patronIdFrom(user: AuthRequest['user']) {
 function patronSummary(patron: PatronSummary) {
   const id = patron.id;
   const studentCode = patron.student_code || patron.studentCode;
-  if (!id || !studentCode) throw new HttpError(502, 'Du lieu doc gia khong hop le');
+  if (!id || !studentCode) throw new HttpError(502, 'Dữ liệu độc giả không hợp lệ');
   if (!/^[0-9a-f]{32}$/i.test(id.replace(/-/g, ''))) {
-    throw new HttpError(502, 'ID doc gia khong hop le');
+    throw new HttpError(502, 'ID độc giả không hợp lệ');
   }
   return {
     id,
@@ -80,7 +80,7 @@ router.post('/slip/lookup', requireRole(['admin', 'staff'], 'Chi quan tri vien h
 
     const repo = new BorrowRepository();
     const patron = await lookupPatronById(body.patron_id);
-    if (!patron) throw new HttpError(404, 'Khong tim thay doc gia');
+    if (!patron) throw new HttpError(404, 'Không tìm thấy độc giả');
 
     const isStaff = req.user?.role === 'admin' || req.user?.role === 'staff';
     const accessStatus = isStaff
@@ -88,9 +88,9 @@ router.post('/slip/lookup', requireRole(['admin', 'staff'], 'Chi quan tri vien h
       : await getPatronAccessStatus(body.patron_id);
     if (!accessStatus.inside) {
       if (accessStatus.isExpired) {
-        throw new HttpError(403, `Phien lam viec da het han (${config.maxEntryHours}h). Vui long vao lai qua cong.`);
+        throw new HttpError(403, `Phiên làm việc đã hết hạn (${config.maxEntryHours}h). Vui lòng vào lại qua cổng.`);
       }
-      throw new HttpError(403, 'Doc gia khong co mat trong thu vien.');
+      throw new HttpError(403, 'Độc giả không có mặt trong thư viện.');
     }
 
     const results: {
@@ -117,7 +117,7 @@ router.post('/slip/lookup', requireRole(['admin', 'staff'], 'Chi quan tri vien h
       const active = await repo.getActiveBorrow(body.patron_id, book.id);
       if (active) {
         results.push({ barcode, isbn, can_borrow: false, reason: `Sach "${book.title}" da duoc muon`, book: null, copy: null });
-        errors.push(`Sach "${book.title}" da duoc doc gia nay muon`);
+        errors.push(`Sach "${book.title}" đã được độc giả này mượn`);
         continue;
       }
 
@@ -132,7 +132,7 @@ router.post('/slip/lookup', requireRole(['admin', 'staff'], 'Chi quan tri vien h
     }
 
     const overdue = await repo.getOverdueBorrows(body.patron_id);
-    if (overdue.length) errors.push(`Doc gia co ${overdue.length} sach qua han`);
+    if (overdue.length) errors.push(`Độc giả có ${overdue.length} sách quá hạn`);
 
     const activeCount = await repo.countActiveBorrows(body.patron_id);
     const validItems = results.filter((r) => r.can_borrow).length;
@@ -172,7 +172,7 @@ router.post('/slip/confirm', requireRole(['admin', 'staff'], 'Chi quan tri vien 
 
     const repo = new BorrowRepository();
     const patron = await lookupPatronById(body.patron_id);
-    if (!patron) throw new HttpError(404, 'Khong tim thay doc gia');
+    if (!patron) throw new HttpError(404, 'Không tìm thấy độc giả');
 
     const isStaff = req.user?.role === 'admin' || req.user?.role === 'staff';
     const accessStatus = isStaff
@@ -180,9 +180,9 @@ router.post('/slip/confirm', requireRole(['admin', 'staff'], 'Chi quan tri vien 
       : await getPatronAccessStatus(body.patron_id);
     if (!accessStatus.inside) {
       if (accessStatus.isExpired) {
-        throw new HttpError(403, `Phien lam viec da het han (${config.maxEntryHours}h). Vui long vao lai qua cong.`);
+        throw new HttpError(403, `Phiên làm việc đã hết hạn (${config.maxEntryHours}h). Vui lòng vào lại qua cổng.`);
       }
-      throw new HttpError(403, 'Doc gia khong co mat trong thu vien.');
+      throw new HttpError(403, 'Độc giả không có mặt trong thư viện.');
     }
 
     const bookIds: string[] = [];
@@ -202,17 +202,17 @@ router.post('/slip/confirm', requireRole(['admin', 'staff'], 'Chi quan tri vien 
 
     for (const item of body.items) {
       const copy = copiesMap.get(item.copy_id);
-      if (!copy) throw new HttpError(400, `Ban sao ${item.copy_id} khong ton tai`);
-      if (copy.bookId !== item.book_id) throw new HttpError(400, 'Du lieu khong hop le: copy_id khong khop voi book_id');
+      if (!copy) throw new HttpError(400, `Bản sao ${item.copy_id} không tồn tại`);
+      if (copy.bookId !== item.book_id) throw new HttpError(400, 'Dữ liệu không hợp lệ: copy_id không khớp với book_id');
 
       const book = booksMap.get(item.book_id);
-      if (!book) throw new HttpError(400, `Sach ${item.book_id} khong ton tai`);
+      if (!book) throw new HttpError(400, `Sach ${item.book_id} không tồn tại`);
 
-      if (!copy.isAvailable) throw new HttpError(409, `Ban sao ${item.barcode} dang duoc muon`);
-      if (copy.barcode !== item.barcode) throw new HttpError(400, 'Du lieu khong hop le: barcode khong khop');
+      if (!copy.isAvailable) throw new HttpError(409, `Bản sao ${item.barcode} dang duoc muon`);
+      if (copy.barcode !== item.barcode) throw new HttpError(400, 'Dữ liệu không hợp lệ: barcode không khớp');
 
       const active = await repo.getActiveBorrow(body.patron_id, book.id);
-      if (active) throw new HttpError(409, `Sach "${book.title}" da duoc doc gia nay muon`);
+      if (active) throw new HttpError(409, `Sach "${book.title}" đã được độc giả này mượn`);
 
       bookIds.push(book.id);
       copyIds.push(copy.id);
@@ -220,7 +220,7 @@ router.post('/slip/confirm', requireRole(['admin', 'staff'], 'Chi quan tri vien 
     }
 
     const overdue = await repo.getOverdueBorrows(body.patron_id);
-    if (overdue.length) throw new HttpError(409, 'Doc gia co sach qua han. Vui long tra sach truoc khi muon them.');
+    if (overdue.length) throw new HttpError(409, 'Độc giả có sách quá hạn. Vui long tra sach truoc khi muon them.');
 
     const activeCount = await repo.countActiveBorrows(body.patron_id);
     if (activeCount + bookIds.length > config.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
@@ -304,7 +304,7 @@ router.post('/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri vien h
           if (existingCopy) {
             book = existingCopy.book || await repo.getBookById(existingCopy.bookId);
             copy = existingCopy;
-            if (!copy.isAvailable) throw new HttpError(409, `Ban sao ${barcode} dang duoc muon`);
+            if (!copy.isAvailable) throw new HttpError(409, `Bản sao ${barcode} dang duoc muon`);
           }
         }
         if (!book) {
@@ -321,13 +321,13 @@ router.post('/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri vien h
         if (!copy) throw new HttpError(404, `Khong tim thay ban sao voi ma vach ${barcode}`);
         book = copy.book || await repo.getBookById(copy.bookId);
         if (!book) throw new HttpError(404, 'Khong tim thay sach');
-        if (!copy.isAvailable) throw new HttpError(409, `Ban sao ${barcode} dang duoc muon`);
+        if (!copy.isAvailable) throw new HttpError(409, `Bản sao ${barcode} dang duoc muon`);
       }
 
       if (!book || !copy) throw new HttpError(404, 'Khong tim thay sach');
 
       const active = await repo.getActiveBorrow(body.patron_id, book.id);
-      if (active) throw new HttpError(409, `Sach "${book.title}" da duoc doc gia nay muon`);
+      if (active) throw new HttpError(409, `Sach "${book.title}" đã được độc giả này mượn`);
 
       bookIds.push(book.id);
       copyIds.push(copy.id);
@@ -335,7 +335,7 @@ router.post('/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri vien h
     }
 
     const overdue = await repo.getOverdueBorrows(body.patron_id);
-    if (overdue.length) throw new HttpError(409, 'Doc gia co sach qua han. Vui long tra sach truoc khi muon them.');
+    if (overdue.length) throw new HttpError(409, 'Độc giả có sách quá hạn. Vui long tra sach truoc khi muon them.');
 
     const activeCount = await repo.countActiveBorrows(body.patron_id);
     if (activeCount + bookIds.length > config.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
@@ -411,7 +411,7 @@ router.post('/return', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac n
       fineAmount: record.fineAmount || 0,
     });
 
-    res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
+    res.json({ status: 'success', message: 'Trả sách thành công', record: serializeBorrowRecord(record) });
   } catch (error) {
     next(error);
   }
@@ -430,7 +430,7 @@ router.post('/return/by-patron', requireRole(['admin', 'staff'], 'Chi quan tri v
     if (!book && legacyCopy) book = legacyCopy.book || await repo.getBookById(legacyCopy.bookId);
     if (!book) throw new HttpError(404, 'Khong tim thay sach voi ma vua quet');
     const records = await repo.getActiveBorrowsByPatronAndBook(patron.id, book.id);
-    if (!records.length) throw new HttpError(404, 'Doc gia nay khong muon sach co ma nay');
+    if (!records.length) throw new HttpError(404, 'Độc giả này không mượn sách có mã này');
     if (records.length > 1) throw new HttpError(409, 'Co nhieu ban ghi muon trung sach. Vui long chon ban ghi thu cong hoac dung barcode ban sao.');
     const record = records[0];
     const copy = legacyCopy || (record.copyId ? await repo.getCopyById(record.copyId) : null);
@@ -445,7 +445,7 @@ router.post('/return/by-patron', requireRole(['admin', 'staff'], 'Chi quan tri v
       fineAmount: record.fineAmount || 0,
     });
 
-    res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
+    res.json({ status: 'success', message: 'Trả sách thành công', record: serializeBorrowRecord(record) });
   } catch (error) {
     next(error);
   }
@@ -480,7 +480,7 @@ router.post('/return/batch', requireRole(['admin', 'staff'], 'Chi quan tri vien 
         }
         const records = await repo.getActiveBorrowsByPatronAndBook(patron.id, book.id);
         if (!records.length) {
-          throw new HttpError(404, 'Doc gia nay khong muon sach co ma nay');
+          throw new HttpError(404, 'Độc giả này không mượn sách có mã này');
         }
         if (records.length > 1) {
           throw new HttpError(409, 'Co nhieu ban ghi muon trung sach. Vui long chon ban ghi thu cong hoac dung barcode ban sao.');
@@ -498,7 +498,7 @@ router.post('/return/batch', requireRole(['admin', 'staff'], 'Chi quan tri vien 
           fineAmount: record.fineAmount || 0,
         });
 
-        results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'success', message: 'Tra sach thanh cong' });
+        results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'success', message: 'Trả sách thành công' });
         ok += 1;
       } catch (err) {
         const msg = err instanceof HttpError ? err.message : (err instanceof Error ? err.message : 'Loi khong xac dinh');
@@ -533,7 +533,7 @@ router.post('/return/record/:record_id', requireRole(['admin', 'staff'], 'Chi qu
       fineAmount: record.fineAmount || 0,
     });
 
-    res.json({ status: 'success', message: 'Tra sach thanh cong', record: serializeBorrowRecord(record) });
+    res.json({ status: 'success', message: 'Trả sách thành công', record: serializeBorrowRecord(record) });
   } catch (error) {
     next(error);
   }
@@ -546,7 +546,7 @@ router.get('/barcode/:barcode', requireRole(['admin', 'staff'], 'Chi quan tri vi
     const copy = await repo.getCopyByBarcode(req.params.barcode.trim());
     if (!copy) throw new HttpError(404, `Khong tim thay ban sao voi ma vach ${req.params.barcode}`);
     const record = await repo.getActiveBorrowByCopy(copy.id);
-    if (!record) throw new HttpError(404, 'Ban sao nay hien khong duoc muon');
+    if (!record) throw new HttpError(404, 'Bản sao nay hien khong duoc muon');
     res.json(serializeBorrowRecord(record));
   } catch (error) {
     next(error);
@@ -554,7 +554,7 @@ router.get('/barcode/:barcode', requireRole(['admin', 'staff'], 'Chi quan tri vi
 });
 
 // GET /active-borrowers
-router.get('/active-borrowers', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem danh sach doc gia dang muon'), async (_req, res, next) => {
+router.get('/active-borrowers', requireRole(['admin', 'staff'], 'Chỉ quản trị viên hoặc nhân viên thư viện mới có thể xem danh sách độc giả đang mượn'), async (_req, res, next) => {
   try {
     const repo = new BorrowRepository();
     const records = await repo.getAllActiveBorrows();
@@ -600,12 +600,12 @@ router.get('/patrons/:student_code/active', requireRole(['admin', 'staff'], 'Chi
     const raw = await lookupPatronByStudentCode(req.params.student_code);
     const status = raw.current_status || raw.currentStatus;
     if (status && ['blocked', 'expelled', 'expired'].includes(status)) {
-      throw new HttpError(403, 'The doc gia da bi khoa/het han. Vui long lien he thu vien.');
+      throw new HttpError(403, 'Thẻ độc giả đã bị khóa/hết hạn. Vui lòng liên hệ thư viện.');
     }
     const patron = patronSummary(raw);
     const accessStatus = await getPatronRawAccessStatus(patron.id);
     if (!accessStatus.inside) {
-      throw new HttpError(403, 'Doc gia chua vao thu vien.');
+      throw new HttpError(403, 'Độc giả chưa vào thư viện.');
     }
     const repo = new BorrowRepository();
     const records = await repo.getActiveBorrowsByPatron(patron.id);
@@ -622,7 +622,7 @@ router.get('/patrons/:student_code/history', requireRole(['admin', 'staff'], 'Ch
     const raw = await lookupPatronByStudentCode(req.params.student_code);
     const status = raw.current_status || raw.currentStatus;
     if (status && ['blocked', 'expelled', 'expired'].includes(status)) {
-      throw new HttpError(403, 'The doc gia da bi khoa/het han. Vui long lien he thu vien.');
+      throw new HttpError(403, 'Thẻ độc giả đã bị khóa/hết hạn. Vui lòng liên hệ thư viện.');
     }
     const patron = patronSummary(raw);
     const records = await new BorrowRepository().getBorrowsByPatron(patron.id, req.query.status_filter as string | undefined);
