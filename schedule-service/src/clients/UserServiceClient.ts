@@ -14,15 +14,46 @@ export interface StaffUser {
 
 const circuit = new CircuitBreaker(5, 30_000);
 
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+const CACHE_TTL_MS = 60_000; // 60 seconds
+
 export class UserServiceClient {
+  private cache = new Map<string, CacheEntry<any>>();
+
+  private getFromCache<T>(key: string): T | undefined {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return undefined;
+    }
+    return entry.data as T;
+  }
+
+  private setInCache<T>(key: string, data: T, ttlMs = CACHE_TTL_MS): void {
+    this.cache.set(key, {
+      data,
+      expiresAt: Date.now() + ttlMs,
+    });
+  }
+
   private async getJson<T>(path: string): Promise<T> {
+    const cached = this.getFromCache<T>(path);
+    if (cached !== undefined) {
+      return cached;
+    }
+
     if (!circuit.canRequest()) {
       console.error(`[UserServiceClient] Circuit breaker OPEN for ${path}`);
       throw new ServiceUnavailableError('user-service is temporarily unavailable');
     }
 
     try {
-      return await retryWithBackoff(async () => {
+      const data = await retryWithBackoff(async () => {
         const url = `${config.userServiceUrl}${path}`;
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 8000);
@@ -49,6 +80,11 @@ export class UserServiceClient {
           throw err;
         }
       }, 2, 500);
+
+      if (data !== undefined && data !== null) {
+        this.setInCache(path, data);
+      }
+      return data;
     } catch (err) {
       throw new ServiceUnavailableError(`Cannot reach user-service: ${String(err)}`);
     }

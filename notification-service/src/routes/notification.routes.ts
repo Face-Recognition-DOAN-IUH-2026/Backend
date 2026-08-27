@@ -109,20 +109,6 @@ router.get('/unread-count', async (req: AuthRequest, res, next) => {
  *       404:
  *         description: Notification not found
  */
-router.put('/:id/read', async (req: AuthRequest, res, next) => {
-  try {
-    const userId = req.user!.userId;
-    const result = await notificationService.markAsRead(req.params.id, userId);
-    if (!result) {
-      res.status(404).json({ error: 'Notification not found' });
-      return;
-    }
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
-
 /**
  * @swagger
  * /notifications/read-all:
@@ -142,11 +128,27 @@ router.put('/:id/read', async (req: AuthRequest, res, next) => {
  *                 updated:
  *                   type: integer
  */
+// NOTE: /read-all MUST be registered before /:id/read to avoid Express
+// matching the literal string "read-all" as an :id param.
 router.put('/read-all', async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.userId;
     const count = await notificationService.markAllAsRead(userId);
     res.json({ updated: count });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/:id/read', async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user!.userId;
+    const result = await notificationService.markAsRead(req.params.id, userId);
+    if (!result) {
+      res.status(404).json({ error: 'Notification not found' });
+      return;
+    }
+    res.json(result);
   } catch (error) {
     next(error);
   }

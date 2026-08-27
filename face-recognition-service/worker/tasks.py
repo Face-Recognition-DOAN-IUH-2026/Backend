@@ -1122,9 +1122,8 @@ def _publish_face_result(task_id: str, process_type: str, status: str, result: d
 
 def _get_redis_throttle():
     try:
-        from infra.config import settings
-        import redis as _redis
-        return _redis.Redis.from_url(settings.redis_url)
+        from infra.redis_cache import redis_client
+        return redis_client
     except Exception as e:
         logger.warning("Redis throttle unavailable: %s", e)
         return None
@@ -1144,16 +1143,12 @@ def _upload_evidence_frame(raw_bytes: bytes, log_id: str, prefix: str = "") -> N
 def _check_redis_cooldown(patron_id: str, access_type: str) -> bool:
     """Check Redis cooldown — returns True if still in cooldown (skip)."""
     try:
-        import redis as _redis
-        r = _redis.Redis.from_url(settings.redis_url)
-        try:
-            key = f"cooldown:{access_type}:{patron_id}"
-            if r.get(key):
-                return True
-            r.setex(key, settings.access_cooldown_seconds, "1")
-            return False
-        finally:
-            r.close()
+        from infra.redis_cache import redis_client
+        key = f"cooldown:{access_type}:{patron_id}"
+        if redis_client.get(key):
+            return True
+        redis_client.setex(key, settings.access_cooldown_seconds, "1")
+        return False
     except Exception:
         return False
 

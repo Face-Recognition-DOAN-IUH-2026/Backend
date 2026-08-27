@@ -208,3 +208,21 @@ class MilvusClient:
         def _delete():
             self.client.delete(self.collection_name, filter=f'user_id == "{user_id}" and angle == "{angle}"')
         self._with_retry(_delete)
+
+
+_milvus_singleton: MilvusClient | None = None
+
+
+def get_milvus_client() -> MilvusClient:
+    """Get or create the global MilvusClient singleton instance."""
+    global _milvus_singleton
+    if _milvus_singleton is None:
+        from infra.config import settings
+        _milvus_singleton = MilvusClient(
+            host=settings.milvus_host,
+            port=settings.milvus_port,
+            collection_name=settings.milvus_collection,
+            dim=512,
+        )
+    return _milvus_singleton
+

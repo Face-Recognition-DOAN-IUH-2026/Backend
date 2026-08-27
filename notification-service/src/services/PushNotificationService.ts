@@ -43,12 +43,19 @@ export class PushNotificationService {
 
   async sendBulk(userIds: string[], notification: { title: string; body: string; data?: Record<string, any> }): Promise<void> {
     try {
-      const allTokens = await Promise.all(userIds.map(id => deviceTokenService.getTokensByUser(id)));
-      const flatTokens = allTokens.flat().filter(t => Expo.isExpoPushToken(t.token));
+      // Chunk DB queries to avoid exhausting the connection pool
+      const CHUNK_SIZE = 20;
+      const flatTokens: { token: string }[] = [];
+      for (let i = 0; i < userIds.length; i += CHUNK_SIZE) {
+        const chunk = userIds.slice(i, i + CHUNK_SIZE);
+        const chunkTokens = await Promise.all(chunk.map(id => deviceTokenService.getTokensByUser(id)));
+        flatTokens.push(...chunkTokens.flat());
+      }
+      const expoTokens = flatTokens.filter(t => Expo.isExpoPushToken(t.token));
 
-      if (flatTokens.length === 0) return;
+      if (expoTokens.length === 0) return;
 
-      const messages: ExpoPushMessage[] = flatTokens.map(t => ({
+      const messages: ExpoPushMessage[] = expoTokens.map(t => ({
         to: t.token,
         title: notification.title,
         body: notification.body,

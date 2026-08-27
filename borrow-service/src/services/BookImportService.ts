@@ -112,6 +112,17 @@ export class BookImportService {
     const rows = await parseExcelRows(fileBuffer);
     const existing = await this.repo.getBooksByIsbns(rows.map((row) => row.isbn));
     const offsets = await this.repo.getBarcodeOffsetsByBooks([...existing.keys()]);
+
+    // Pre-fetch metadata for all unknown ISBNs in parallel batches → O(R/10 × HTTP) instead of O(R × HTTP)
+    const unknownIsbns = rows.map(r => r.isbn).filter(isbn => !existing.has(isbn));
+    const GOOGLE_BATCH = 10;
+    const metaMap = new Map<string, Awaited<ReturnType<typeof fetchGoogleBooks>>>();
+    for (let i = 0; i < unknownIsbns.length; i += GOOGLE_BATCH) {
+      const batch = unknownIsbns.slice(i, i + GOOGLE_BATCH);
+      const results = await Promise.all(batch.map(isbn => fetchGoogleBooks(isbn).catch(() => null)));
+      batch.forEach((isbn, idx) => metaMap.set(isbn, results[idx]));
+    }
+
     const results = [];
     let imported = 0;
     let skipped = 0;
@@ -122,7 +133,7 @@ export class BookImportService {
         let created = false;
         let noMeta = false;
         if (!book) {
-          const meta = await fetchGoogleBooks(row.isbn);
+          const meta = metaMap.get(row.isbn) ?? null;
           noMeta = !meta;
           const upserted = await this.repo.upsertBook(row.isbn, meta?.title || `ISBN: ${row.isbn}`, meta?.author, meta?.coverUrl, meta ? {
             subtitle: meta.subtitle ?? null,
@@ -234,6 +245,17 @@ export class BookImportService {
     const isbns = items.map((item) => item.isbn);
     const existing = await this.repo.getBooksByIsbns(isbns);
     const offsets = await this.repo.getBarcodeOffsetsByBooks([...existing.keys()]);
+
+    // Pre-fetch metadata for all unknown ISBNs in parallel batches → O(R/10 × HTTP)
+    const unknownIsbns = isbns.filter(isbn => !existing.has(isbn));
+    const GOOGLE_BATCH = 10;
+    const metaMap = new Map<string, Awaited<ReturnType<typeof fetchGoogleBooks>>>();
+    for (let i = 0; i < unknownIsbns.length; i += GOOGLE_BATCH) {
+      const batch = unknownIsbns.slice(i, i + GOOGLE_BATCH);
+      const results = await Promise.all(batch.map(isbn => fetchGoogleBooks(isbn).catch(() => null)));
+      batch.forEach((isbn, idx) => metaMap.set(isbn, results[idx]));
+    }
+
     const results = [];
     let imported = 0;
     let skipped = 0;
@@ -245,7 +267,7 @@ export class BookImportService {
         let created = false;
         let noMeta = false;
         if (!book) {
-          const meta = await fetchGoogleBooks(item.isbn);
+          const meta = metaMap.get(item.isbn) ?? null;
           noMeta = !meta;
           const upserted = await this.repo.upsertBook(item.isbn, meta?.title || `ISBN: ${item.isbn}`, meta?.author, meta?.coverUrl, meta ? {
             subtitle: meta.subtitle ?? null,

@@ -37,27 +37,42 @@ class UserListResponse(BaseModel):
     total: int
 
 
-async def _get_milvus_client():
-    from infra.milvus_client import MilvusClient
-    return MilvusClient(
-        host=settings.milvus_host,
-        port=settings.milvus_port,
-        collection_name=settings.milvus_collection,
-        dim=512,
-    )
-
-
-async def _get_face_user_ids() -> set[str]:
-    try:
-        mc = await _get_milvus_client()
-        all_rows = mc.client.query(mc.collection_name, filter='user_id != ""', output_fields=["user_id"], limit=10000)
-        return {r["user_id"] for r in all_rows}
-    except Exception:
-        return set()
+from infra.milvus_client import get_milvus_client
 
 
 async def _check_has_face(user_id: str) -> bool:
-    return user_id in await _get_face_user_ids()
+    """Check if a specific user has enrolled face vectors using targeted O(1) point query."""
+    if not user_id:
+        return False
+    try:
+        mc = get_milvus_client()
+        rows = mc.client.query(
+            mc.collection_name,
+            filter=f'user_id == "{user_id}"',
+            output_fields=["user_id"],
+            limit=1,
+        )
+        return len(rows) > 0
+    except Exception:
+        return False
+
+
+async def _get_face_user_ids_batch(user_ids: list[str]) -> set[str]:
+    """Check face enrollment for a specific subset of user IDs."""
+    if not user_ids:
+        return set()
+    try:
+        import json
+        mc = get_milvus_client()
+        rows = mc.client.query(
+            mc.collection_name,
+            filter=f'user_id in {json.dumps(user_ids)}',
+            output_fields=["user_id"],
+            limit=len(user_ids) * 4,
+        )
+        return {r["user_id"] for r in rows}
+    except Exception:
+        return set()
 
 
 @router.get("/me", response_model=UserResponse)
@@ -96,7 +111,8 @@ async def list_users(
             )
         users_data = resp.json()
 
-    face_user_ids = await _get_face_user_ids()
+    user_ids = [str(u["id"]) for u in users_data if "id" in u]
+    face_user_ids = await _get_face_user_ids_batch(user_ids)
 
     return UserListResponse(
         users=[

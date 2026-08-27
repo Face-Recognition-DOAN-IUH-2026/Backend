@@ -173,7 +173,7 @@ def mock_redis():
     instance.delete.return_value = True
 
     with patch("infra.redis_cache.redis_client", instance):
-        with patch("infra.cooldown.aioredis.from_url", AsyncMock(return_value=instance)):
+        with patch("infra.cooldown.aioredis.from_url", MagicMock(return_value=instance)):
             yield instance
 
 

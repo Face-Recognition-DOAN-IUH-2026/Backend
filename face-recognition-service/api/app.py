@@ -161,14 +161,8 @@ def create_app() -> FastAPI:
 
     @app.get("/internal/face/{user_id}/status")
     async def check_face_enrollment(user_id: str):
-        from infra.milvus_client import MilvusClient
-        from infra.config import settings
-        mc = MilvusClient(
-            host=settings.milvus_host,
-            port=settings.milvus_port,
-            collection_name=settings.milvus_collection,
-            dim=512,
-        )
+        from infra.milvus_client import get_milvus_client
+        mc = get_milvus_client()
         try:
             results = mc.client.query(
                 mc.collection_name,
@@ -187,16 +181,11 @@ def create_app() -> FastAPI:
 
     @app.get("/debug/face-collections")
     async def debug_face_collections():
-        from infra.milvus_client import MilvusClient
+        from infra.milvus_client import get_milvus_client
         from infra.database import async_session_factory
         from infra.models import PatronFaceModel
-        from sqlalchemy import select, func as sa_func
-        m = MilvusClient(
-            host=settings.milvus_host,
-            port=settings.milvus_port,
-            collection_name=settings.milvus_collection,
-            dim=512,
-        )
+        from sqlalchemy import select
+        m = get_milvus_client()
         results = m.client.query(m.collection_name, filter="", output_fields=["user_id"], limit=1000)
         milvus_ids = {r["user_id"] for r in results}
         async with async_session_factory() as db:
