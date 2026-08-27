@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { config } from '../config';
 import { AppDataSource } from '../data-source';
 import { Notification } from '../entities/Notification';
+import { DeviceToken } from '../entities/DeviceToken';
 import { amqpClient } from '../clients/AmqpClient';
 
 interface UserDeletedMessage {
@@ -44,6 +45,10 @@ export async function startUserEventSubscriber(): Promise<void> {
         const repo = AppDataSource.getRepository(Notification);
         const result = await repo.delete({ userId: msg.user_id });
         console.log(`[UserEventSubscriber] Deleted ${result.affected ?? 0} notifications for user ${msg.user_id}`);
+
+        const deviceTokenRepo = AppDataSource.getRepository(DeviceToken);
+        const tokenResult = await deviceTokenRepo.delete({ userId: msg.user_id });
+        console.log(`[UserEventSubscriber] Deleted ${tokenResult.affected ?? 0} device tokens for user ${msg.user_id}`);
       } catch (e) {
         console.error('[UserEventSubscriber] Error processing event:', e);
       }

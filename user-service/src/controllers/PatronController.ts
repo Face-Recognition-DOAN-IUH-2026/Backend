@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { setAuthCookie } from '../../shared/auth';
-import type { AuthRequest } from '../../shared/auth/types';
+import { setAuthCookie } from '../../../shared/auth';
+import type { AuthRequest } from '../../../shared/auth/types';
 import { patronService } from '../services';
 
 export class PatronController {
@@ -23,7 +23,7 @@ export class PatronController {
         permanentAddress: permanent_address,
         verificationToken: verification_token,
       });
-      if (result.access_token) setAuthCookie(res, result.access_token);
+      if (result.access_token) setAuthCookie(res, result.access_token, result.refresh_token);
       res.status(201).json(result);
     } catch (error: any) {
       res.status(error.statusCode || 400).json({ error: error.message || 'Registration failed' });
@@ -52,7 +52,7 @@ export class PatronController {
       }
       const authService = (await import('../services')).authService;
       const result = await authService.login({ studentCode: student_code, password });
-      if (result.access_token) setAuthCookie(res, result.access_token);
+      if (result.access_token) setAuthCookie(res, result.access_token, result.refresh_token);
       res.json(result);
     } catch (error: any) {
       res.status(error.statusCode || 401).json({ error: error.message || 'Login failed' });

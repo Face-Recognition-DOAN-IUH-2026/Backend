@@ -171,7 +171,7 @@ export class AuthService {
     return this.toPublic(user);
   }
 
-  async refreshToken(refreshTokenStr: string): Promise<{ access_token: string; token_type: string }> {
+  async refreshToken(refreshTokenStr: string): Promise<{ access_token: string; refresh_token: string; token_type: string }> {
     const payload = this.verifyToken(refreshTokenStr, 'refresh');
     const user = await this.userRepo.findById(payload.userId);
     if (!user) throw new UnauthorizedError('User not found');
@@ -180,11 +180,15 @@ export class AuthService {
       const expiry = new Date(user.membershipExpiry);
       if (expiry < new Date()) throw new ForbiddenError('Membership has expired');
     }
-    const accessToken = this.generateToken(
-      { userId: user.id, email: user.email, role: user.role, fullName: user.fullName },
-      'access',
-    );
-    return { access_token: accessToken, token_type: 'bearer' };
+    const tokenPayload: TokenPayload = {
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      fullName: user.fullName,
+    };
+    const accessToken = this.generateToken(tokenPayload, 'access');
+    const newRefreshToken = this.generateToken(tokenPayload, 'refresh');
+    return { access_token: accessToken, refresh_token: newRefreshToken, token_type: 'bearer' };
   }
 
   async forgotPassword(email: string): Promise<void> {
