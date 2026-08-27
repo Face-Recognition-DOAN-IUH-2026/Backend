@@ -4,6 +4,7 @@ import { BookCopy } from './BookCopy';
 
 @Index(['patronId', 'status'])
 @Index(['bookId', 'status'])
+@Index(['patronId', 'bookId', 'status'])   // composite for getActiveBorrow() hotpath
 @Index(['borrowAt'])
 @Index(['slipId'])
 @Index(['dueAt'])

@@ -248,14 +248,6 @@ export class SlipService {
           if (!copy.isAvailable) throw new HttpError(409, `Bản sao ${barcode} dang duoc muon`);
         }
       }
-      if (!book) {
-        const existingCopy = await this.repo.getCopyByBarcode(barcode);
-        if (existingCopy) {
-          book = existingCopy.book || await this.repo.getBookById(existingCopy.bookId);
-          copy = existingCopy;
-          if (!copy.isAvailable) throw new HttpError(409, `Bản sao ${barcode} dang duoc muon`);
-        }
-      }
       if (!book && copy) {
         // already resolved above
       } else if (book && !copy) {

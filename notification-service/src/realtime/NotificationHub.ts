@@ -105,7 +105,7 @@ export class NotificationHub {
   }
 
   async publish(userId: string, notification: Notification) {
-    this.pushToUser(userId, notification);
+    await this.pushToUser(userId, notification);
     const body = {
       originId: this.instanceId,
       userId,

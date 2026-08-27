@@ -349,9 +349,9 @@ export class AccessService {
     const pending = await repo.find({ where: { currentStatus: 'pending' as any } });
     const expired = pending.filter(s => s.updatedAt < expiredBefore);
     if (expired.length === 0) return { cleaned: 0 };
-    for (const state of expired) {
-      await this.upsertState(state.patronId, 'exit', 'timeout', new Date());
-    }
+    // Bulk update instead of N individual upsertState() calls → O(1) DB write
+    const expiredIds = expired.map(s => s.patronId);
+    await repo.update(expiredIds, { currentStatus: 'outside' });
     return { cleaned: expired.length };
   }
 

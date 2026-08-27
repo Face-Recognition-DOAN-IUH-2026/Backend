@@ -235,6 +235,8 @@ export class BorrowRepository {
   }
 
   getAllActiveBorrows() {
+    // NOTE: No hard limit here — used by scheduled batch jobs that process all records.
+    // Callers should use pagination or stream if the dataset grows large.
     return this.records.find({ where: { status: 'borrowed', returnAt: IsNull() }, relations: { book: true, copy: true }, order: { dueAt: 'ASC', borrowAt: 'DESC' } });
   }
 
@@ -262,14 +264,14 @@ export class BorrowRepository {
     return { total, active, overdue };
   }
 
-  getBorrowsByPatron(patronId: string, status?: string) {
+  getBorrowsByPatron(patronId: string, status?: string, limit = 200) {
     const where: any = { patronId };
     if (status) where.status = status;
-    return this.records.find({ where, relations: { book: true, copy: true }, order: { borrowAt: 'DESC' } });
+    return this.records.find({ where, relations: { book: true, copy: true }, order: { borrowAt: 'DESC' }, take: limit });
   }
 
   getActiveBorrowsByPatron(patronId: string) {
-    return this.records.find({ where: { patronId, status: 'borrowed', returnAt: IsNull() }, relations: { book: true, copy: true }, order: { dueAt: 'ASC', borrowAt: 'DESC' } });
+    return this.records.find({ where: { patronId, status: 'borrowed', returnAt: IsNull() }, relations: { book: true, copy: true }, order: { dueAt: 'ASC', borrowAt: 'DESC' }, take: 50 });
   }
 
   async createBorrowRecord(patronId: string, bookId: string, copyId?: string | null, shelfLocation?: string | null) {
@@ -435,25 +437,81 @@ export class BorrowRepository {
 
   // === Borrow Slip ===
 
-  async createSlip(patronId: string, bookIds: string[], copyIds: (string | null)[], shelfLocations: (string | null)[], createdByUserId?: string | null, createdByEmail?: string | null, note?: string | null) {
+  async createSlip(
+    patronId: string,
+    bookIds: string[],
+    copyIds: (string | null)[],
+    shelfLocations: (string | null)[],
+    createdByUserId?: string | null,
+    createdByEmail?: string | null,
+    note?: string | null,
+  ) {
     const dueAt = new Date(Date.now() + config.maxBorrowDays * 24 * 60 * 60 * 1000);
-    const slip = this.slips.create({ patronId, dueAt, status: 'active', createdByUserId: createdByUserId || null, createdByEmail: createdByEmail || null, totalItems: bookIds.length, note: note || null });
-    await this.slips.save(slip);
 
-    const records: BorrowRecord[] = [];
-    for (let i = 0; i < bookIds.length; i += 1) {
-      const record = this.records.create({
-        patronId, bookId: bookIds[i], copyId: copyIds[i] || null, slipId: slip.id,
-        borrowAt: new Date(), dueAt, shelfLocation: shelfLocations[i] || null, status: 'borrowed',
+    const qr = AppDataSource.createQueryRunner();
+    await qr.connect();
+    await qr.startTransaction();
+
+    try {
+      // ── Pessimistic lock: SELECT FOR UPDATE on every copy being borrowed ──
+      // This prevents two concurrent requests from borrowing the same copy.
+      const validCopyIds = copyIds.filter((id): id is string => !!id);
+      if (validCopyIds.length > 0) {
+        const lockedCopies = await qr.manager
+          .getRepository(BookCopy)
+          .createQueryBuilder('copy')
+          .setLock('pessimistic_write')
+          .whereInIds(validCopyIds)
+          .getMany();
+
+        for (const copy of lockedCopies) {
+          if (!copy.isAvailable) {
+            throw new Error(`Bản sao ${copy.barcode} vừa được mượn bởi người khác. Vui lòng thử lại.`);
+          }
+          copy.isAvailable = false;
+          copy.updatedAt = new Date();
+        }
+        await qr.manager.getRepository(BookCopy).save(lockedCopies);
+      }
+
+      const slip = qr.manager.getRepository(BorrowSlip).create({
+        patronId,
+        dueAt,
+        status: 'active',
+        createdByUserId: createdByUserId || null,
+        createdByEmail: createdByEmail || null,
+        totalItems: bookIds.length,
+        note: note || null,
       });
-      records.push(record);
+      await qr.manager.getRepository(BorrowSlip).save(slip);
+
+      const records: BorrowRecord[] = [];
+      for (let i = 0; i < bookIds.length; i += 1) {
+        const record = qr.manager.getRepository(BorrowRecord).create({
+          patronId,
+          bookId: bookIds[i],
+          copyId: copyIds[i] || null,
+          slipId: slip.id,
+          borrowAt: new Date(),
+          dueAt,
+          shelfLocation: shelfLocations[i] || null,
+          status: 'borrowed',
+        });
+        records.push(record);
+      }
+      await qr.manager.getRepository(BorrowRecord).save(records);
+
+      slip.totalItems = records.length;
+      await qr.manager.getRepository(BorrowSlip).save(slip);
+
+      await qr.commitTransaction();
+      return { slip, records };
+    } catch (err) {
+      await qr.rollbackTransaction();
+      throw err;
+    } finally {
+      await qr.release();
     }
-    await this.records.save(records);
-
-    slip.totalItems = records.length;
-    await this.slips.save(slip);
-
-    return { slip, records };
   }
 
   getActiveSlip(slipId: string) {
@@ -473,8 +531,8 @@ export class BorrowRepository {
     return this.records.find({ where: { slipId }, relations: { book: true, copy: true }, order: { borrowAt: 'DESC' } });
   }
 
-  getSlipsByPatron(patronId: string) {
-    return this.slips.find({ where: { patronId }, order: { createdAt: 'DESC' } });
+  getSlipsByPatron(patronId: string, limit = 100) {
+    return this.slips.find({ where: { patronId }, order: { createdAt: 'DESC' }, take: limit });
   }
 
   async getCopiesByBarcodes(barcodes: string[]): Promise<Map<string, BookCopy & { book: Book }>> {

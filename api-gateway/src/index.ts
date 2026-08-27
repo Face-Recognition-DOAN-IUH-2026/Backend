@@ -993,6 +993,7 @@ const PORT = config.port;
 setupProcessErrorHandlers();
 
 function setupServerHandlers(server: ReturnType<typeof app.listen>) {
+  server.setMaxListeners(50);
   server.on('upgrade', (req, socket, head) => {
     if (req.url?.startsWith('/api/access/ws')) {
       accessProxy.upgrade(req, socket as any, head);
