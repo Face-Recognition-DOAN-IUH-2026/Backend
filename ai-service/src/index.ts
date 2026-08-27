@@ -75,7 +75,9 @@ app.use('/ai/staff/chat', auth, requireRole(['admin', 'staff']), staffChatRouter
 app.use('/ai/admin/chat', auth, requireRole(['admin']), adminChatRouter);
 
 // Card text parsing (OCR result -> structured data via LLM)
-app.use('/ai', auth, cardParserRouter);
+// NOTE: Public endpoint — used during registration BEFORE login, so no auth required.
+// Must be registered BEFORE the auth-protected /ai catch-all below.
+app.use('/ai', cardParserRouter);
 
 // AI Command Center routes (admin/staff only) - /ai/command-center/*, /ai/insights/*, /ai/recommendations/*
 app.use('/ai', auth, aiRoutes);

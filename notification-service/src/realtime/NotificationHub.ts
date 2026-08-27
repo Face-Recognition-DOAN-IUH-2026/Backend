@@ -5,6 +5,7 @@ import { WebSocket } from 'ws';
 import { amqpClient } from '../clients/AmqpClient';
 import { config } from '../config';
 import { Notification } from '../entities/Notification';
+import { pushNotificationService } from '../services/PushNotificationService';
 
 const EXCHANGE = 'notifications.realtime.fanout';
 
@@ -95,6 +96,12 @@ export class NotificationHub {
         }
       }
     }
+
+    pushNotificationService.sendToUser(userId, {
+      title: notification.title,
+      body: notification.body,
+      data: notification.data || undefined,
+    }).catch(() => {});
   }
 
   async publish(userId: string, notification: Notification) {

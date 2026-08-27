@@ -3,6 +3,7 @@ import { createAuth } from '../../../shared/auth';
 import type { AuthRequest } from '../../../shared/auth/types';
 import { config } from '../config';
 import { notificationService } from '../services/NotificationService';
+import { deviceTokenService } from '../services/DeviceTokenService';
 import { notificationHub } from '../realtime/NotificationHub';
 
 const auth = createAuth({
@@ -146,6 +147,39 @@ router.put('/read-all', async (req: AuthRequest, res, next) => {
     const userId = req.user!.userId;
     const count = await notificationService.markAllAsRead(userId);
     res.json({ updated: count });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/device-tokens', async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user!.userId;
+    const { token, platform } = req.body;
+    if (!token || !platform) {
+      res.status(400).json({ error: 'token and platform are required' });
+      return;
+    }
+    if (!['ios', 'android', 'web'].includes(platform)) {
+      res.status(400).json({ error: 'platform must be ios, android, or web' });
+      return;
+    }
+    const result = await deviceTokenService.register(userId, token, platform);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/device-tokens', async (req: AuthRequest, res, next) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      res.status(400).json({ error: 'token is required' });
+      return;
+    }
+    await deviceTokenService.unregister(token);
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

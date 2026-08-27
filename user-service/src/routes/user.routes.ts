@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { userController } from '../controllers';
-import { createAuth } from '../../shared/auth';
+import { createAuth } from '../../../shared/auth';
 import { requireRole } from '../middlewares/requireRole';
 import { config } from '../config';
 

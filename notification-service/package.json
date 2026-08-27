@@ -26,7 +26,8 @@
     "typeorm": "^0.3.30",
     "ws": "^8.18.0",
     "zod": "^3.22.4",
-    "amqplib": "^0.10.3"
+    "amqplib": "^0.10.3",
+    "expo-server-sdk": "^3.7.0"
   },
   "devDependencies": {
     "@types/amqplib": "^0.10.5",
