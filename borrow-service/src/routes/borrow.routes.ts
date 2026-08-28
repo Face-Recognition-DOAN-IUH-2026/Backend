@@ -167,7 +167,8 @@ router.get('/patron/active', async (req: AuthRequest, res, next) => {
 // POST /renew — Renew a borrow
 router.post('/renew', auth, async (req: AuthRequest, res, next) => {
   try {
-    const body = z.object({ record_id: z.string().uuid() }).parse(req.body);
+    const rawId = req.body?.record_id || req.body?.borrow_id || req.body?.recordId;
+    const body = z.object({ record_id: z.string().uuid() }).parse({ record_id: rawId });
     const userId = patronIdFrom(req.user);
 
     const record = await AppDataSource.getRepository(BorrowRecord).findOne({

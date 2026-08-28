@@ -45,7 +45,11 @@ async function request(path: string, init?: RequestInit) {
 }
 
 export async function lookupPatronByStudentCode(studentCode: string): Promise<PatronSummary> {
-  const normalized = studentCode.trim();
+  let normalized = studentCode.trim();
+  const dynamicMatch = normalized.match(/^IUH-([A-Za-z0-9]+)-\d+$/i);
+  if (dynamicMatch) {
+    normalized = dynamicMatch[1];
+  }
   if (!normalized) throw new HttpError(400, 'student_code is required');
   const res = await request(`/internal/patrons/lookup?student_code=${encodeURIComponent(normalized)}`);
   if (res.status !== 200) throw new HttpError(404, 'Không tìm thấy độc giả');
