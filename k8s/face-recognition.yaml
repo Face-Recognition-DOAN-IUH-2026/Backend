@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: face-recognition-config
+  labels:
+    app.kubernetes.io/name: face-recognition
+    app.kubernetes.io/component: configuration
+data:
+  ENV: production
+  LOG_LEVEL: INFO
+  CORS_ORIGINS: https://library.example.com
+  JWT_ISSUER: face-recognition
+  JWT_AUDIENCE: face-recognition-users
+  MINIO_ENDPOINT: minio:9000
+  MINIO_BUCKET: face-raw-images
+  MILVUS_HOST: milvus
+  MILVUS_PORT: "19530"
+  MILVUS_COLLECTION: face_embeddings
+  USER_SERVICE_URL: http://user-service:3001
+  ACCESS_SERVICE_URL: http://access-service:3003
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: face-recognition-migration-202609020001
+  labels:
+    app.kubernetes.io/name: face-recognition
+    app.kubernetes.io/component: migration
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: face-recognition
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: face-recognition:0.1.0
+          imagePullPolicy: IfNotPresent
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: face-recognition-config
+          env:
+            - name: POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: face-recognition-secrets
+                  key: POSTGRES_URL
+            - name: JWT_ACCESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: face-recognition-secrets
+                  key: JWT_ACCESS_SECRET
+            - name: JWT_REFRESH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: face-recognition-secrets
+                  key: JWT_REFRESH_SECRET
+            - name: SERVICE_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: face-recognition-secrets
+                  key: SERVICE_JWT_SECRET
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: face-recognition-secrets
+                  key: REDIS_URL
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: face-recognition-secrets
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: face-recognition-secrets
+                  key: MINIO_SECRET_KEY
+            - name: DATA_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: face-recognition-secrets
+                  key: DATA_ENCRYPTION_KEY
+            - name: CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: face-recognition-secrets
+                  key: CELERY_BROKER_URL
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: face-recognition-secrets
+                  key: RABBITMQ_URL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: face-recognition-api
+  labels:
+    app.kubernetes.io/name: face-recognition
+    app.kubernetes.io/component: api
+spec:
+  selector:
+    app.kubernetes.io/name: face-recognition
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

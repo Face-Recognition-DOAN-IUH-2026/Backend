@@ -3,9 +3,9 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: face_recognition
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-face_recognition}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Backend/.env}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/create-service-databases.sql:/docker-entrypoint-initdb.d/01-create-service-databases.sql:ro
@@ -53,8 +53,8 @@ services:
     volumes:
       - miniodata:/data
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in Backend/.env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in Backend/.env}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
       interval: 10s
@@ -82,6 +82,23 @@ services:
     networks:
       - face-network
 
+  face-recognition-migrate:
+    build:
+      context: face-recognition-service
+      dockerfile: Dockerfile.api
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - ./.env
+    environment:
+      POSTGRES_URL: ${POSTGRES_URL:?Set POSTGRES_URL in Backend/.env}
+      POSTGRES_DB: facedb
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - face-network
+
   face-recognition-api:
     build:
       context: face-recognition-service
@@ -91,7 +108,7 @@ services:
     env_file:
       - ./.env
     environment:
-      POSTGRES_URL: postgresql+psycopg://postgres:postgres@postgres:5432/facedb
+      POSTGRES_URL: ${POSTGRES_URL:?Set POSTGRES_URL in Backend/.env}
       POSTGRES_DB: facedb
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -100,6 +117,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      face-recognition-migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       rabbitmq:
@@ -129,7 +148,7 @@ services:
     env_file:
       - ./.env
     environment:
-      POSTGRES_URL: postgresql+psycopg://postgres:postgres@postgres:5432/facedb
+      POSTGRES_URL: ${POSTGRES_URL:?Set POSTGRES_URL in Backend/.env}
       POSTGRES_DB: facedb
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -138,6 +157,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      face-recognition-migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       rabbitmq:
@@ -344,6 +365,8 @@ services:
       JWT_ISSUER: ${JWT_ISSUER:-face-recognition}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-face-recognition-users}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in Backend/.env}
+      # Khai báo tường minh để Compose interpolate đúng thay vì env_file truyền literal string
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?Set RABBITMQ_USER in Backend/.env}:${RABBITMQ_PASS:?Set RABBITMQ_PASS in Backend/.env}@rabbitmq:5672
     deploy:
       resources:
         limits:
@@ -448,7 +471,7 @@ services:
     env_file:
       - ./.env
     environment:
-      POSTGRES_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/borrowdb
+      POSTGRES_URL: ${BORROW_POSTGRES_URL:?Set BORROW_POSTGRES_URL in Backend/.env}
       USER_SERVICE_URL: http://user-service:3001
       ACCESS_SERVICE_URL: http://access-service:3003
       FACE_RECOGNITION_API: http://face-recognition-api:8000

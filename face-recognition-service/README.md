@@ -34,6 +34,52 @@ docker compose up -d
 
 3. API docs available at `http://localhost:8000/docs`
 
+## Database migrations
+
+Face API and Celery workers never create or alter tables during startup. Alembic is the only schema-change mechanism.
+
+```powershell
+poetry run alembic upgrade head
+poetry run alembic current
+```
+
+The baseline migration supports both a fresh database and an existing unversioned `patron_faces` table. Back up an existing database before the first migration. A downgrade of the baseline drops `patron_faces`, so it must not be used as an automatic production rollback.
+
+At the repository root, `docker compose up` uses the dedicated `face-recognition-migrate` service and gates Face API/worker startup on successful migration completion. To run the same container step explicitly:
+
+```powershell
+docker compose run --rm face-recognition-migrate
+```
+
+## Kubernetes rollout
+
+Create `face-recognition-secrets` using the cluster's secret-management mechanism. The required key names are documented in `../k8s/face-recognition-secrets.example.yaml`; do not apply or commit a populated copy.
+
+Deploy in this order:
+
+```powershell
+kubectl apply -f ../k8s/face-recognition.yaml
+kubectl wait --for=condition=complete job/face-recognition-migration-202609020001 --timeout=180s
+kubectl logs job/face-recognition-migration-202609020001
+kubectl apply -f ../k8s/face-recognition-workloads.yaml
+kubectl rollout status deployment/face-recognition-api
+kubectl rollout status deployment/face-recognition-worker
+```
+
+If the migration Job fails, do not apply the workload manifest. Inspect the Job logs, correct the migration/configuration, and verify schema compatibility before retrying. Each future migration release must use a new immutable Job name so Kubernetes executes it exactly once.
+
+The API image, worker image, and migration Job must use the same immutable image tag in a release.
+
+## Production verification
+
+From `Backend/`:
+
+```powershell
+.\scripts\verify-production-readiness.ps1
+```
+
+Use `-RunMigration` only when `POSTGRES_URL` points to a disposable verification database.
+
 ## API Endpoints
 
 ### Auth

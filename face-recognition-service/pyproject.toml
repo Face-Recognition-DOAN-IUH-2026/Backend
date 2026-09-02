@@ -9,12 +9,12 @@ license = { text = "MIT" }
 [tool.pytest.ini_options]
 minversion = "6.0"
 testpaths = ["tests"]
-addopts = "-q --disable-warnings --maxfail=1 --cov=core --cov=api --cov=worker --cov-report=term-missing"
+addopts = "-q --disable-warnings --maxfail=1 --cov=core --cov=api --cov=worker --cov=infra --cov-report=term-missing"
 asyncio_mode = "auto"
 
 [tool.coverage.run]
 branch = true
-source = ["core", "api", "worker"]
+source = ["core", "api", "worker", "infra"]
 
 [tool.black]
 line-length = 100
@@ -61,6 +61,7 @@ aio_pika = "^9.4.0"
 
 sqlalchemy = "^2.0.32"
 psycopg = { version = "^3.2.3", extras = ["binary"] }
+alembic = "^1.14.0"
 
 pymilvus = "^2.4.0"
 

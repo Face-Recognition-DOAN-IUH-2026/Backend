@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +12,7 @@ class Settings(BaseSettings):
     app_name: str = "face-recognition-platform"
     env: str = "dev"
     log_level: str = "INFO"
+    cors_origins: str = "http://localhost:3000,http://localhost:19006"
 
     jwt_issuer: str
     jwt_audience: str
@@ -60,5 +64,56 @@ class Settings(BaseSettings):
     access_service_url: str = "http://access-service:3003"
     service_jwt_secret: str = ""
 
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        if self.env.strip().lower() not in {"production", "prod"}:
+            return self
 
-settings = Settings()
+        secret_values = {
+            "JWT_ACCESS_SECRET": self.jwt_access_secret,
+            "JWT_REFRESH_SECRET": self.jwt_refresh_secret,
+            "SERVICE_JWT_SECRET": self.service_jwt_secret,
+            "MINIO_SECRET_KEY": self.minio_secret_key,
+            "DATA_ENCRYPTION_KEY": self.data_encryption_key,
+        }
+        for name, value in secret_values.items():
+            normalized = value.strip()
+            if len(normalized) < 32 or normalized.upper().startswith("REPLACE_WITH"):
+                raise ValueError(f"{name} must be an externally supplied production secret")
+
+        minio_access_key = self.minio_access_key.strip()
+        if (
+            not minio_access_key
+            or minio_access_key.lower() == "minioadmin"
+            or minio_access_key.upper().startswith("REPLACE_WITH")
+        ):
+            raise ValueError("MINIO_ACCESS_KEY must be externally supplied in production")
+
+        credential_urls = {
+            "POSTGRES_URL": self.postgres_url,
+            "REDIS_URL": self.redis_url,
+            "CELERY_BROKER_URL": self.celery_broker_url,
+            "RABBITMQ_URL": self.rabbitmq_url,
+        }
+        forbidden_passwords = {"guest", "postgres", "minioadmin", "password"}
+        for name, value in credential_urls.items():
+            parsed = urlparse(value)
+            username = (parsed.username or "").lower()
+            password = (parsed.password or "").lower()
+            requires_username = name != "REDIS_URL"
+            if not password or (requires_username and not username):
+                raise ValueError(f"{name} must include production credentials")
+            if "REPLACE_" in value.upper() or password in forbidden_passwords:
+                raise ValueError(f"{name} contains default credentials")
+            if name in {"CELERY_BROKER_URL", "RABBITMQ_URL"} and username == "guest":
+                raise ValueError(f"{name} contains the default RabbitMQ identity")
+
+        origins = [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        if not origins or "*" in origins:
+            raise ValueError("CORS_ORIGINS must explicitly allow trusted origins in production")
+
+        return self
+
+
+# Required values are injected by pydantic-settings from the process environment.
+settings = Settings()  # type: ignore[call-arg]

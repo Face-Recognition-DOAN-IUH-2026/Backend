@@ -174,3 +174,23 @@ python -m py_compile worker\tasks.py
 cd ..\borrow-service
 pytest
 ```
+
+## Face production-readiness gate
+
+Face schema changes are managed by Alembic and must run before Face API/Celery workloads. Application startup no longer performs DDL.
+
+For local Docker Compose, the dedicated `face-recognition-migrate` service runs `alembic upgrade head`; the Face API and worker wait for it to complete successfully.
+
+Kubernetes assets:
+
+- `k8s/face-recognition.yaml`: non-secret configuration, migration Job, and Service.
+- `k8s/face-recognition-workloads.yaml`: API and worker Deployments; apply only after the migration Job succeeds.
+- `k8s/face-recognition-secrets.example.yaml`: required Secret key names only; inject real values out of band.
+
+Run the provider-neutral local gate:
+
+```powershell
+.\scripts\verify-production-readiness.ps1
+```
+
+Pass `-RunMigration` only with a disposable database. Production rollout must wait for `face-recognition-migration-202609020001` to complete before applying workloads.
