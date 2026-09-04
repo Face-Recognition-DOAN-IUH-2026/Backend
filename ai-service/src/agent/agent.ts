@@ -96,8 +96,49 @@ FORMAT CARD SACH (QUAN TRONG - phai dung format de frontend hien thi dep):
 Khi hien thi thong tin sach, PHAI dung dung format sau:
 :::book_card {"title": "Ten sach", "author": "Tac gia", "isbn": "ISBN", "categories": "The loai", "description": "Mo ta", "cover_url": "URL anh", "source": "database hoac google_books"}
 KHONG BAO GIO hien thi thong tin sach bang text thuan. Luon dung format :::book_card o tren.
+
+QUY TAC TRA LOI GIO MO CUA (get_library_hours):
+- TUYET DOI KHONG tra ve raw JSON, object JSON {"schedule": [...]}, hoac format lap trinh cho nguoi dung.
+- LUON dien giai va tra loi nguoi dung bang tieng Viet tu nhien, than thien, ro rang theo cac ngay trong tuan.
 ${userContextPrompt}
 ${kbContext}`;
+}
+
+export function formatScheduleJson(text: string): string {
+  if (!text) return text;
+
+  // Check if text is or contains JSON with "schedule"
+  const scheduleJsonMatch = text.match(/\{[\s\S]*?"schedule"\s*:\s*\[[\s\S]*?\][\s\S]*?\}/);
+  if (scheduleJsonMatch) {
+    try {
+      const parsed = JSON.parse(scheduleJsonMatch[0]);
+      if (Array.isArray(parsed.schedule)) {
+        let formatted = '🕒 **Giờ mở cửa thư viện IUH:**\n';
+        for (const item of parsed.schedule) {
+          let days = (item.days || item.day || '').trim();
+          days = days
+            .replace(/Monday\s*-\s*Friday/i, 'Thứ Hai - Thứ Sáu')
+            .replace(/Saturday\s*-\s*Sunday/i, 'Thứ Bảy - Chủ Nhật')
+            .replace(/Monday/i, 'Thứ Hai')
+            .replace(/Tuesday/i, 'Thứ Ba')
+            .replace(/Wednesday/i, 'Thứ Tư')
+            .replace(/Thursday/i, 'Thứ Năm')
+            .replace(/Friday/i, 'Thứ Sáu')
+            .replace(/Saturday/i, 'Thứ Bảy')
+            .replace(/Sunday/i, 'Chủ Nhật');
+          const hours = item.hours || item.time || '';
+          formatted += `• **${days}**: ${hours}\n`;
+        }
+        if (parsed.note) {
+          formatted += `\n📌 *Lưu ý: ${parsed.note}*`;
+        }
+        let replaced = text.replace(scheduleJsonMatch[0], formatted.trim());
+        replaced = replaced.replace(/```(?:json)?\s*\n?\s*```/g, '').trim();
+        return replaced;
+      }
+    } catch {}
+  }
+  return text;
 }
 
 function parseToolCalls(assistantMessage: string): Array<{ name: string; args: Record<string, any> }> {
@@ -232,6 +273,7 @@ export async function processMessage(
       if (!finalResponse) {
         finalResponse = 'Xin loi, toi da gap su co khi xu ly cau hoi cua ban. Vui long thu lai.';
       }
+      finalResponse = formatScheduleJson(finalResponse);
       return {
         response: finalResponse,
         toolResults: toolResults.length > 0 ? toolResults : undefined,
@@ -270,9 +312,13 @@ export async function processMessage(
         toolResults.push({ name: call.name, result });
 
         const resultStr = JSON.stringify(result, null, 2);
+        let resultForPrompt = resultStr;
+        if (call.name === 'get_library_hours') {
+          resultForPrompt = `Thứ Hai - Thứ Sáu: 06:30 - 21:00\nThứ Bảy - Chủ Nhật: 08:00 - 19:30\n(Lưu ý: Giờ mở cửa có thể thay đổi vào ngày lễ và kỳ nghỉ đặc biệt)`;
+        }
         messages.push({
           role: 'user',
-          content: `[He thong] Ket qua tu tool "${call.name}":\n${resultStr}\n\nDua tren ket qua tren, tra loi nguoi dung bang tieng Viet. Neu da co du thong tin, tong hop va tra loi. Neu can them thong tin, goi tool tiep theo.`,
+          content: `[He thong] Ket qua tu tool "${call.name}":\n${resultForPrompt}\n\nDua tren ket qua tren, tra loi nguoi dung bang tieng Viet tu nhien (TUYET DOI KHONG tra ve raw JSON hay ma nguon). Neu da co du thong tin, tong hop va tra loi. Neu can them thong tin, goi tool tiep theo.`,
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -395,6 +441,7 @@ export async function* processCompanionMessage(
       if (!finalResponse) {
         finalResponse = 'Xin loi, toi da gap su co khi xu ly cau hoi cua ban. Vui long thu lai.';
       }
+      finalResponse = formatScheduleJson(finalResponse);
 
       const ttsResult = await ttsClient.synthesizeSpeech(finalResponse);
 
@@ -454,9 +501,13 @@ export async function* processCompanionMessage(
         yield { type: 'tool_result', data: { name: call.name, result } };
 
         const resultStr = JSON.stringify(result, null, 2);
+        let resultForPrompt = resultStr;
+        if (call.name === 'get_library_hours') {
+          resultForPrompt = `Thứ Hai - Thứ Sáu: 06:30 - 21:00\nThứ Bảy - Chủ Nhật: 08:00 - 19:30\n(Lưu ý: Giờ mở cửa có thể thay đổi vào ngày lễ và kỳ nghỉ đặc biệt)`;
+        }
         messages.push({
           role: 'user',
-          content: `[He thong] Ket qua tu tool "${call.name}":\n${resultStr}\n\nDua tren ket qua tren, tra loi nguoi dung bang tieng Viet. Neu da co du thong tin, tong hop va tra loi. Neu can them thong tin, goi tool tiep theo.`,
+          content: `[He thong] Ket qua tu tool "${call.name}":\n${resultForPrompt}\n\nDua tren ket qua tren, tra loi nguoi dung bang tieng Viet tu nhien (TUYET DOI KHONG tra ve raw JSON hay ma nguon). Neu da co du thong tin, tong hop va tra loi. Neu can them thong tin, goi tool tiep theo.`,
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
