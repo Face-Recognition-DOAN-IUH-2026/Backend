@@ -52,10 +52,11 @@ export function getLibraryHours(): ToolResult {
     success: true,
     data: {
       schedule: [
-        { days: 'Monday - Friday', hours: '06:30 - 21:00' },
-        { days: 'Saturday - Sunday', hours: '08:00 - 19:30' },
+        { days: 'Thứ Hai - Thứ Sáu (Monday - Friday)', hours: '06:30 - 21:00' },
+        { days: 'Thứ Bảy - Chủ Nhật (Saturday - Sunday)', hours: '08:00 - 19:30' },
       ],
       note: 'Giờ mở cửa có thể thay đổi vào ngày lễ và kỳ nghỉ đặc biệt',
+      formatted_text: 'Thứ Hai - Thứ Sáu: 06:30 - 21:00\nThứ Bảy - Chủ Nhật: 08:00 - 19:30\n(Lưu ý: Giờ mở cửa có thể thay đổi vào ngày lễ và kỳ nghỉ đặc biệt)',
     },
   };
 }
