@@ -18,7 +18,7 @@ export async function startAmqpSubscriber(): Promise<void> {
 
     await amqpClient.consume(
       'notification_service_queue',
-      ['book.borrowed', 'book.returned', 'notification.send'],
+      ['book.borrowed', 'book.returned', 'notification.send', 'config.updated'],
       async (envelope) => {
         const { eventType, payload } = envelope;
         console.log(`[AMQP] Processing event ${eventType} on notification-service`);
@@ -100,6 +100,12 @@ export async function startAmqpSubscriber(): Promise<void> {
               await emailService.sendEmailChangeCode(toEmail, code);
             } else {
               console.warn(`[AMQP] Unknown email type: ${emailType}`);
+            }
+          } else if (eventType === 'config.updated') {
+            const { category, values } = payload;
+            if (category === 'smtp' && values) {
+              console.log('[AMQP] Received SMTP config update, dynamically updating transporter...');
+              emailService.updateConfig(values);
             }
           }
         } catch (err: any) {

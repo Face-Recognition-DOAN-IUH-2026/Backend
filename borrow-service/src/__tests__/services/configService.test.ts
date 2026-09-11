@@ -1,4 +1,4 @@
-import { ConfigService } from '../../services/ConfigService';
+import { ConfigService, invalidateConfigCache } from '../../services/ConfigService';
 import { AppDataSource } from '../../data-source';
 
 jest.mock('../../data-source', () => {
@@ -38,6 +38,7 @@ describe('ConfigService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    invalidateConfigCache();
     service = new ConfigService();
   });
 
@@ -162,6 +163,58 @@ describe('ConfigService', () => {
       const saved = (repo.save as jest.Mock).mock.calls[0][0];
       expect(saved[0].configValue).toBe(14);
       expect(result[0].config_value).toBe(14);
+    });
+  });
+
+  describe('getBorrowLimits', () => {
+    it('should return parsed borrow limits from DB', async () => {
+      const repo = getMockRepo();
+      repo.find.mockResolvedValue([
+        makeConfig({ configKey: 'max_borrow_days', configValue: '21' }),
+        makeConfig({ configKey: 'max_borrow_books', configValue: '5' }),
+        makeConfig({ configKey: 'max_borrow_books_per_slip', configValue: '4' }),
+        makeConfig({ configKey: 'max_renewals', configValue: '2' }),
+      ]);
+
+      const limits = await service.getBorrowLimits();
+      expect(limits.maxBorrowDays).toBe(21);
+      expect(limits.maxBorrowBooks).toBe(5);
+      expect(limits.maxBorrowBooksPerSlip).toBe(4);
+      expect(limits.maxRenewals).toBe(2);
+    });
+
+    it('should cache limits on consecutive calls', async () => {
+      const repo = getMockRepo();
+      repo.find.mockResolvedValue([
+        makeConfig({ configKey: 'max_borrow_days', configValue: '21' }),
+      ]);
+
+      await service.getBorrowLimits();
+      await service.getBorrowLimits();
+
+      expect(repo.find).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('getFineConfig', () => {
+    it('should return parsed fine brackets and finePerDay from DB', async () => {
+      const repo = getMockRepo();
+      repo.find.mockResolvedValue([
+        makeConfig({
+          category: 'fine',
+          configKey: 'fine_brackets',
+          configValue: '[{"from":1,"to":5,"amount":8000}]',
+        }),
+        makeConfig({
+          category: 'fine',
+          configKey: 'fine_per_day',
+          configValue: 4000,
+        }),
+      ]);
+
+      const config = await service.getFineConfig();
+      expect(config.fineBrackets).toEqual([{ from: 1, to: 5, amount: 8000 }]);
+      expect(config.finePerDay).toBe(4000);
     });
   });
 });

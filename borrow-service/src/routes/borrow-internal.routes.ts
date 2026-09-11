@@ -10,6 +10,7 @@ import { publishEvent } from '../utils/eventPublisher';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { In, IsNull } from 'typeorm';
 import { calculateOverdueFine } from '../utils/fineCalculator';
+import { configService } from '../services/ConfigService';
 import { lookupPatronByStudentCode, lookupPatronById, PatronSummary } from '../clients/UserServiceClient';
 
 const internalAuth = createInternalAuth({
@@ -581,8 +582,9 @@ router.post('/renew', async (req: Request, res: Response) => {
       return;
     }
 
-    if (record.renewalCount >= config.maxRenewals) {
-      res.status(409).json({ success: false, detail: `Da dat gioi han gia han toi da ${config.maxRenewals} lan` });
+    const limits = await configService.getBorrowLimits();
+    if (record.renewalCount >= limits.maxRenewals) {
+      res.status(409).json({ success: false, detail: `Da dat gioi han gia han toi da ${limits.maxRenewals} lan` });
       return;
     }
 
@@ -594,14 +596,14 @@ router.post('/renew', async (req: Request, res: Response) => {
     }
 
     const newDue = new Date(currentDue);
-    newDue.setDate(newDue.getDate() + config.maxBorrowDays);
+    newDue.setDate(newDue.getDate() + limits.maxBorrowDays);
     record.dueAt = newDue;
     record.renewalCount = (record.renewalCount || 0) + 1;
     await records().save(record);
 
     res.json({
       success: true,
-      message: `Gia hạn thành công (${record.renewalCount}/${config.maxRenewals})`,
+      message: `Gia hạn thành công (${record.renewalCount}/${limits.maxRenewals})`,
       data: {
         record_id: record.id,
         book_title: record.book?.title,
@@ -609,7 +611,7 @@ router.post('/renew', async (req: Request, res: Response) => {
         old_due_at: currentDue.toISOString(),
         new_due_at: record.dueAt.toISOString(),
         renewal_count: record.renewalCount,
-        max_renewals: config.maxRenewals,
+        max_renewals: limits.maxRenewals,
       },
     });
   } catch (error) {
@@ -683,7 +685,8 @@ router.post('/batch-return', async (req: Request, res: Response) => {
         if (record.dueAt && now > new Date(record.dueAt)) {
           const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
           const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
-          record.fineAmount = calculateOverdueFine(overdueDays);
+          const fineConfig = await configService.getFineConfig();
+          record.fineAmount = calculateOverdueFine(overdueDays, fineConfig.fineBrackets, fineConfig.finePerDay);
         }
 
         recordsToSave.push(record);
@@ -1035,8 +1038,9 @@ router.post('/create', async (req: Request, res: Response) => {
     }
 
     const activeCount = await repo.countActiveBorrows(patronId);
-    if (activeCount + bookIds.length > config.maxBorrowBooks) {
-      res.status(409).json({ success: false, detail: `Exceeds max borrow limit (${config.maxBorrowBooks})` });
+    const limits = await configService.getBorrowLimits();
+    if (activeCount + bookIds.length > limits.maxBorrowBooks) {
+      res.status(409).json({ success: false, detail: `Exceeds max borrow limit (${limits.maxBorrowBooks})` });
       return;
     }
 

@@ -24,6 +24,35 @@ export class EmailService {
     console.log('[EmailService] SMTP connection verified');
   }
 
+  updateConfig(newSmtp: {
+    host?: string;
+    port?: number | string;
+    secure?: boolean | string;
+    user?: string;
+    pass?: string;
+    from?: string;
+  }): void {
+    if (newSmtp.host) config.smtp.host = newSmtp.host;
+    if (newSmtp.port !== undefined) config.smtp.port = Number(newSmtp.port);
+    if (newSmtp.secure !== undefined) config.smtp.secure = String(newSmtp.secure) === 'true';
+    if (newSmtp.user !== undefined) config.smtp.user = newSmtp.user;
+    if (newSmtp.pass && newSmtp.pass !== '••••••••') config.smtp.pass = newSmtp.pass;
+    if (newSmtp.from) config.smtp.from = newSmtp.from;
+
+    this.transporter = nodemailer.createTransport({
+      host: config.smtp.host,
+      port: config.smtp.port,
+      secure: config.smtp.secure,
+      auth: {
+        user: config.smtp.user,
+        pass: config.smtp.pass,
+      },
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+    });
+    console.log(`[EmailService] SMTP transporter updated dynamically: ${config.smtp.host}:${config.smtp.port}, secure=${config.smtp.secure}`);
+  }
+
   async sendPasswordResetCode(toEmail: string, code: string): Promise<void> {
     console.log(`[EmailService] Sending password reset to: ${toEmail}`);
     const mailOptions = {
