@@ -32,4 +32,25 @@ describe('calculateOverdueFine', () => {
     expect(calculateOverdueFine(60)).toBe(100000);
     expect(calculateOverdueFine(365)).toBe(100000);
   });
+
+  describe('custom dynamic brackets', () => {
+    const customBrackets = [
+      { from: 1, to: 3, amount: 5000 },
+      { from: 4, to: 10, amount: 15000 },
+      { from: 11, to: null, amount: 80000 },
+    ];
+
+    it('uses custom bracket amounts', () => {
+      expect(calculateOverdueFine(2, customBrackets)).toBe(5000);
+      expect(calculateOverdueFine(5, customBrackets)).toBe(15000);
+      expect(calculateOverdueFine(15, customBrackets)).toBe(80000);
+    });
+
+    it('falls back to per-day fine when days exceed closed brackets', () => {
+      const closedBrackets = [
+        { from: 1, to: 5, amount: 10000 },
+      ];
+      expect(calculateOverdueFine(8, closedBrackets, 3000)).toBe(24000);
+    });
+  });
 });

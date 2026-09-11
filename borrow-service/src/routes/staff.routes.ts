@@ -12,6 +12,7 @@ import { publishEvent } from '../utils/eventPublisher';
 import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
+import { configService } from '../services/ConfigService';
 
 const router = Router();
 router.use(auth);
@@ -136,11 +137,12 @@ router.post('/slip/lookup', requireRole(['admin', 'staff'], 'Chi quan tri vien h
 
     const activeCount = await repo.countActiveBorrows(body.patron_id);
     const validItems = results.filter((r) => r.can_borrow).length;
-    if (activeCount + validItems > config.maxBorrowBooks) {
-      errors.push(`Qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
+    const limits = await configService.getBorrowLimits();
+    if (activeCount + validItems > limits.maxBorrowBooks) {
+      errors.push(`Qua gioi han muon sach (toi da ${limits.maxBorrowBooks} cuon)`);
     }
-    if (validItems > config.maxBorrowBooksPerSlip) {
-      errors.push(`Moi phieu muon toi da ${config.maxBorrowBooksPerSlip} cuon`);
+    if (validItems > limits.maxBorrowBooksPerSlip) {
+      errors.push(`Moi phieu muon toi da ${limits.maxBorrowBooksPerSlip} cuon`);
     }
 
     res.json({
@@ -223,8 +225,9 @@ router.post('/slip/confirm', requireRole(['admin', 'staff'], 'Chi quan tri vien 
     if (overdue.length) throw new HttpError(409, 'Độc giả có sách quá hạn. Vui long tra sach truoc khi muon them.');
 
     const activeCount = await repo.countActiveBorrows(body.patron_id);
-    if (activeCount + bookIds.length > config.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
-    if (bookIds.length > config.maxBorrowBooksPerSlip) throw new HttpError(409, `Moi phieu muon toi da ${config.maxBorrowBooksPerSlip} cuon`);
+    const limits = await configService.getBorrowLimits();
+    if (activeCount + bookIds.length > limits.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${limits.maxBorrowBooks} cuon)`);
+    if (bookIds.length > limits.maxBorrowBooksPerSlip) throw new HttpError(409, `Moi phieu muon toi da ${limits.maxBorrowBooksPerSlip} cuon`);
 
     const copiesToUpdate = copyIds.filter(id => id).map(id => copiesMap.get(id!)).filter(Boolean) as BookCopy[];
     for (const copy of copiesToUpdate) {
@@ -338,8 +341,9 @@ router.post('/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri vien h
     if (overdue.length) throw new HttpError(409, 'Độc giả có sách quá hạn. Vui long tra sach truoc khi muon them.');
 
     const activeCount = await repo.countActiveBorrows(body.patron_id);
-    if (activeCount + bookIds.length > config.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
-    if (bookIds.length > config.maxBorrowBooksPerSlip) throw new HttpError(409, `Moi phieu muon toi da ${config.maxBorrowBooksPerSlip} cuon`);
+    const limits = await configService.getBorrowLimits();
+    if (activeCount + bookIds.length > limits.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${limits.maxBorrowBooks} cuon)`);
+    if (bookIds.length > limits.maxBorrowBooksPerSlip) throw new HttpError(409, `Moi phieu muon toi da ${limits.maxBorrowBooksPerSlip} cuon`);
 
     const validCopyIds = copyIds.filter((id): id is string => id !== null);
     const allCopies = validCopyIds.length > 0 ? await repo.copies.find({ where: { id: In(validCopyIds) } }) : [];

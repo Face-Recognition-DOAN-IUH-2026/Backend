@@ -12,16 +12,22 @@ import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
 import { BorrowRecord } from '../entities/BorrowRecord';
+import { configService } from '../services/ConfigService';
 
 const router = Router();
 
 // GET /config — Public, returns borrow configuration for frontend
-router.get('/config', (_req, res) => {
-  res.json({
-    max_borrow_books: config.maxBorrowBooks,
-    max_borrow_books_per_slip: config.maxBorrowBooksPerSlip,
-    max_borrow_days: config.maxBorrowDays,
-  });
+router.get('/config', async (_req, res, next) => {
+  try {
+    const limits = await configService.getBorrowLimits();
+    res.json({
+      max_borrow_books: limits.maxBorrowBooks,
+      max_borrow_books_per_slip: limits.maxBorrowBooksPerSlip,
+      max_borrow_days: limits.maxBorrowDays,
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.use(auth);
@@ -109,7 +115,8 @@ router.post('/', requireRole(['patron', 'admin', 'staff'], 'Chi nguoi dung hop l
       if (!book || !copy) throw new HttpError(404, 'Khong tim thay sach');
       if (await repo.getActiveBorrow(userId, book.id)) throw new HttpError(409, 'Sach nay ban dang muon');
       if ((await repo.getOverdueBorrows(userId)).length) throw new HttpError(409, 'Ban co sách quá hạn. Vui long tra sach truoc khi muon them.');
-      if (await repo.countActiveBorrows(userId) >= config.maxBorrowBooks) throw new HttpError(409, `Da qua gioi han muon sach (toi da ${config.maxBorrowBooks} cuon)`);
+      const limits = await configService.getBorrowLimits();
+      if (await repo.countActiveBorrows(userId) >= limits.maxBorrowBooks) throw new HttpError(409, `Da qua gioi han muon sach (toi da ${limits.maxBorrowBooks} cuon)`);
 
       copy!.isAvailable = false;
       await manager.save(copy!);
@@ -177,8 +184,9 @@ router.post('/renew', auth, async (req: AuthRequest, res, next) => {
     });
     if (!record) throw new HttpError(404, 'Khong tim thay phieu muon');
     if (record.status !== 'borrowed') throw new HttpError(409, 'Phieu muon nay da het hieu luc');
-    if (record.renewalCount >= config.maxRenewals) {
-      throw new HttpError(409, `Da dat gioi han gia han toi da ${config.maxRenewals} lan`);
+    const limits = await configService.getBorrowLimits();
+    if (record.renewalCount >= limits.maxRenewals) {
+      throw new HttpError(409, `Da dat gioi han gia han toi da ${limits.maxRenewals} lan`);
     }
 
     const now = new Date();
@@ -187,7 +195,7 @@ router.post('/renew', auth, async (req: AuthRequest, res, next) => {
     }
 
     const newDueAt = new Date(record.dueAt);
-    newDueAt.setDate(newDueAt.getDate() + config.maxBorrowDays);
+    newDueAt.setDate(newDueAt.getDate() + limits.maxBorrowDays);
     record.dueAt = newDueAt;
     record.renewalCount += 1;
     await AppDataSource.getRepository(BorrowRecord).save(record);

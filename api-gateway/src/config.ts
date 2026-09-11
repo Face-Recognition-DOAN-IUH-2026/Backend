@@ -13,6 +13,7 @@ export const config = {
     aiService: process.env.AI_SERVICE || 'http://ai-service:3004',
     notificationService: process.env.NOTIFICATION_SERVICE || 'http://notification-service:3006',
     automationService: process.env.AUTOMATION_SERVICE || 'http://automation-service:3007',
+    fireDetectionService: process.env.FIRE_DETECTION_SERVICE || 'http://fire-detection-service:8008',
   },
   frontendUrl: process.env.FRONTEND_URL || 'http://host.docker.internal:3000',
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || [],

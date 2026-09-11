@@ -6,6 +6,7 @@ import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowSlip } from '../entities/BorrowSlip';
 import { config } from '../config';
 import { calculateOverdueFine } from '../utils/fineCalculator';
+import { configService } from '../services/ConfigService';
 
 export class BorrowRepository {
   books = AppDataSource.getRepository(Book);
@@ -275,7 +276,8 @@ export class BorrowRepository {
   }
 
   async createBorrowRecord(patronId: string, bookId: string, copyId?: string | null, shelfLocation?: string | null) {
-    const dueAt = new Date(Date.now() + config.maxBorrowDays * 24 * 60 * 60 * 1000);
+    const limits = await configService.getBorrowLimits();
+    const dueAt = new Date(Date.now() + limits.maxBorrowDays * 24 * 60 * 60 * 1000);
     const record = this.records.create({ patronId, bookId, copyId: copyId || null, borrowAt: new Date(), dueAt, shelfLocation: shelfLocation || null, status: 'borrowed' });
     return this.records.save(record);
   }
@@ -293,7 +295,8 @@ export class BorrowRepository {
     if (record.dueAt && now > new Date(record.dueAt)) {
       const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
       const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
-      record.fineAmount = calculateOverdueFine(overdueDays);
+      const fineConfig = await configService.getFineConfig();
+      record.fineAmount = calculateOverdueFine(overdueDays, fineConfig.fineBrackets, fineConfig.finePerDay);
     }
 
     const saved = await this.records.save(record);
@@ -446,7 +449,8 @@ export class BorrowRepository {
     createdByEmail?: string | null,
     note?: string | null,
   ) {
-    const dueAt = new Date(Date.now() + config.maxBorrowDays * 24 * 60 * 60 * 1000);
+    const limits = await configService.getBorrowLimits();
+    const dueAt = new Date(Date.now() + limits.maxBorrowDays * 24 * 60 * 60 * 1000);
 
     const qr = AppDataSource.createQueryRunner();
     await qr.connect();

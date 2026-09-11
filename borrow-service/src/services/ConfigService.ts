@@ -1,7 +1,35 @@
 import { AppDataSource } from '../data-source';
 import { SystemConfig } from '../entities/SystemConfig';
+import { config as envConfig } from '../config';
+import { publishEvent } from '../utils/eventPublisher';
+import type { FineBracket } from '../utils/fineCalculator';
 
 const repo = () => AppDataSource.getRepository(SystemConfig);
+
+export interface BorrowLimits {
+  maxBorrowDays: number;
+  maxBorrowBooks: number;
+  maxBorrowBooksPerSlip: number;
+  maxRenewals: number;
+}
+
+export interface FineConfig {
+  fineBrackets: FineBracket[];
+  finePerDay: number;
+}
+
+let cachedBorrowLimits: BorrowLimits | null = null;
+let cachedFineConfig: FineConfig | null = null;
+let lastBorrowCacheTime = 0;
+let lastFineCacheTime = 0;
+const CACHE_TTL_MS = 60 * 1000; // 1 minute
+
+export function invalidateConfigCache() {
+  cachedBorrowLimits = null;
+  cachedFineConfig = null;
+  lastBorrowCacheTime = 0;
+  lastFineCacheTime = 0;
+}
 
 export class ConfigService {
   async getAll(): Promise<Record<string, SystemConfigEntry[]>> {
@@ -62,6 +90,21 @@ export class ConfigService {
     }
     await repo().save(configs);
 
+    // Invalidate local in-memory cache immediately so next calls get latest DB values
+    invalidateConfigCache();
+
+    // Broadcast config update event over AMQP for other services (e.g. notification-service)
+    try {
+      await publishEvent('config.updated', {
+        category,
+        values,
+        updatedBy,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      console.warn('[ConfigService] Failed to broadcast config.updated event:', err.message);
+    }
+
     return configs.map((c) => ({
       id: c.id,
       category: c.category,
@@ -73,6 +116,75 @@ export class ConfigService {
       updated_at: c.updatedAt.toISOString(),
       updated_by: c.updatedBy,
     }));
+  }
+
+  async getBorrowLimits(): Promise<BorrowLimits> {
+    const now = Date.now();
+    if (cachedBorrowLimits && now - lastBorrowCacheTime < CACHE_TTL_MS) {
+      return cachedBorrowLimits;
+    }
+
+    try {
+      const configs = await repo().find({ where: { category: 'borrow' } });
+      const map: Record<string, any> = {};
+      for (const c of configs) {
+        map[c.configKey] = c.configValue;
+      }
+
+      cachedBorrowLimits = {
+        maxBorrowDays: map['max_borrow_days'] !== undefined ? Number(map['max_borrow_days']) : envConfig.maxBorrowDays,
+        maxBorrowBooks: map['max_borrow_books'] !== undefined ? Number(map['max_borrow_books']) : envConfig.maxBorrowBooks,
+        maxBorrowBooksPerSlip: map['max_borrow_books_per_slip'] !== undefined ? Number(map['max_borrow_books_per_slip']) : envConfig.maxBorrowBooksPerSlip,
+        maxRenewals: map['max_renewals'] !== undefined ? Number(map['max_renewals']) : envConfig.maxRenewals,
+      };
+      lastBorrowCacheTime = now;
+      return cachedBorrowLimits;
+    } catch (err: any) {
+      console.warn('[ConfigService] Failed to read borrow limits from DB, falling back to envConfig:', err.message);
+      return {
+        maxBorrowDays: envConfig.maxBorrowDays,
+        maxBorrowBooks: envConfig.maxBorrowBooks,
+        maxBorrowBooksPerSlip: envConfig.maxBorrowBooksPerSlip,
+        maxRenewals: envConfig.maxRenewals,
+      };
+    }
+  }
+
+  async getFineConfig(): Promise<FineConfig> {
+    const now = Date.now();
+    if (cachedFineConfig && now - lastFineCacheTime < CACHE_TTL_MS) {
+      return cachedFineConfig;
+    }
+
+    try {
+      const configs = await repo().find({ where: { category: 'fine' } });
+      const map: Record<string, any> = {};
+      for (const c of configs) {
+        map[c.configKey] = c.configValue;
+      }
+
+      let brackets = map['fine_brackets'];
+      if (typeof brackets === 'string') {
+        try {
+          brackets = JSON.parse(brackets);
+        } catch {
+          // ignore parse error
+        }
+      }
+
+      cachedFineConfig = {
+        fineBrackets: Array.isArray(brackets) ? brackets : [],
+        finePerDay: map['fine_per_day'] !== undefined ? Number(map['fine_per_day']) : envConfig.finePerDay,
+      };
+      lastFineCacheTime = now;
+      return cachedFineConfig;
+    } catch (err: any) {
+      console.warn('[ConfigService] Failed to read fine config from DB, falling back to defaults:', err.message);
+      return {
+        fineBrackets: [],
+        finePerDay: envConfig.finePerDay,
+      };
+    }
   }
 
   async testEmail(config: {
@@ -108,6 +220,8 @@ export class ConfigService {
   }
 }
 
+export const configService = new ConfigService();
+
 export interface SystemConfigEntry {
   id: string;
   category: string;
@@ -126,3 +240,4 @@ class NotFoundError extends Error {
     this.name = 'NotFoundError';
   }
 }
+

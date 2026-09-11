@@ -14,6 +14,27 @@ describe('BorrowRepository', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (AppDataSource as any).createQueryRunner = jest.fn().mockReturnValue({
+      connect: jest.fn().mockResolvedValue(undefined),
+      startTransaction: jest.fn().mockResolvedValue(undefined),
+      commitTransaction: jest.fn().mockResolvedValue(undefined),
+      rollbackTransaction: jest.fn().mockResolvedValue(undefined),
+      release: jest.fn().mockResolvedValue(undefined),
+      manager: {
+        find: jest.fn().mockResolvedValue([]),
+        save: jest.fn().mockImplementation((e: any) => Promise.resolve(e)),
+        create: jest.fn().mockImplementation((_entity: any, data: any) => data),
+        getRepository: jest.fn().mockReturnValue({
+          createQueryBuilder: jest.fn().mockReturnValue({
+            setLock: jest.fn().mockReturnThis(),
+            whereInIds: jest.fn().mockReturnThis(),
+            getMany: jest.fn().mockResolvedValue([]),
+          }),
+          save: jest.fn().mockImplementation((e: any) => Promise.resolve(e)),
+          create: jest.fn().mockImplementation((data: any) => data),
+        }),
+      },
+    });
     repo = new BorrowRepository();
   });
 
