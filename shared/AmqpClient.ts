@@ -244,4 +244,43 @@ export class AmqpClient {
       { noAck: false }
     );
   }
+
+  async subscribeTopic(
+    exchangeName: string,
+    routingKey: string,
+    queueName: string,
+    onMessage: (payload: any, routingKey: string) => Promise<void> | void
+  ): Promise<void> {
+    if (!this.channel) await this.connect();
+    if (!this.channel) throw new Error('No AMQP channel available');
+
+    const ch = this.channel;
+    await ch.assertExchange(exchangeName, 'topic', { durable: true });
+    await ch.assertQueue(queueName, { durable: true });
+    await ch.bindQueue(queueName, exchangeName, routingKey);
+
+    await ch.consume(
+      queueName,
+      async (msg: ConsumeMessage | null) => {
+        if (!msg) return;
+        try {
+          const content = msg.content.toString();
+          let parsed: any;
+          try {
+            parsed = JSON.parse(content);
+          } catch {
+            parsed = { raw: content };
+          }
+          await onMessage(parsed, msg.fields.routingKey);
+          ch.ack(msg);
+        } catch (err: any) {
+          console.error(`[AMQP] Error processing topic message on ${queueName}:`, err.message);
+          ch.nack(msg, false, false);
+        }
+      },
+      { noAck: false }
+    );
+    console.log(`[AMQP] Subscribed to topic exchange ${exchangeName} (key: ${routingKey}, queue: ${queueName})`);
+  }
 }
+

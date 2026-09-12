@@ -119,6 +119,26 @@ export async function startAmqpSubscriber(): Promise<void> {
       }
     );
 
+    // Subscribe topic exchange hazard_exchange for Fire & Smoke hazard events
+    try {
+      await amqpClient.subscribeTopic(
+        'hazard_exchange',
+        'hazard.#',
+        'notification_hazard_queue',
+        async (payload, routingKey) => {
+          console.log(`[AMQP] Received fire hazard event on [${routingKey}]:`, payload?.camera_id, payload?.location);
+          try {
+            await notificationHub.broadcastHazard(payload);
+          } catch (hazardErr: any) {
+            console.error('[AMQP] Failed to broadcast hazard event:', hazardErr.message);
+          }
+        }
+      );
+      console.log('[AMQP] Subscribed to hazard_exchange for fire/smoke alerts');
+    } catch (hazardSubErr: any) {
+      console.error('[AMQP] Could not subscribe to hazard_exchange:', hazardSubErr.message);
+    }
+
     console.log('[AMQP] Notification-service subscriber initialized');
   } catch (err: any) {
     console.error('[AMQP] Failed to start notification-service subscribers:', err.message);

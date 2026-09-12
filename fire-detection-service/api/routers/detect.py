@@ -60,7 +60,7 @@ async def detect_fire_in_image(
         _, buffer = cv2.imencode(".jpg", annotated_bgr)
         annotated_base64 = base64.b64encode(buffer).decode("utf-8")
 
-    # Lưu vĩnh viễn vào nhật ký sự cố nếu phát hiện lửa/khói với độ tin cậy >= 60%
+    # Lưu vĩnh viễn vào nhật ký sự cố và phát thông báo khẩn nếu phát hiện lửa/khói với độ tin cậy >= 60%
     incident_record = None
     if fire_count > 0 or smoke_count > 0:
         max_conf = max([b.get("confidence", 0.9) for b in confirmed_boxes], default=0.92)
@@ -75,6 +75,20 @@ async def detect_fire_in_image(
             boxes=confirmed_boxes,
             thumbnail_base64=f"data:image/jpeg;base64,{annotated_base64}" if annotated_base64 else None
         )
+
+        # Gửi sự kiện báo cháy tức thời lên RabbitMQ để thông báo cho toàn hệ thống
+        hazard_payload = {
+            "camera_id": camera_id,
+            "location": location,
+            "timestamp": time.time(),
+            "hazard_type": hazard_type,
+            "confidence": float(max_conf),
+            "fire_count": fire_count,
+            "smoke_count": smoke_count,
+            "confirmed_boxes": confirmed_boxes,
+            "thumbnail_base64": f"data:image/jpeg;base64,{annotated_base64}" if annotated_base64 else None
+        }
+        hazard_publisher.publish_fire_hazard(hazard_payload)
 
     return {
         "success": True,
