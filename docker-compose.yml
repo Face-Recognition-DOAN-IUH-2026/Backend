@@ -516,6 +516,7 @@ services:
       - USE_LOCAL_YOLO=true
       - YOLO_MODEL_PATH=models/fire_smoke_yolov8n.pt
       - DEVICE=cpu
+      - YOLO_CONF_THRESHOLD=0.60
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672
       - RABBITMQ_USER=${RABBITMQ_USER:-guest}
@@ -530,6 +531,10 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+    volumes:
+      - ./fire-detection-service/api:/app/api
+      - ./fire-detection-service/core:/app/core
+      - ./fire-detection-service/data:/app/data
     networks:
       - face-network
     healthcheck:

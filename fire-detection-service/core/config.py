@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # Local YOLOv8 Fire & Smoke Model
     USE_LOCAL_YOLO: bool = os.getenv("USE_LOCAL_YOLO", "true").lower() in ("true", "1", "yes")
     YOLO_MODEL_PATH: str = os.getenv("YOLO_MODEL_PATH", "models/fire_smoke_yolov8n.pt")
-    YOLO_CONF_THRESHOLD: float = float(os.getenv("YOLO_CONF_THRESHOLD", "0.25"))
+    YOLO_CONF_THRESHOLD: float = float(os.getenv("YOLO_CONF_THRESHOLD", "0.60"))
 
     # Remote Inference Server (Google Colab / vLLM / FastAPI Server qua Ngrok)
     REMOTE_SERVER_URL: Optional[str] = os.getenv("REMOTE_SERVER_URL", None)
