@@ -115,6 +115,39 @@ export class NotificationHub {
     const signature = config.serviceJwtSecret ? signPayload(body, config.serviceJwtSecret) : '';
     await amqpClient.publishFanout(EXCHANGE, { ...body, signature });
   }
+
+  async broadcastHazard(hazardData: any) {
+    const payload = JSON.stringify({
+      event: 'hazard_alert',
+      type: 'hazard_fire',
+      data: hazardData,
+      timestamp: new Date().toISOString(),
+    });
+
+    // 1. Broadcast tới tất cả WebSocket clients đang kết nối
+    for (const [userId, wsSet] of this.wsClients.entries()) {
+      for (const ws of wsSet) {
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(payload);
+          } catch {}
+        }
+      }
+    }
+
+    // 2. Broadcast tới tất cả SSE clients đang kết nối
+    for (const [userId, sseSet] of this.sseClients.entries()) {
+      for (const client of sseSet) {
+        try {
+          client.write(`event: hazard_alert\n`);
+          client.write(`data: ${payload}\n\n`);
+        } catch {}
+      }
+    }
+
+    // 3. Gửi Push Notification tới toàn bộ thiết bị điện thoại qua Expo Push Service
+    await pushNotificationService.sendHazardBroadcast(hazardData);
+  }
 }
 
 export const notificationHub = new NotificationHub();
