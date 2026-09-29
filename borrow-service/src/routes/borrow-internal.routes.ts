@@ -1119,40 +1119,15 @@ router.patch('/waitlist/batch-notify', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/waitlist/expired', async (req: Request, res: Response) => {
-  try {
-    const hours = parseInt(req.query.hours as string) || 24;
-    const entries = await new WaitlistRepository().getExpiredNotifications(hours);
-    res.json(entries.map(e => ({
-      id: e.id,
-      book_id: e.bookId,
-      patron_id: e.patronId,
-      status: e.status,
-      notified_at: e.notifiedAt,
-      created_at: e.createdAt,
-    })));
-  } catch (error) {
-    console.error('Error fetching expired waitlist:', error);
-    res.status(500).json({ detail: 'Internal server error' });
-  }
+router.get('/waitlist/expired', async (_req: Request, res: Response) => {
+  // Deprecated: FIFO waitlist reservation hold replaced by availability alert broadcasts (no expired holds)
+  res.json([]);
 });
 
 router.post('/waitlist/advance/:id', async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const repo = new WaitlistRepository();
-    const entry = await repo.getWaitlistById(id);
-    if (!entry) {
-      res.status(404).json({ detail: 'Waitlist entry not found' });
-      return;
-    }
-    await repo.markExpired(id);
-    const next = await repo.getNextInQueue(entry.bookId);
-    res.json({ expired: id, next: next ? { id: next.id, patron_id: next.patronId, book_id: next.bookId } : null });
-  } catch (error) {
-    console.error('Error advancing waitlist:', error);
-    res.status(500).json({ detail: 'Internal server error' });
-  }
+  // Deprecated: FIFO waitlist advancement replaced by availability alert broadcasts
+  const { id } = req.params;
+  res.json({ expired: id, next: null });
 });
 
 export default router;

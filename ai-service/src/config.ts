@@ -1,9 +1,16 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+function requireServiceSecret(secret: string | undefined, nodeEnv: string): string {
+  if (nodeEnv === 'production' && (!secret || secret.length < 16)) {
+    throw new Error('[Config] SERVICE_JWT_SECRET must be set and at least 16 characters in production');
+  }
+  return secret || '';
+}
+
 // Validate required secrets at startup
 const jwtSecret = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET;
-const serviceJwtSecret = process.env.SERVICE_JWT_SECRET || '';
+const serviceJwtSecret = requireServiceSecret(process.env.SERVICE_JWT_SECRET, process.env.NODE_ENV || 'development');
 
 if (!jwtSecret) {
   throw new Error('[Config] JWT_SECRET or JWT_ACCESS_SECRET must be set');

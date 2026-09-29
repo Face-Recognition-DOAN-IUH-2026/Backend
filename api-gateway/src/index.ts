@@ -371,19 +371,6 @@ app.use('/api/automation', createProxyMiddleware({
   pathRewrite: stripApiPrefixFromOriginalPath,  // /api/automation → /automation
 }));
 
-// ---- FIRE-DETECTION-SERVICE ----
-app.use('/api/v1/detect', createProxyMiddleware({
-  target: config.services.fireDetectionService,
-  changeOrigin: true,
-  pathRewrite: preserveOriginalPath,
-}));
-
-app.use('/api/fire/health', createProxyMiddleware({
-  target: config.services.fireDetectionService,
-  changeOrigin: true,
-  pathRewrite: () => '/health',
-}));
-
 // Users admin routes (list/delete patrons with face status)
 // Specific routes first, then catch-all
 app.use('/api/users/me', createProxyMiddleware({
