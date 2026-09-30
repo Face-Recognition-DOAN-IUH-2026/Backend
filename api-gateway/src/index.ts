@@ -216,6 +216,19 @@ app.use('/users/me', createProxyMiddleware({
   pathRewrite: preserveOriginalPath,
 }));
 
+// Permissions routes: /api/permissions and /permissions → user-service
+app.use('/api/permissions', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath, // /api/permissions/* → /permissions/*
+}));
+
+app.use('/permissions', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: preserveOriginalPath,
+}));
+
 // ---- BORROW-SERVICE ----
 app.use('/api/borrow', createProxyMiddleware({
   target: config.services.borrowService,
