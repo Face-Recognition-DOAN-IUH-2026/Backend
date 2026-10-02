@@ -35,19 +35,20 @@ async def _sse_bridge_loop(loop: asyncio.AbstractEventLoop) -> None:
             async for message in qi:
                 if not _running:
                     break
-                try:
-                    data = json.loads(message.body.decode())
-                    logger.info("[AMQP SSE] Received event: %s", data.get("status", "unknown"))
-                    future = asyncio.run_coroutine_threadsafe(
-                        sse_manager.broadcast("camera_event", data), loop
-                    )
-                    future.add_done_callback(
-                        lambda f: logger.info("SSE broadcast completed")
-                        if not f.exception()
-                        else logger.error("SSE broadcast failed: %s", f.exception())
-                    )
-                except Exception as e:
-                    logger.warning("[AMQP SSE] Parse error: %s", e)
+                async with message.process(requeue=False):
+                    try:
+                        data = json.loads(message.body.decode())
+                        logger.info("[AMQP SSE] Received event: %s", data.get("status", "unknown"))
+                        future = asyncio.run_coroutine_threadsafe(
+                            sse_manager.broadcast("camera_event", data), loop
+                        )
+                        future.add_done_callback(
+                            lambda f: logger.info("SSE broadcast completed")
+                            if not f.exception()
+                            else logger.error("SSE broadcast failed: %s", f.exception())
+                        )
+                    except Exception as e:
+                        logger.warning("[AMQP SSE] Parse error: %s", e)
     except Exception as e:
         logger.warning("[AMQP SSE] Connection error: %s", e)
 
@@ -67,15 +68,16 @@ async def _user_event_loop() -> None:
             async for message in qi:
                 if not _running:
                     break
-                try:
-                    data = json.loads(message.body.decode())
-                    if data.get("event") == "USER_DELETED":
-                        user_id = data.get("user_id")
-                        logger.info("[AMQP User] USER_DELETED for %s, queuing face cleanup", user_id)
-                        from worker.tasks import delete_user_task
-                        delete_user_task.delay(user_id=user_id)
-                except Exception as e:
-                    logger.warning("[AMQP User] Handler error: %s", e)
+                async with message.process(requeue=False):
+                    try:
+                        data = json.loads(message.body.decode())
+                        if data.get("event") == "USER_DELETED":
+                            user_id = data.get("user_id")
+                            logger.info("[AMQP User] USER_DELETED for %s, queuing face cleanup", user_id)
+                            from worker.tasks import delete_user_task
+                            delete_user_task.delay(user_id=user_id)
+                    except Exception as e:
+                        logger.warning("[AMQP User] Handler error: %s", e)
     except Exception as e:
         logger.warning("[AMQP User] Connection error: %s", e)
 

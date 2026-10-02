@@ -44,6 +44,7 @@ def _camera_callback_factory():
                         depth,
                         settings.camera_max_queue_depth,
                     )
+                    r.decr(queue_key)
                     return
             finally:
                 r.close()
@@ -80,7 +81,7 @@ async def lifespan(app: FastAPI):
                 if entry:
                     stream_service.register_camera(settings.entry_cam_id, entry)
                     stream_service.set_callback(settings.entry_cam_id, cb)
-                if exit_:
+                if exit_ and exit_ != entry:
                     stream_service.register_camera(settings.exit_cam_id, exit_)
                     stream_service.set_callback(settings.exit_cam_id, cb)
                 stream_service.start_all()

@@ -176,15 +176,6 @@ export class SlipService {
     if (activeCount + bookIds.length > limits.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${limits.maxBorrowBooks} cuon)`);
     if (bookIds.length > limits.maxBorrowBooksPerSlip) throw new HttpError(409, `Moi phieu muon toi da ${limits.maxBorrowBooksPerSlip} cuon`);
 
-    const copiesToUpdate = copyIds.filter(id => id).map(id => copiesMap.get(id!)).filter(Boolean) as BookCopy[];
-    for (const copy of copiesToUpdate) {
-      copy.isAvailable = false;
-      copy.updatedAt = new Date();
-    }
-    if (copiesToUpdate.length > 0) {
-      await this.repo.copies.save(copiesToUpdate);
-    }
-
     const { slip, records } = await this.repo.createSlip(patronId, bookIds, copyIds, shelfLocations, userId, userEmail, note);
 
     const recordBookIds = records.map(r => r.bookId);

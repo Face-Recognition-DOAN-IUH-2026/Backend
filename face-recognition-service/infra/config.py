@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     min_face_size: int = 80
     frame_process_interval: float = 1.0
     direction_grace_seconds: int = 120
+    strict_direction: bool = False
     camera_max_queue_depth: int = 50
 
     user_service_url: str = "http://user-service:3001"

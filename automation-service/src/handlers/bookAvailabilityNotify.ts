@@ -22,12 +22,17 @@ export async function bookAvailabilityNotify(
       return { notified: 0, message: 'No patrons waiting for this book' };
     }
 
+    const availableCopies = event?.payload?.availableCopies;
+    const qtyText = typeof availableCopies === 'number' && availableCopies > 0
+      ? ` (hiện còn ${availableCopies} cuốn sẵn sàng)`
+      : '';
+
     const notifications = waitlist.map((entry: any) => ({
       userId: entry.patron_id || entry.patronId,
       type: 'book_available',
       title: 'Sách đã có sẵn',
-      body: `Cuốn "${bookTitle || 'Sách'}" đã được trả. Bạn có thể mượn ngay bây giờ theo nguyên tắc đến trước phục vụ trước!`,
-      data: { bookId, title: bookTitle },
+      body: `Cuốn "${bookTitle || 'Sách'}" đã có sẵn tại thư viện${qtyText}. Bạn có thể đến mượn ngay theo nguyên tắc đến trước phục vụ trước!`,
+      data: { bookId, title: bookTitle, availableCopies },
     }));
 
     if (waitlist.length === 1) {

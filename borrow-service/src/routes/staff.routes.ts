@@ -229,15 +229,6 @@ router.post('/slip/confirm', requireDynamicPermission('borrows', 'create'), asyn
     if (activeCount + bookIds.length > limits.maxBorrowBooks) throw new HttpError(409, `Qua gioi han muon sach (toi da ${limits.maxBorrowBooks} cuon)`);
     if (bookIds.length > limits.maxBorrowBooksPerSlip) throw new HttpError(409, `Moi phieu muon toi da ${limits.maxBorrowBooksPerSlip} cuon`);
 
-    const copiesToUpdate = copyIds.filter(id => id).map(id => copiesMap.get(id!)).filter(Boolean) as BookCopy[];
-    for (const copy of copiesToUpdate) {
-      copy.isAvailable = false;
-      copy.updatedAt = new Date();
-    }
-    if (copiesToUpdate.length > 0) {
-      await repo.copies.save(copiesToUpdate);
-    }
-
     const { slip, records } = await repo.createSlip(body.patron_id, bookIds, copyIds, shelfLocations, req.user?.id, req.user?.email, body.note);
 
     const recordBookIds = records.map(r => r.bookId);

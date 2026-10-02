@@ -45,6 +45,7 @@ export class ReturnService {
 
     await this.repo.returnBook(record, userId, userEmail, 'staff_web', note);
     await this.repo.setCopyAvailable(copy, true);
+    const availableCopies = await this.repo.countCopies(record.bookId, true);
 
     publishEvent('book.returned', {
       bookId: record.bookId,
@@ -52,6 +53,7 @@ export class ReturnService {
       patronId: record.patronId,
       barcode: copy.barcode,
       fineAmount: record.fineAmount || 0,
+      availableCopies,
     });
 
     return serializeBorrowRecord(record);
@@ -76,6 +78,7 @@ export class ReturnService {
 
     await this.repo.returnBook(record, userId, userEmail, 'staff_mobile', note);
     if (copy) await this.repo.setCopyAvailable(copy, true);
+    const availableCopies = await this.repo.countCopies(book.id, true);
 
     publishEvent('book.returned', {
       bookId: book.id,
@@ -83,6 +86,7 @@ export class ReturnService {
       patronId: patron.id,
       barcode: copy?.barcode,
       fineAmount: record.fineAmount || 0,
+      availableCopies,
     });
 
     return serializeBorrowRecord(record);
@@ -115,6 +119,7 @@ export class ReturnService {
         const copy = legacyCopy || (record.copyId ? await this.repo.getCopyById(record.copyId) : null);
         await this.repo.returnBook(record, userId, userEmail, 'staff_mobile', item.note || null);
         if (copy) await this.repo.setCopyAvailable(copy, true);
+        const batchAvailableCopies = await this.repo.countCopies(book.id, true);
 
         publishEvent('book.returned', {
           bookId: book.id,
@@ -122,6 +127,7 @@ export class ReturnService {
           patronId: patron.id,
           barcode: copy?.barcode,
           fineAmount: record.fineAmount || 0,
+          availableCopies: batchAvailableCopies,
         });
 
         results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'success', message: 'Trả sách thành công' });
