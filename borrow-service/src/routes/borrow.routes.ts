@@ -86,9 +86,9 @@ router.post('/', requireRole(['patron', 'admin', 'staff'], 'Chi nguoi dung hop l
     const accessStatus = await getPatronAccessStatus(userId);
     if (!accessStatus.inside) {
       if (accessStatus.isExpired) {
-        throw new HttpError(403, `Phiên làm việc đã hết hạn (${config.maxEntryHours}h). Vui lòng vào lại qua cổng.de muon sach.`);
+        throw new HttpError(403, `Phiên làm việc tại thư viện đã hết hạn (${config.maxEntryHours}h). Vui lòng quét thẻ hoặc khuôn mặt tại cổng vào để tiếp tục mượn sách.`, 'PATRON_ACCESS_EXPIRED');
       }
-      throw new HttpError(403, 'Ban phai co mat trong thu vien de muon sach. Vui long quet the tai cua vao.');
+      throw new HttpError(403, 'Bạn phải có mặt trong thư viện để mượn sách. Vui lòng quét khuôn mặt hoặc thẻ tại cổng vào để xác nhận hiện diện.', 'PATRON_NOT_INSIDE');
     }
     const repo = new BorrowRepository();
     const barcode = body.barcode.trim();

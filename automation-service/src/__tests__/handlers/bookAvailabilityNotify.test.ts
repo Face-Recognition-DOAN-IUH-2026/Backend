@@ -39,7 +39,7 @@ describe('bookAvailabilityNotify', () => {
     expect(result.message).toBe('No patrons waiting for this book');
   });
 
-  it('notifies only the first patron in FIFO order', async () => {
+  it('broadcasts notifications to all subscribed patrons', async () => {
     const waitlist = [
       { id: 'wl-1', patron_id: 'p1', book_id: 'b1', status: 'waiting', created_at: '2025-01-01' },
       { id: 'wl-2', patron_id: 'p2', book_id: 'b1', status: 'waiting', created_at: '2025-01-02' },
@@ -48,17 +48,21 @@ describe('bookAvailabilityNotify', () => {
 
     mockBorrowClient.getWaitlistByBook = jest.fn().mockResolvedValue(waitlist);
     mockBorrowClient.batchNotifyWaitlist = jest.fn().mockResolvedValue({});
+    mockNotificationClient.createBulkNotifications = jest.fn().mockResolvedValue({ success: true });
 
     const result = await bookAvailabilityNotify({}, { type: 'book.returned', payload: { bookId: 'b1', title: 'Test Book' } } as any);
 
-    expect(result.notified).toBe(1);
-    expect(result.patronId).toBe('p1');
-    expect(mockNotificationClient.createNotification).toHaveBeenCalledTimes(1);
-    expect(mockNotificationClient.createNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'p1', type: 'book_available' })
+    expect(result.notified).toBe(3);
+    expect(result.patronCount).toBe(3);
+    expect(mockNotificationClient.createBulkNotifications).toHaveBeenCalledTimes(1);
+    expect(mockNotificationClient.createBulkNotifications).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ userId: 'p1', type: 'book_available' }),
+        expect.objectContaining({ userId: 'p2', type: 'book_available' }),
+        expect.objectContaining({ userId: 'p3', type: 'book_available' }),
+      ])
     );
-    expect(mockNotificationClient.createBulkNotifications).not.toHaveBeenCalled();
-    expect(mockBorrowClient.batchNotifyWaitlist).toHaveBeenCalledWith(['wl-1']);
+    expect(mockBorrowClient.batchNotifyWaitlist).toHaveBeenCalledWith(['wl-1', 'wl-2', 'wl-3']);
   });
 
   it('handles patron_id field in camelCase', async () => {

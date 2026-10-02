@@ -1,8 +1,8 @@
-import { createAuth } from '../../shared/auth';
+import { createAuth, requireDynamicPermission } from '../../shared/auth';
 import type { AuthRequest } from '../../shared/auth/types';
 import { config } from '../config';
 
-export { AuthRequest };
+export { AuthRequest, requireDynamicPermission };
 
 export const auth = createAuth({
   jwtSecret: config.jwtSecret,

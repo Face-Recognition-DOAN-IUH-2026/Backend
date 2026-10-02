@@ -93,7 +93,7 @@ export class ConfigService {
     // Invalidate local in-memory cache immediately so next calls get latest DB values
     invalidateConfigCache();
 
-    // Broadcast config update event over AMQP for other services (e.g. notification-service)
+    // Broadcast config update event over AMQP for other services (e.g. notification-service, automation-service)
     try {
       await publishEvent('config.updated', {
         category,
@@ -101,8 +101,15 @@ export class ConfigService {
         updatedBy,
         timestamp: new Date().toISOString(),
       });
+      await publishEvent('system.config.updated', {
+        category,
+        keys: Object.keys(values),
+        values,
+        updatedBy,
+        timestamp: new Date().toISOString(),
+      });
     } catch (err: any) {
-      console.warn('[ConfigService] Failed to broadcast config.updated event:', err.message);
+      console.warn('[ConfigService] Failed to broadcast config update event:', err.message);
     }
 
     return configs.map((c) => ({

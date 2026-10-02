@@ -448,7 +448,6 @@ services:
       AI_SERVICE: http://ai-service:3004
       NOTIFICATION_SERVICE: http://notification-service:3006
       AUTOMATION_SERVICE: http://automation-service:3007
-      FIRE_DETECTION_SERVICE: http://fire-detection-service:8008
     depends_on:
       - face-recognition-api
       - user-service
@@ -459,7 +458,6 @@ services:
       - notification-service
       - automation-service
       - chromadb
-      - fire-detection-service
     networks:
       - face-network
     restart: unless-stopped
@@ -502,48 +500,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-
-  fire-detection-service:
-    build:
-      context: fire-detection-service
-      dockerfile: Dockerfile
-    container_name: fire-detection-service
-    restart: unless-stopped
-    env_file:
-      - ./.env
-    environment:
-      - PORT=8008
-      - USE_LOCAL_YOLO=true
-      - YOLO_MODEL_PATH=models/fire_smoke_yolov8n.pt
-      - DEVICE=cpu
-      - YOLO_CONF_THRESHOLD=0.60
-      - RABBITMQ_HOST=rabbitmq
-      - RABBITMQ_PORT=5672
-      - RABBITMQ_USER=${RABBITMQ_USER:-guest}
-      - RABBITMQ_PASS=${RABBITMQ_PASS:-guest}
-      - HAZARD_EXCHANGE=hazard_exchange
-      - FIRE_ROUTING_KEY=hazard.fire.detected
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '1.0'
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    volumes:
-      - ./fire-detection-service/api:/app/api
-      - ./fire-detection-service/core:/app/core
-      - ./fire-detection-service/data:/app/data
-    networks:
-      - face-network
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8008/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
 volumes:
   pgdata:
   miniodata:

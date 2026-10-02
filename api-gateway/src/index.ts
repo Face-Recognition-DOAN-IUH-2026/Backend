@@ -216,6 +216,19 @@ app.use('/users/me', createProxyMiddleware({
   pathRewrite: preserveOriginalPath,
 }));
 
+// Permissions routes: /api/permissions and /permissions → user-service
+app.use('/api/permissions', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath, // /api/permissions/* → /permissions/*
+}));
+
+app.use('/permissions', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: preserveOriginalPath,
+}));
+
 // ---- BORROW-SERVICE ----
 app.use('/api/borrow', createProxyMiddleware({
   target: config.services.borrowService,
@@ -369,19 +382,6 @@ app.use('/api/automation', createProxyMiddleware({
   target: config.services.automationService,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,  // /api/automation → /automation
-}));
-
-// ---- FIRE-DETECTION-SERVICE ----
-app.use('/api/v1/detect', createProxyMiddleware({
-  target: config.services.fireDetectionService,
-  changeOrigin: true,
-  pathRewrite: preserveOriginalPath,
-}));
-
-app.use('/api/fire/health', createProxyMiddleware({
-  target: config.services.fireDetectionService,
-  changeOrigin: true,
-  pathRewrite: () => '/health',
 }));
 
 // Users admin routes (list/delete patrons with face status)

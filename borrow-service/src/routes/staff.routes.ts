@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { In } from 'typeorm';
 import { AppDataSource } from '../data-source';
-import { auth, AuthRequest, requireRole } from '../middlewares/auth';
+import { auth, AuthRequest, requireRole, requireDynamicPermission } from '../middlewares/auth';
 import { HttpError } from '../middlewares/errorHandler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { isPatronInside, getPatronAccessStatus, getPatronRawAccessStatus } from '../clients/AccessServiceClient';
@@ -159,7 +159,7 @@ router.post('/slip/lookup', requireRole(['admin', 'staff'], 'Chi quan tri vien h
 });
 
 // POST /staff/slip/confirm
-router.post('/slip/confirm', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
+router.post('/slip/confirm', requireDynamicPermission('borrows', 'create'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
       patron_id: z.string().min(1),
@@ -277,7 +277,7 @@ router.post('/slip/confirm', requireRole(['admin', 'staff'], 'Chi quan tri vien 
 });
 
 // POST /staff/slip/create
-router.post('/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
+router.post('/slip/create', requireDynamicPermission('borrows', 'create'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
       patron_id: z.string().min(1),
@@ -396,7 +396,7 @@ router.post('/slip/create', requireRole(['admin', 'staff'], 'Chi quan tri vien h
 });
 
 // POST /staff-return
-router.post('/return', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
+router.post('/return', requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ barcode: z.string().min(1), note: z.string().nullable().optional() }).parse(req.body);
     const repo = new BorrowRepository();
@@ -422,7 +422,7 @@ router.post('/return', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac n
 });
 
 // POST /staff-return/by-patron
-router.post('/return/by-patron', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
+router.post('/return/by-patron', requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ student_code: z.string().min(1), barcode_or_isbn: z.string().min(1), note: z.string().nullable().optional() }).parse(req.body);
     const patron = patronSummary(await lookupPatronByStudentCode(body.student_code));
@@ -456,7 +456,7 @@ router.post('/return/by-patron', requireRole(['admin', 'staff'], 'Chi quan tri v
 });
 
 // POST /staff-return/batch
-router.post('/return/batch', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
+router.post('/return/batch', requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
       student_code: z.string().min(1),
@@ -518,7 +518,7 @@ router.post('/return/batch', requireRole(['admin', 'staff'], 'Chi quan tri vien 
 });
 
 // POST /staff-return/record/:record_id
-router.post('/return/record/:record_id', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra sach'), async (req: AuthRequest, res, next) => {
+router.post('/return/record/:record_id', requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ note: z.string().nullable().optional() }).parse(req.body);
     const repo = new BorrowRepository();

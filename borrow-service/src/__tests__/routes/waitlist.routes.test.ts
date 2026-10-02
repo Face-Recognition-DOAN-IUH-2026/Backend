@@ -1,6 +1,6 @@
 import express, { Express } from 'express';
 import request from 'supertest';
-import borrowRoutes from '../../routes/borrow.routes';
+import waitlistRoutes from '../../routes/waitlist.routes';
 import { HttpError } from '../../middlewares/errorHandler';
 
 jest.mock('../../middlewares/auth', () => {
@@ -44,7 +44,13 @@ const mockWaitlistRepo = {
 };
 
 jest.mock('../../repositories/WaitlistRepository', () => ({
-  WaitlistRepository: jest.fn().mockImplementation(() => mockWaitlistRepo),
+  WaitlistRepository: class {
+    joinWaitlist(...args: any[]) { return (mockWaitlistRepo.joinWaitlist as any)(...args); }
+    cancelWaitlist(...args: any[]) { return (mockWaitlistRepo.cancelWaitlist as any)(...args); }
+    getWaitlistByBook(...args: any[]) { return (mockWaitlistRepo.getWaitlistByBook as any)(...args); }
+    markNotified(...args: any[]) { return (mockWaitlistRepo.markNotified as any)(...args); }
+    getWaitlistById(...args: any[]) { return (mockWaitlistRepo.getWaitlistById as any)(...args); }
+  },
 }));
 
 const mockBorrowRepo = {
@@ -122,7 +128,7 @@ describe('Waitlist Routes', () => {
   beforeAll(() => {
     app = express();
     app.use(express.json());
-    app.use('/borrow', borrowRoutes);
+    app.use('/borrow/waitlist', waitlistRoutes);
     app.use((err: any, _req: any, res: any, _next: any) => {
       if (err instanceof HttpError || err.statusCode) {
         return res.status(err.statusCode || 500).json({ detail: err.message });

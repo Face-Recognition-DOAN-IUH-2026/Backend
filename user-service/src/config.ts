@@ -1,6 +1,13 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+function requireServiceSecret(secret: string | undefined, nodeEnv: string): string {
+  if (nodeEnv === 'production' && (!secret || secret.length < 16)) {
+    throw new Error('[Config] SERVICE_JWT_SECRET must be set and at least 16 characters in production');
+  }
+  return secret || '';
+}
+
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -19,7 +26,7 @@ export const config = {
   },
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || [],
   redisUrl: process.env.REDIS_URL || 'redis://redis:6379/0',
-  serviceJwtSecret: process.env.SERVICE_JWT_SECRET || '',
+  serviceJwtSecret: requireServiceSecret(process.env.SERVICE_JWT_SECRET, process.env.NODE_ENV || 'development'),
   borrowServiceUrl: process.env.BORROW_SERVICE_URL || 'http://borrow-service:8000',
   accessServiceUrl: process.env.ACCESS_SERVICE_URL || 'http://access-service:3003',
   notificationServiceUrl: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:3006',

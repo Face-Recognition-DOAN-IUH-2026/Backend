@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import ExcelJS from 'exceljs';
 import { z } from 'zod';
-import { auth, AuthRequest, requireRole } from '../middlewares/auth';
+import { auth, AuthRequest, requireRole, requireDynamicPermission } from '../middlewares/auth';
 import { HttpError } from '../middlewares/errorHandler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
@@ -188,7 +188,7 @@ router.get('/books/:book_id', async (req, res, next) => {
 });
 
 // PUT /books/:book_id
-router.put('/books/:book_id', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the sua sach'), async (req: AuthRequest, res, next) => {
+router.put('/books/:book_id', requireDynamicPermission('books', 'update'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
       title: z.string().min(1).optional(),
@@ -231,7 +231,7 @@ router.put('/books/:book_id', requireRole(['admin', 'staff'], 'Chi quan tri vien
 });
 
 // PUT /books/:book_id/quantity
-router.put('/books/:book_id/quantity', async (req, res, next) => {
+router.put('/books/:book_id/quantity', requireDynamicPermission('books', 'update'), async (req, res, next) => {
   try {
     const { quantity } = z.object({ quantity: z.number().int() }).parse(req.body);
     const repo = new BorrowRepository();
@@ -259,7 +259,7 @@ router.put('/books/:book_id/quantity', async (req, res, next) => {
 });
 
 // POST /books/delete
-router.post('/books/delete', requireRole(['admin'], 'Chi quan tri vien moi co the xoa sach'), async (req: AuthRequest, res, next) => {
+router.post('/books/delete', requireDynamicPermission('books', 'delete'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ book_ids: z.array(z.string().uuid()) }).parse(req.body);
     if (body.book_ids.length > 50) throw new HttpError(400, 'Toi da 50 sach mot lan');
@@ -326,7 +326,7 @@ router.post('/books/import/preview', upload.single('file'), async (req, res, nex
 });
 
 // POST /books/import
-router.post('/books/import', upload.single('file'), async (req, res, next) => {
+router.post('/books/import', requireDynamicPermission('books', 'create'), upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) throw new HttpError(400, 'Chi ho tro file Excel (.xlsx, .xls)');
     const rows = await parseExcelRows(req.file.buffer);
@@ -381,7 +381,7 @@ router.post('/books/import', upload.single('file'), async (req, res, next) => {
 });
 
 // POST /books/import/filtered
-router.post('/books/import/filtered', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the nhap sach'), async (req: AuthRequest, res, next) => {
+router.post('/books/import/filtered', requireDynamicPermission('books', 'create'), async (req: AuthRequest, res, next) => {
   try {
     const { rows } = z.object({ rows: z.array(ImportFilteredRowSchema) }).parse(req.body);
     if (!rows.length) throw new HttpError(400, 'Khong co du lieu de import');
@@ -460,7 +460,7 @@ router.post('/books/import/filtered', requireRole(['admin', 'staff'], 'Chi quan 
 });
 
 // POST /isbn-import/batch
-router.post('/isbn-import/batch', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the nhap sach qua ISBN'), async (req: AuthRequest, res, next) => {
+router.post('/isbn-import/batch', requireDynamicPermission('books', 'create'), async (req: AuthRequest, res, next) => {
   try {
     const { items } = z.object({
       items: z.array(z.object({ isbn: z.string().min(1), quantity: z.number().int().min(1) })).min(1).max(50),

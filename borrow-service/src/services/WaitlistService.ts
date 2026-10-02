@@ -1,3 +1,4 @@
+import { In } from 'typeorm';
 import { AppDataSource } from '../data-source';
 import { WaitlistRepository } from '../repositories/WaitlistRepository';
 import { Waitlist } from '../entities/Waitlist';
@@ -24,7 +25,7 @@ export class WaitlistService {
   async listWaitlist(userId: string) {
     const waitlistRepo = AppDataSource.getRepository(Waitlist);
     const entries = await waitlistRepo.find({
-      where: { patronId: userId, status: 'waiting' as any },
+      where: { patronId: userId, status: In(['waiting', 'notified']) },
       relations: { book: true },
       order: { createdAt: 'ASC' },
     });

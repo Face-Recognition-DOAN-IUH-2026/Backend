@@ -1,13 +1,20 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+function requireServiceSecret(secret: string | undefined, nodeEnv: string): string {
+  if (nodeEnv === 'production' && (!secret || secret.length < 16)) {
+    throw new Error('[Config] SERVICE_JWT_SECRET must be set and at least 16 characters in production');
+  }
+  return secret || '';
+}
+
 export const config = {
   port: parseInt(process.env.PORT || '3003', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   jwtSecret: process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || '',
   jwtIssuer: process.env.JWT_ISSUER || 'face-recognition',
   jwtAudience: process.env.JWT_AUDIENCE || 'face-recognition-users',
-  serviceJwtSecret: process.env.SERVICE_JWT_SECRET || '',
+  serviceJwtSecret: requireServiceSecret(process.env.SERVICE_JWT_SECRET, process.env.NODE_ENV || 'development'),
   userServiceUrl: process.env.USER_SERVICE_URL || 'http://user-service:3001',
   db: {
     host: process.env.DB_HOST || 'localhost',

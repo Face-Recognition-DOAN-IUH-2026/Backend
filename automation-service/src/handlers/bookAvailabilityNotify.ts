@@ -22,22 +22,28 @@ export async function bookAvailabilityNotify(
       return { notified: 0, message: 'No patrons waiting for this book' };
     }
 
-    const first = waitlist[0];
-    await notificationClient.createNotification({
-      userId: first.patron_id || first.patronId,
+    const notifications = waitlist.map((entry: any) => ({
+      userId: entry.patron_id || entry.patronId,
       type: 'book_available',
       title: 'Sách đã có sẵn',
-      body: `Cuốn "${bookTitle || 'Sách'}" đã được trả. Bạn có thể mượn ngay bây giờ!`,
+      body: `Cuốn "${bookTitle || 'Sách'}" đã được trả. Bạn có thể mượn ngay bây giờ theo nguyên tắc đến trước phục vụ trước!`,
       data: { bookId, title: bookTitle },
-    });
+    }));
 
+    if (waitlist.length === 1) {
+      await notificationClient.createNotification(notifications[0]);
+    } else {
+      await notificationClient.createBulkNotifications(notifications);
+    }
+
+    const ids = waitlist.map((entry: any) => entry.id);
     try {
-      await borrowClient.batchNotifyWaitlist([first.id]);
+      await borrowClient.batchNotifyWaitlist(ids);
     } catch (err) {
       console.warn('[bookAvailabilityNotify] batch-notify failed:', (err as Error)?.message || err);
     }
 
-    return { notified: 1, patronId: first.patron_id || first.patronId };
+    return { notified: waitlist.length, patronCount: waitlist.length, bookId };
   } catch {
     return { notified: 0, message: 'Waitlist feature not available' };
   }

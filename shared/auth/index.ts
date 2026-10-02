@@ -6,3 +6,4 @@ export { SERVICE_SCOPES, getScopesForService, hasScope } from './serviceScopes';
 export { requireRole } from './requireRole';
 export { setAuthCookie, clearAuthCookie } from './cookie-helper';
 export * from './types';
+export * from './permissions';

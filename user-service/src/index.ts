@@ -4,7 +4,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { config } from './config';
 import { AppDataSource } from './data-source';
-import { authRoutes, userRoutes, patronRoutes, internalRoutes } from './routes';
+import { authRoutes, userRoutes, patronRoutes, internalRoutes, permissionRoutes } from './routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler } from './middlewares/errorHandler';
@@ -24,6 +24,7 @@ app.use('/auth', authRoutes);
 app.use('/users', userRoutes);
 app.use('/patrons', patronRoutes);
 app.use('/internal', internalRoutes);
+app.use('/permissions', permissionRoutes);
 
 if (config.nodeEnv !== 'production') {
   app.get('/api-docs/swagger.json', (_req, res) => {
