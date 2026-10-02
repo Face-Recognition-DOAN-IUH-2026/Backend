@@ -91,7 +91,7 @@ router.get('/health', asyncHandler(async (_req, res) => {
  *       200:
  *         description: Staff options retrieved
  */
-router.get('/staff-options', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
+router.get('/staff-options', requireDynamicPermission('schedules', 'read'), asyncHandler(async (req, res) => {
   const ids = typeof req.query.ids === 'string'
     ? req.query.ids.split(',').map((id) => id.trim()).filter(Boolean)
     : undefined;
@@ -110,7 +110,7 @@ router.get('/staff-options', requireRole('admin', 'staff'), asyncHandler(async (
  *       200:
  *         description: Zones retrieved
  */
-router.get('/zones', requireRole('admin', 'staff'), asyncHandler(async (_req, res) => {
+router.get('/zones', requireDynamicPermission('schedules', 'read'), asyncHandler(async (_req, res) => {
   res.json(await scheduleService.listZones());
 }));
 /**
@@ -218,7 +218,7 @@ router.delete('/zones/:id', requireDynamicPermission('schedules', 'delete'), asy
  *       200:
  *         description: Shifts retrieved
  */
-router.get('/shifts', requireRole('admin', 'staff'), asyncHandler(async (_req, res) => {
+router.get('/shifts', requireDynamicPermission('schedules', 'read'), asyncHandler(async (_req, res) => {
   res.json(await scheduleService.listShifts());
 }));
 /**
@@ -455,7 +455,7 @@ router.delete('/templates/:id', requireDynamicPermission('schedules', 'delete'),
  *       200:
  *         description: Preferences retrieved
  */
-router.get('/preferences', requireRole('admin'), asyncHandler(async (req, res) => {
+router.get('/preferences', requireDynamicPermission('schedules', 'read'), asyncHandler(async (req, res) => {
   res.json(await scheduleService.listPreferences(
     req.query.staff_id as string | undefined,
     req.query.page ? parseInt(req.query.page as string, 10) : undefined,
@@ -590,7 +590,7 @@ router.post('/generate-from-template', requireDynamicPermission('schedules', 'cr
  *       200:
  *         description: Assignments retrieved
  */
-router.get('/assignments', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
+router.get('/assignments', requireDynamicPermission('schedules', 'read'), asyncHandler(async (req, res) => {
   res.json(await scheduleService.listAssignments({
     from: req.query.from as string | undefined,
     to: req.query.to as string | undefined,
@@ -1067,7 +1067,7 @@ router.post('/auto-checkout', requireRole(['admin']), asyncHandler(async (_req, 
  *       200:
  *         description: Assignment confirmed
  */
-router.post('/assignments/:id/admin-confirm', requireRole(['admin']), asyncHandler(async (req, res) => {
+router.post('/assignments/:id/admin-confirm', requireDynamicPermission('schedules', 'approve'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.adminConfirmAssignment(req.user!.userId, id));
 }));
@@ -1108,7 +1108,7 @@ const adminAttendanceSchema = z.object({
  *       200:
  *         description: Attendance fixed
  */
-router.put('/assignments/:id/attendance', requireRole(['admin']), asyncHandler(async (req, res) => {
+router.put('/assignments/:id/attendance', requireDynamicPermission('schedules', 'update'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.adminFixAttendance(req.user!.userId, id, adminAttendanceSchema.parse(req.body)));
 }));
@@ -1123,13 +1123,13 @@ router.post('/attendance/manual-checkin', auth, asyncHandler(async (req, res) =>
   res.status(201).json(await scheduleService.requestManualCheckIn(assignmentId, req.user!.userId, note));
 }));
 
-router.put('/attendance/:id/approve-manual', requireDynamicPermission('schedules', 'update'), asyncHandler(async (req, res) => {
+router.put('/attendance/:id/approve-manual', requireDynamicPermission('schedules', 'approve'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   const checkInAt = req.body?.checkInAt ? new Date(req.body.checkInAt) : undefined;
   res.json(await scheduleService.approveManualCheckIn(req.user!.userId, id, checkInAt));
 }));
 
-router.put('/attendance/:id/reject-manual', requireDynamicPermission('schedules', 'update'), asyncHandler(async (req, res) => {
+router.put('/attendance/:id/reject-manual', requireDynamicPermission('schedules', 'approve'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   const { reason } = z.object({ reason: z.string().min(1) }).parse(req.body);
   res.json(await scheduleService.rejectManualCheckIn(req.user!.userId, id, reason));

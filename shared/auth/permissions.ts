@@ -10,7 +10,7 @@ export type SystemResource =
   | 'settings'
   | 'stats';
 
-export type CrudAction = 'create' | 'read' | 'update' | 'delete';
+export type CrudAction = 'create' | 'read' | 'update' | 'delete' | 'approve' | 'print';
 
 export const ALL_RESOURCES: SystemResource[] = [
   'books',
@@ -22,13 +22,15 @@ export const ALL_RESOURCES: SystemResource[] = [
   'stats',
 ];
 
-export const ALL_ACTIONS: CrudAction[] = ['create', 'read', 'update', 'delete'];
+export const ALL_ACTIONS: CrudAction[] = ['create', 'read', 'update', 'delete', 'approve', 'print'];
 
 export interface ResourceCrudPermission {
   create: boolean;
   read: boolean;
   update: boolean;
   delete: boolean;
+  approve?: boolean;
+  print?: boolean;
 }
 
 export interface RolePermissionConfig {
@@ -62,16 +64,31 @@ export const ALL_ROUTES = [
   { path: '/return', label: 'Trả sách' },
   { path: '/gate', label: 'Cổng ra vào' },
   { path: '/history', label: 'Lịch sử' },
+  { path: '/active', label: 'Đang hiện diện' },
   { path: '/staff-schedules', label: 'Lịch trực' },
   { path: '/ai-assistant', label: 'Trợ lý AI' },
   { path: '/enroll', label: 'Đăng ký khuôn mặt' },
+  { path: '/verify', label: 'Xác thực khuôn mặt' },
+  { path: '/identify', label: 'Nhận diện' },
+  { path: '/liveness', label: 'Kiểm tra sống' },
+  { path: '/library/vr-tour', label: 'Tham quan 3D' },
+  { path: '/profile', label: 'Hồ sơ cá nhân' },
+  { path: '/notifications', label: 'Thông báo' },
+  { path: '/dashboard/admin', label: 'Quản trị người dùng' },
   { path: '/dynamic-admin', label: 'Quản trị phân quyền' },
   { path: '/settings', label: 'Cài đặt' },
   { path: '/stats', label: 'Thống kê' },
 ];
 
 function fullCrud(enabled: boolean): ResourceCrudPermission {
-  return { create: enabled, read: enabled, update: enabled, delete: enabled };
+  return {
+    create: enabled,
+    read: enabled,
+    update: enabled,
+    delete: enabled,
+    approve: enabled,
+    print: enabled,
+  };
 }
 
 export const DEFAULT_ROLE_CONFIGS: Record<string, RolePermissionConfig> = {
@@ -102,19 +119,26 @@ export const DEFAULT_ROLE_CONFIGS: Record<string, RolePermissionConfig> = {
       '/return',
       '/gate',
       '/history',
+      '/active',
       '/staff-schedules',
       '/ai-assistant',
       '/enroll',
+      '/verify',
+      '/identify',
+      '/liveness',
+      '/library/vr-tour',
+      '/profile',
+      '/notifications',
       '/stats',
     ],
     crud: {
-      books: { create: true, read: true, update: true, delete: false },
-      patrons: { create: true, read: true, update: true, delete: false },
-      borrows: { create: true, read: true, update: true, delete: false },
-      schedules: { create: false, read: true, update: false, delete: false },
-      ai_tools: { create: true, read: true, update: true, delete: false },
+      books: { create: true, read: true, update: true, delete: false, approve: false, print: true },
+      patrons: { create: true, read: true, update: true, delete: false, approve: true, print: true },
+      borrows: { create: true, read: true, update: true, delete: false, approve: true, print: true },
+      schedules: { create: false, read: true, update: false, delete: false, approve: false, print: true },
+      ai_tools: { create: true, read: true, update: true, delete: false, approve: false, print: false },
       settings: fullCrud(false),
-      stats: { create: false, read: true, update: false, delete: false },
+      stats: { create: false, read: true, update: false, delete: false, approve: false, print: true },
     },
   },
   patron: {
@@ -123,11 +147,11 @@ export const DEFAULT_ROLE_CONFIGS: Record<string, RolePermissionConfig> = {
     description: 'Chỉ xem sách, mượn sách trực tuyến và dùng trợ lý AI',
     allowedPages: ['/dashboard', '/books', '/borrow', '/ai-assistant'],
     crud: {
-      books: { create: false, read: true, update: false, delete: false },
+      books: { create: false, read: true, update: false, delete: false, approve: false, print: false },
       patrons: fullCrud(false),
-      borrows: { create: true, read: true, update: false, delete: false },
+      borrows: { create: true, read: true, update: false, delete: false, approve: false, print: false },
       schedules: fullCrud(false),
-      ai_tools: { create: true, read: true, update: false, delete: false },
+      ai_tools: { create: true, read: true, update: false, delete: false, approve: false, print: false },
       settings: fullCrud(false),
       stats: fullCrud(false),
     },
