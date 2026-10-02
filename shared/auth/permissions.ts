@@ -199,6 +199,42 @@ export function resolveEffectivePermissions(
   };
 }
 
+let sharedRedisClient: any = null;
+
+function getSharedRedis() {
+  if (sharedRedisClient) return sharedRedisClient;
+  try {
+    const Redis = require('ioredis');
+    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+    sharedRedisClient = new Redis(redisUrl, {
+      lazyConnect: true,
+      maxRetriesPerRequest: 1,
+      retryStrategy: () => null,
+      enableOfflineQueue: false,
+    });
+    sharedRedisClient.on('error', () => {});
+    return sharedRedisClient;
+  } catch {
+    return null;
+  }
+}
+
+async function resolvePermissionsFromRedis(userId: string, role: string): Promise<EffectivePermissions | null> {
+  const client = getSharedRedis();
+  if (!client) return null;
+  try {
+    const [rawRole, rawUser] = await Promise.all([
+      client.get(`rbac:role:${role}`),
+      client.get(`rbac:user:${userId}`),
+    ]);
+    const roleConfig = rawRole ? JSON.parse(rawRole) : null;
+    const userOverride = rawUser ? JSON.parse(rawUser) : null;
+    return resolveEffectivePermissions(role, roleConfig, userOverride);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Express middleware to enforce dynamic permissions
  */
@@ -219,7 +255,18 @@ export function requireDynamicPermission(
       try {
         perms = await options.getEffectivePerms(req);
       } catch (err: any) {
-        console.warn('[PermissionMiddleware] Failed to resolve effective perms:', err.message);
+        console.warn('[PermissionMiddleware] Failed to resolve effective perms from options:', err.message);
+      }
+    }
+
+    if (!perms) {
+      const userId = req.user?.id || req.user?.userId;
+      if (userId) {
+        try {
+          perms = await resolvePermissionsFromRedis(userId, role);
+        } catch (err: any) {
+          console.warn('[PermissionMiddleware] Failed to resolve from Redis:', err.message);
+        }
       }
     }
 
@@ -240,3 +287,4 @@ export function requireDynamicPermission(
     next();
   };
 }
+

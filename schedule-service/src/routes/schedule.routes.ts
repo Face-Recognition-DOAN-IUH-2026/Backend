@@ -1,7 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { scheduleService } from '../services/ScheduleService';
-import { createAuth, requireRole } from '../../../shared/auth';
+import { createAuth, requireRole, requireDynamicPermission } from '../../../shared/auth';
 import type { AuthRequest } from '../../../shared/auth/types';
 import { config } from '../config';
 
@@ -140,7 +140,7 @@ router.get('/zones', requireRole('admin', 'staff'), asyncHandler(async (_req, re
  *       201:
  *         description: Zone created
  */
-router.post('/zones', requireRole('admin'), asyncHandler(async (req, res) => {
+router.post('/zones', requireDynamicPermission('schedules', 'create'), asyncHandler(async (req, res) => {
   const body = zoneSchema.parse(req.body);
   res.status(201).json(await scheduleService.createZone(req.user!.userId, body));
 }));
@@ -178,7 +178,7 @@ router.post('/zones', requireRole('admin'), asyncHandler(async (req, res) => {
  *       200:
  *         description: Zone updated
  */
-router.put('/zones/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+router.put('/zones/:id', requireDynamicPermission('schedules', 'update'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.updateZone(req.user!.userId, id, zoneSchema.partial().parse(req.body)));
 }));
@@ -201,7 +201,7 @@ router.put('/zones/:id', requireRole('admin'), asyncHandler(async (req, res) => 
  *       200:
  *         description: Zone deleted
  */
-router.delete('/zones/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+router.delete('/zones/:id', requireDynamicPermission('schedules', 'delete'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.deleteZone(req.user!.userId, id));
 }));
@@ -250,7 +250,7 @@ router.get('/shifts', requireRole('admin', 'staff'), asyncHandler(async (_req, r
  *       201:
  *         description: Shift created
  */
-router.post('/shifts', requireRole('admin'), asyncHandler(async (req, res) => {
+router.post('/shifts', requireDynamicPermission('schedules', 'create'), asyncHandler(async (req, res) => {
   res.status(201).json(await scheduleService.createShift(req.user!.userId, shiftSchema.parse(req.body)));
 }));
 /**
@@ -289,7 +289,7 @@ router.post('/shifts', requireRole('admin'), asyncHandler(async (req, res) => {
  *       200:
  *         description: Shift updated
  */
-router.put('/shifts/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+router.put('/shifts/:id', requireDynamicPermission('schedules', 'update'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.updateShift(req.user!.userId, id, shiftSchema.partial().parse(req.body)));
 }));
@@ -312,7 +312,7 @@ router.put('/shifts/:id', requireRole('admin'), asyncHandler(async (req, res) =>
  *       200:
  *         description: Shift deleted
  */
-router.delete('/shifts/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+router.delete('/shifts/:id', requireDynamicPermission('schedules', 'delete'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.deleteShift(req.user!.userId, id));
 }));
@@ -329,7 +329,7 @@ router.delete('/shifts/:id', requireRole('admin'), asyncHandler(async (req, res)
  *       200:
  *         description: Templates retrieved
  */
-router.get('/templates', requireRole('admin'), asyncHandler(async (_req, res) => {
+router.get('/templates', requireDynamicPermission('schedules', 'read'), asyncHandler(async (_req, res) => {
   res.json(await scheduleService.listTemplates());
 }));
 /**
@@ -366,7 +366,7 @@ router.get('/templates', requireRole('admin'), asyncHandler(async (_req, res) =>
  *       201:
  *         description: Template created
  */
-router.post('/templates', requireRole('admin'), asyncHandler(async (req, res) => {
+router.post('/templates', requireDynamicPermission('schedules', 'create'), asyncHandler(async (req, res) => {
   res.status(201).json(await scheduleService.createTemplate(req.user!.userId, templateSchema.parse(req.body)));
 }));
 /**
@@ -410,7 +410,7 @@ router.post('/templates', requireRole('admin'), asyncHandler(async (req, res) =>
  *       200:
  *         description: Template updated
  */
-router.put('/templates/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+router.put('/templates/:id', requireDynamicPermission('schedules', 'update'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.updateTemplate(req.user!.userId, id, templateSchema.partial().parse(req.body)));
 }));
@@ -433,7 +433,7 @@ router.put('/templates/:id', requireRole('admin'), asyncHandler(async (req, res)
  *       200:
  *         description: Template deleted
  */
-router.delete('/templates/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+router.delete('/templates/:id', requireDynamicPermission('schedules', 'delete'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.deleteTemplate(req.user!.userId, id));
 }));
@@ -550,7 +550,7 @@ router.delete('/preferences/:id', requireRole('admin', 'staff'), asyncHandler(as
  *       200:
  *         description: Assignments generated
  */
-router.post('/generate-from-template', requireRole('admin'), asyncHandler(async (req, res) => {
+router.post('/generate-from-template', requireDynamicPermission('schedules', 'create'), asyncHandler(async (req, res) => {
   const { from, to } = rangeSchema.parse(req.body);
   res.json(await scheduleService.generateFromTemplate(req.user!.userId, from, to));
 }));
@@ -637,11 +637,11 @@ router.get('/assignments', requireRole('admin', 'staff'), asyncHandler(async (re
  *       201:
  *         description: Assignment created
  */
-router.post('/assignments', requireRole('admin'), asyncHandler(async (req, res) => {
+router.post('/assignments', requireDynamicPermission('schedules', 'create'), asyncHandler(async (req, res) => {
   const force = req.query.force === 'true';
   res.status(201).json(await scheduleService.createAssignment(req.user!.userId, assignmentSchema.parse(req.body), force));
 }));
-router.post('/assignments/bulk', requireRole('admin'), asyncHandler(async (req, res) => {
+router.post('/assignments/bulk', requireDynamicPermission('schedules', 'create'), asyncHandler(async (req, res) => {
   const force = req.query.force === 'true';
   res.status(201).json(await scheduleService.createAssignmentsBulk(req.user!.userId, z.array(assignmentSchema).parse(req.body), force));
 }));
@@ -674,7 +674,7 @@ router.post('/assignments/bulk', requireRole('admin'), asyncHandler(async (req, 
  *       200:
  *         description: Assignments cancelled
  */
-router.delete('/assignments/week', requireRole('admin'), asyncHandler(async (req, res) => {
+router.delete('/assignments/week', requireDynamicPermission('schedules', 'delete'), asyncHandler(async (req, res) => {
   const { from, to, notify } = z.object({
     from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -725,7 +725,7 @@ router.delete('/assignments/week', requireRole('admin'), asyncHandler(async (req
  *       200:
  *         description: Assignment updated
  */
-router.put('/assignments/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+router.put('/assignments/:id', requireDynamicPermission('schedules', 'update'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   const force = req.query.force === 'true';
   res.json(await scheduleService.updateAssignment(req.user!.userId, id, assignmentPatchSchema.parse(req.body), force));
@@ -772,7 +772,7 @@ router.put('/assignments/:id', requireRole('admin'), asyncHandler(async (req, re
  *       200:
  *         description: Assignment moved
  */
-router.post('/assignments/:id/move', requireRole('admin'), asyncHandler(async (req, res) => {
+router.post('/assignments/:id/move', requireDynamicPermission('schedules', 'update'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.moveAssignment(req.user!.userId, id, assignmentPatchSchema.parse(req.body)));
 }));
@@ -795,7 +795,7 @@ router.post('/assignments/:id/move', requireRole('admin'), asyncHandler(async (r
  *       200:
  *         description: Assignment deleted
  */
-router.delete('/assignments/:id', requireRole('admin'), asyncHandler(async (req, res) => {
+router.delete('/assignments/:id', requireDynamicPermission('schedules', 'delete'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   res.json(await scheduleService.deleteAssignment(req.user!.userId, id));
 }));
@@ -938,7 +938,7 @@ router.post('/assignments/:id/check-out', auth, asyncHandler(async (req, res) =>
  *       200:
  *         description: Schedule generated
  */
-router.post('/auto-schedule', requireRole('admin'), asyncHandler(async (req, res) => {
+router.post('/auto-schedule', requireDynamicPermission('schedules', 'create'), asyncHandler(async (req, res) => {
   const { from, to } = rangeSchema.parse(req.body);
   if (from > to) {
     res.status(400).json({ error: 'Ngay bat dau phai nho hon hoac bang ngay ket thuc' });
@@ -967,7 +967,7 @@ const geofenceSchema = z.object({
  *       200:
  *         description: Geofence configs retrieved
  */
-router.get('/geofence', requireRole('admin'), asyncHandler(async (_req, res) => {
+router.get('/geofence', requireDynamicPermission('schedules', 'read'), asyncHandler(async (_req, res) => {
   res.json(await scheduleService.listGeofenceConfigs());
 }));
 /**
@@ -1005,7 +1005,7 @@ router.get('/geofence', requireRole('admin'), asyncHandler(async (_req, res) => 
  *       200:
  *         description: Geofence set
  */
-router.put('/geofence', requireRole('admin'), asyncHandler(async (req, res) => {
+router.put('/geofence', requireDynamicPermission('schedules', 'update'), asyncHandler(async (req, res) => {
   res.json(await scheduleService.setGeofence(req.user!.userId, geofenceSchema.parse(req.body)));
 }));
 /**
@@ -1027,7 +1027,7 @@ router.put('/geofence', requireRole('admin'), asyncHandler(async (req, res) => {
  *       200:
  *         description: Geofence deleted
  */
-router.delete('/geofence/:zoneId', requireRole('admin'), asyncHandler(async (req, res) => {
+router.delete('/geofence/:zoneId', requireDynamicPermission('schedules', 'delete'), asyncHandler(async (req, res) => {
   const { zoneId } = z.object({ zoneId: z.string().uuid() }).parse(req.params);
   res.json(await scheduleService.deleteGeofence(req.user!.userId, zoneId));
 }));
@@ -1123,19 +1123,19 @@ router.post('/attendance/manual-checkin', auth, asyncHandler(async (req, res) =>
   res.status(201).json(await scheduleService.requestManualCheckIn(assignmentId, req.user!.userId, note));
 }));
 
-router.put('/attendance/:id/approve-manual', requireRole(['admin']), asyncHandler(async (req, res) => {
+router.put('/attendance/:id/approve-manual', requireDynamicPermission('schedules', 'update'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   const checkInAt = req.body?.checkInAt ? new Date(req.body.checkInAt) : undefined;
   res.json(await scheduleService.approveManualCheckIn(req.user!.userId, id, checkInAt));
 }));
 
-router.put('/attendance/:id/reject-manual', requireRole(['admin']), asyncHandler(async (req, res) => {
+router.put('/attendance/:id/reject-manual', requireDynamicPermission('schedules', 'update'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
   const { reason } = z.object({ reason: z.string().min(1) }).parse(req.body);
   res.json(await scheduleService.rejectManualCheckIn(req.user!.userId, id, reason));
 }));
 
-router.get('/attendance/manual-checkin-requests', requireRole(['admin']), asyncHandler(async (req, res) => {
+router.get('/attendance/manual-checkin-requests', requireDynamicPermission('schedules', 'read'), asyncHandler(async (req, res) => {
   const status = req.query.status as string | undefined;
   res.json(await scheduleService.listManualCheckInRequests(status));
 }));
@@ -1152,7 +1152,7 @@ router.get('/attendance/manual-checkin-requests', requireRole(['admin']), asyncH
  *       200:
  *         description: Audit logs retrieved
  */
-router.get('/audit-logs', requireRole(['admin']), asyncHandler(async (req, res) => {
+router.get('/audit-logs', requireDynamicPermission('schedules', 'read'), asyncHandler(async (req, res) => {
   res.json(await scheduleService.auditLogs({
     page: req.query.page ? parseInt(req.query.page as string, 10) : undefined,
     limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined,
@@ -1166,7 +1166,7 @@ router.get('/audit-logs', requireRole(['admin']), asyncHandler(async (req, res) 
   }));
 }));
 
-router.get('/audit-logs/stats', requireRole(['admin']), asyncHandler(async (req, res) => {
+router.get('/audit-logs/stats', requireDynamicPermission('schedules', 'read'), asyncHandler(async (req, res) => {
   res.json(await scheduleService.auditStats({
     fromDate: req.query.fromDate as string | undefined,
     toDate: req.query.toDate as string | undefined,
