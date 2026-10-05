@@ -76,3 +76,22 @@ export async function lookupPatronsByIds(ids: string[]): Promise<Map<string, Pat
   const data = await res.json() as Record<string, PatronSummary>;
   return new Map(Object.entries(data));
 }
+
+export async function suspendCardAutoFine(id: string, reason: string): Promise<any> {
+  const res = await request(`/internal/patrons/${encodeURIComponent(id)}/card/suspend-auto-fine`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) throw new HttpError(503, 'Cannot suspend card via user-service');
+  return res.json();
+}
+
+export async function activateCardAutoFine(id: string): Promise<any> {
+  const res = await request(`/internal/patrons/${encodeURIComponent(id)}/card/activate-auto-fine`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) throw new HttpError(503, 'Cannot activate card via user-service');
+  return res.json();
+}

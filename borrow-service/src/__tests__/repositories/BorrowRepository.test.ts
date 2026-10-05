@@ -99,9 +99,28 @@ describe('BorrowRepository', () => {
       await repo.getCopyByBarcode('LIB-978-012-345-6789-001');
 
       expect(mockQueryBuilder.where).toHaveBeenCalledWith(
-        "REPLACE(REPLACE(copy.barcode, '-', ''), ' ', '') = :barcode",
-        { barcode: 'LIB9780123456789001' }
+        "LOWER(REPLACE(REPLACE(copy.barcode, '-', ''), ' ', '')) = :barcode",
+        { barcode: 'lib9780123456789001' }
       );
+    });
+  });
+
+  describe('getAvailableCopy', () => {
+    it('only selects copies that are available, in stock status and not lost', async () => {
+      const mockFindOne = jest.fn().mockResolvedValue(null);
+      (AppDataSource.getRepository('BookCopy').findOne as jest.Mock) = mockFindOne;
+
+      await repo.getAvailableCopy('book-id');
+
+      expect(mockFindOne).toHaveBeenCalledWith({
+        where: {
+          bookId: 'book-id',
+          isAvailable: true,
+          status: 'available',
+          condition: expect.anything(),
+        },
+        order: { createdAt: 'ASC' },
+      });
     });
   });
 

@@ -18,8 +18,22 @@ jest.mock('../../repositories/BorrowRepository', () => {
 jest.mock('../../clients/AccessServiceClient');
 jest.mock('../../clients/UserServiceClient');
 jest.mock('../../utils/eventPublisher');
-jest.mock('../../../shared', () => {
-  const actual = jest.requireActual('../../../shared');
+jest.mock('../../../../shared', () => {
+  const actual = jest.requireActual('../../../../shared');
+  return {
+    ...actual,
+    createInternalAuth: (config: any) => (req: any, res: any, next: any) => {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        next();
+        return;
+      }
+      res.status(403).json({ error: 'Missing Authorization header' });
+    },
+  };
+});
+jest.mock('../../../shared/auth', () => {
+  const actual = jest.requireActual('../../../shared/auth');
   return {
     ...actual,
     createInternalAuth: (config: any) => (req: any, res: any, next: any) => {
@@ -50,6 +64,15 @@ jest.mock('../../middlewares/auth', () => {
       }
       next();
     },
+    requireDynamicPermission: (_resource: string, _action: string) => (req: any, res: any, next: any) => {
+      const role = req.headers['x-test-role'] || 'patron';
+      req.user = req.user || { id: PATRON_UUID, email: 'patron@test.com', role };
+      if (req.headers['x-test-deny-permission']) {
+        res.status(403).json({ error: 'Permission denied' });
+        return;
+      }
+      next();
+    },
     internalAuth: (req: any, res: any, next: any) => {
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith('Bearer ')) {
@@ -69,7 +92,9 @@ function createBorrowApp(): Express {
   const app = express();
   app.use(express.json());
   const borrowRoutes = require('../../routes/borrow.routes').default;
+  const staffRoutes = require('../../routes/staff.routes').default;
   app.use('/borrow', borrowRoutes);
+  app.use('/borrow', staffRoutes);
   app.use((err: any, _req: any, res: any, _next: any) => {
     if (err instanceof HttpError) return res.status(err.statusCode).json({ error: err.message });
     res.status(500).json({ error: 'Internal server error' });

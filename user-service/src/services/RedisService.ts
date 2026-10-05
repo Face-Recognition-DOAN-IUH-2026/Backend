@@ -108,6 +108,50 @@ export class RedisService {
     await this.client.del(key);
   }
 
+  async setPasswordChangeOtp(userId: string, code: string, pendingNewHash?: string): Promise<void> {
+    const codeKey = `pwd_change_otp:${userId}`;
+    await this.client.set(codeKey, code, 'EX', 10 * 60); // 10 minutes
+    if (pendingNewHash) {
+      const hashKey = `pwd_change_hash:${userId}`;
+      await this.client.set(hashKey, pendingNewHash, 'EX', 10 * 60);
+    }
+  }
+
+  async getPasswordChangeOtp(userId: string): Promise<string | null> {
+    const key = `pwd_change_otp:${userId}`;
+    return await this.client.get(key);
+  }
+
+  async getPendingPasswordHash(userId: string): Promise<string | null> {
+    const key = `pwd_change_hash:${userId}`;
+    return await this.client.get(key);
+  }
+
+  async deletePasswordChangeOtp(userId: string): Promise<void> {
+    await this.client.del(`pwd_change_otp:${userId}`);
+    await this.client.del(`pwd_change_hash:${userId}`);
+  }
+
+  async recordFailedPasswordAttempt(userId: string): Promise<number> {
+    const key = `pwd_fail_count:${userId}`;
+    const count = await this.client.incr(key);
+    if (count === 1) {
+      await this.client.expire(key, 15 * 60); // 15 mins lock window
+    }
+    return count;
+  }
+
+  async getFailedPasswordAttempts(userId: string): Promise<number> {
+    const key = `pwd_fail_count:${userId}`;
+    const val = await this.client.get(key);
+    return val ? parseInt(val, 10) : 0;
+  }
+
+  async clearFailedPasswordAttempts(userId: string): Promise<void> {
+    const key = `pwd_fail_count:${userId}`;
+    await this.client.del(key);
+  }
+
   async cacheFaceStatus(userId: string, enrolled: boolean): Promise<void> {
     const key = `face_status:${userId}`;
     await this.client.setex(key, 3600, JSON.stringify(enrolled));

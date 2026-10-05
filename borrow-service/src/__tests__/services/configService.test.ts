@@ -216,5 +216,34 @@ describe('ConfigService', () => {
       expect(config.fineBrackets).toEqual([{ from: 1, to: 5, amount: 8000 }]);
       expect(config.finePerDay).toBe(4000);
     });
+
+    it('should parse damage fee config keys when present', async () => {
+      const repo = getMockRepo();
+      repo.find.mockResolvedValue([
+        makeConfig({ category: 'fine', configKey: 'damage_fee_pct', configValue: '{"minor":20,"major":60,"lost":95}' }),
+        makeConfig({ category: 'fine', configKey: 'damage_fee_fixed', configValue: '{"minor":3000,"major":8000,"lost":12000}' }),
+        makeConfig({ category: 'fine', configKey: 'fallback_book_price', configValue: '80000' }),
+        makeConfig({ category: 'fine', configKey: 'fine_lock_threshold_days', configValue: '45' }),
+      ]);
+
+      const config = await service.getFineConfig();
+      expect(config.damageFeePct).toEqual({ minor: 20, major: 60, lost: 95 });
+      expect(config.damageFeeFixed).toEqual({ minor: 3000, major: 8000, lost: 12000 });
+      expect(config.fallbackBookPrice).toBe(80000);
+      expect(config.fineLockThresholdDays).toBe(45);
+    });
+
+    it('should fall back to default damage config when keys are missing', async () => {
+      const repo = getMockRepo();
+      repo.find.mockResolvedValue([
+        makeConfig({ category: 'fine', configKey: 'fine_per_day', configValue: 5000 }),
+      ]);
+
+      const config = await service.getFineConfig();
+      expect(config.damageFeePct).toEqual({ minor: 30, major: 70, lost: 100 });
+      expect(config.damageFeeFixed).toEqual({ minor: 5000, major: 10000, lost: 10000 });
+      expect(config.fallbackBookPrice).toBe(100000);
+      expect(config.fineLockThresholdDays).toBe(30);
+    });
   });
 });

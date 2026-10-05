@@ -9,9 +9,11 @@ import { createInternalAuth } from '../../shared/auth';
 import { publishEvent } from '../utils/eventPublisher';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { In, IsNull } from 'typeorm';
-import { calculateOverdueFine } from '../utils/fineCalculator';
+import { finalizeReturnFees } from '../services/returnFinalizer';
+import { publishFineIncurred } from '../utils/fineEvents';
 import { configService } from '../services/ConfigService';
 import { lookupPatronByStudentCode, lookupPatronById, PatronSummary } from '../clients/UserServiceClient';
+import { DEFAULT_CONDITION, markCopyAsBorrowed } from '../constants/copy';
 
 const internalAuth = createInternalAuth({
   serviceName: 'borrow-service',
@@ -469,6 +471,18 @@ router.post('/return', async (req: Request, res: Response) => {
       return;
     }
 
+    const paymentMethodRaw = req.body?.payment_method;
+    if (paymentMethodRaw !== undefined && paymentMethodRaw !== 'cash' && paymentMethodRaw !== 'qr_code') {
+      res.status(400).json({ success: false, detail: 'payment_method không hợp lệ (cash|qr_code)' });
+      return;
+    }
+    const paymentOptions = {
+      isPaidImmediately: req.body?.is_paid_immediately,
+      paymentMethod: paymentMethodRaw,
+    };
+
+    const repo = new BorrowRepository();
+
     const result = await AppDataSource.transaction(async (manager) => {
       const record = await manager.findOne(BorrowRecord, {
         where: { copy: { barcode } as any, status: 'borrowed' as any },
@@ -482,18 +496,15 @@ router.post('/return', async (req: Request, res: Response) => {
       const now = new Date();
       record.returnAt = now;
       record.status = 'returned';
+      record.returnCondition = DEFAULT_CONDITION;
 
-      if (now > new Date(record.dueAt)) {
-        const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
-        const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
-        record.fineAmount = overdueDays * config.finePerDay;
-      }
+      const fineConfig = await configService.getFineConfig();
+      finalizeReturnFees(record, paymentOptions, fineConfig);
 
       await manager.save(record);
 
       if (record.copy) {
-        record.copy.isAvailable = true;
-        await manager.save(record.copy);
+        await repo.applyReturnToCopy(record.copy, DEFAULT_CONDITION, record, null, manager);
       }
 
       return record;
@@ -510,27 +521,28 @@ router.post('/return', async (req: Request, res: Response) => {
       patronId: result.patronId,
       barcode,
       fineAmount: result.fineAmount || 0,
+      damageFee: result.damageFee || 0,
+      total: (Number(result.fineAmount) || 0) + (Number(result.damageFee) || 0),
     });
 
-    if (result.fineAmount && result.fineAmount > 0) {
-      publishEvent('fine.incurred', {
-        patronId: result.patronId,
-        bookTitle: result.book?.title,
-        fineAmount: result.fineAmount,
-        daysOverdue: Math.ceil((new Date(result.returnAt!).getTime() - new Date(result.dueAt).getTime()) / (1000 * 60 * 60 * 24)),
-        borrowRecordId: result.id,
-      });
-    }
+    publishFineIncurred(result);
 
+    const totalDue = (Number(result.fineAmount) || 0) + (Number(result.damageFee) || 0);
     res.json({
       success: true,
-      message: result.fineAmount > 0 ? `Trả sách thành công. Phí phạt: ${result.fineAmount.toLocaleString('vi-VN')}d` : 'Trả sách thành công',
+      message: totalDue > 0 ? `Trả sách thành công. Phí phạt: ${totalDue.toLocaleString('vi-VN')}d` : 'Trả sách thành công',
       data: {
         record_id: result.id,
         book_title: result.book?.title,
         patron_id: result.patronId,
         returned_at: result.returnAt,
         fine_amount: result.fineAmount,
+        damage_fee: result.damageFee,
+        total_due: totalDue,
+        fine_paid: result.finePaid,
+        payment_method: result.paymentMethod,
+        payment_ref: result.paymentRef,
+        paid_at: result.paidAt,
       },
     });
   } catch (error: any) {
@@ -650,7 +662,18 @@ router.post('/batch-return', async (req: Request, res: Response) => {
       return;
     }
 
+    const paymentMethodRaw = req.body?.payment_method;
+    if (paymentMethodRaw !== undefined && paymentMethodRaw !== 'cash' && paymentMethodRaw !== 'qr_code') {
+      res.status(400).json({ success: false, detail: 'payment_method không hợp lệ (cash|qr_code)' });
+      return;
+    }
+    const paymentOptions = {
+      isPaidImmediately: req.body?.is_paid_immediately,
+      paymentMethod: paymentMethodRaw,
+    };
+
     const results: any[] = [];
+    const repo = new BorrowRepository();
 
     await AppDataSource.transaction(async (manager) => {
       const matchedRecords = await manager.createQueryBuilder(BorrowRecord, 'record')
@@ -669,7 +692,6 @@ router.post('/batch-return', async (req: Request, res: Response) => {
 
       const now = new Date();
       const recordsToSave: BorrowRecord[] = [];
-      const copiesToSave: any[] = [];
 
       for (const barcode of barcodes) {
         const record = barcodeToRecord.get(barcode);
@@ -681,19 +703,15 @@ router.post('/batch-return', async (req: Request, res: Response) => {
 
         record.returnAt = now;
         record.status = 'returned';
+        record.returnCondition = DEFAULT_CONDITION;
 
-        if (record.dueAt && now > new Date(record.dueAt)) {
-          const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
-          const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
-          const fineConfig = await configService.getFineConfig();
-          record.fineAmount = calculateOverdueFine(overdueDays, fineConfig.fineBrackets, fineConfig.finePerDay);
-        }
+        const fineConfig = await configService.getFineConfig();
+        finalizeReturnFees(record, paymentOptions, fineConfig);
 
         recordsToSave.push(record);
 
         if (record.copy) {
-          record.copy.isAvailable = true;
-          copiesToSave.push(record.copy);
+          await repo.applyReturnToCopy(record.copy, DEFAULT_CONDITION, record, null, manager);
         }
 
         publishEvent('book.returned', {
@@ -701,7 +719,11 @@ router.post('/batch-return', async (req: Request, res: Response) => {
           title: record.book?.title,
           patronId: record.patronId,
           barcode,
+          fineAmount: record.fineAmount || 0,
+          damageFee: record.damageFee || 0,
+          total: (Number(record.fineAmount) || 0) + (Number(record.damageFee) || 0),
         });
+        publishFineIncurred(record);
 
         results.push({
           barcode,
@@ -709,14 +731,14 @@ router.post('/batch-return', async (req: Request, res: Response) => {
           record_id: record.id,
           book_title: record.book?.title,
           returned_at: record.returnAt,
+          fine_amount: record.fineAmount,
+          damage_fee: record.damageFee,
+          fine_paid: record.finePaid,
         });
       }
 
       if (recordsToSave.length > 0) {
         await manager.save(recordsToSave);
-      }
-      if (copiesToSave.length > 0) {
-        await manager.save(copiesToSave);
       }
     });
 
@@ -1048,7 +1070,10 @@ router.post('/create', async (req: Request, res: Response) => {
     for (const copyId of copyIds) {
       if (copyId) {
         const copy = copyMap.get(copyId);
-        if (copy) await repo.setCopyAvailable(copy, false);
+        if (copy) {
+          markCopyAsBorrowed(copy);
+          await repo.setCopyAvailable(copy, false);
+        }
       }
     }
 

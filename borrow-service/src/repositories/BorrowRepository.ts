@@ -1,18 +1,23 @@
-import { Brackets, In, IsNull } from 'typeorm';
+import { Brackets, EntityManager, In, IsNull, Not } from 'typeorm';
 import { AppDataSource } from '../data-source';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
+import { BookCopyConditionHistory } from '../entities/BookCopyConditionHistory';
 import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowSlip } from '../entities/BorrowSlip';
 import { config } from '../config';
-import { calculateOverdueFine } from '../utils/fineCalculator';
+import { finalizeReturnFees } from '../services/returnFinalizer';
+import { PaymentFinalization } from '../utils/fineCalculator';
+
 import { configService } from '../services/ConfigService';
+import { CopyCondition, DEFAULT_CONDITION, DEFAULT_COPY_STATUS, markCopyAsBorrowed } from '../constants/copy';
 
 export class BorrowRepository {
   books = AppDataSource.getRepository(Book);
   copies = AppDataSource.getRepository(BookCopy);
   records = AppDataSource.getRepository(BorrowRecord);
   slips = AppDataSource.getRepository(BorrowSlip);
+  conditionHistory = AppDataSource.getRepository(BookCopyConditionHistory);
 
   private normalizeCode(code: string) {
     return code.replace(/[\s-]+/g, '').trim();
@@ -38,10 +43,10 @@ export class BorrowRepository {
   }
 
   getCopyByBarcode(barcode: string) {
-    const cleaned = this.normalizeCode(barcode);
+    const cleaned = this.normalizeCode(barcode).toLowerCase();
     return this.copies.createQueryBuilder('copy')
       .leftJoinAndSelect('copy.book', 'book')
-      .where("REPLACE(REPLACE(copy.barcode, '-', ''), ' ', '') = :barcode", { barcode: cleaned })
+      .where("LOWER(REPLACE(REPLACE(copy.barcode, '-', ''), ' ', '')) = :barcode", { barcode: cleaned })
       .getOne();
   }
 
@@ -56,7 +61,10 @@ export class BorrowRepository {
   }
 
   async getAvailableCopy(bookId: string) {
-    return this.copies.findOne({ where: { bookId, isAvailable: true }, order: { createdAt: 'ASC' } });
+    return this.copies.findOne({
+      where: { bookId, isAvailable: true, status: DEFAULT_COPY_STATUS, condition: Not('lost' as CopyCondition) },
+      order: { createdAt: 'ASC' },
+    });
   }
 
   async listBooks(skip = 0, limit = 20, search?: string) {
@@ -176,13 +184,105 @@ export class BorrowRepository {
     return { book: await this.createBook(this.normalizeCode(isbn), title, author, coverUrl, undefined, extra), created: true };
   }
 
-  async createCopy(bookId: string, barcode: string, shelfLocation?: string | null) {
-    const copy = this.copies.create({ bookId, barcode: this.normalizeCode(barcode), isAvailable: true, shelfLocation: shelfLocation || null });
+  async createCopy(
+    bookId: string,
+    barcode: string,
+    shelfLocation?: string | null,
+    options?: { condition?: string; status?: string; importedAt?: Date },
+  ) {
+    const status = options?.status || DEFAULT_COPY_STATUS;
+    const copy = this.copies.create({
+      bookId,
+      barcode: this.normalizeCode(barcode),
+      isAvailable: status === 'available',
+      shelfLocation: shelfLocation || null,
+      condition: options?.condition || DEFAULT_CONDITION,
+      status,
+      ...(options?.importedAt ? { importedAt: options.importedAt } : {}),
+    });
     return this.copies.save(copy);
   }
 
+  listCopiesByBook(bookId: string) {
+    return this.copies.find({ where: { bookId }, order: { barcode: 'ASC' } });
+  }
+
+  async updateCopy(id: string, fields: { condition?: string; status?: string; shelfLocation?: string | null; barcode?: string }) {
+    const copy = await this.copies.findOne({ where: { id } });
+    if (!copy) return null;
+
+    if (fields.condition !== undefined) copy.condition = fields.condition;
+    if (fields.barcode !== undefined) copy.barcode = this.normalizeCode(fields.barcode);
+    if (fields.shelfLocation !== undefined) copy.shelfLocation = fields.shelfLocation;
+
+    if (fields.status !== undefined) {
+      copy.status = fields.status;
+    } else if (fields.condition === 'lost') {
+      copy.status = 'disposed';
+    } else if (fields.condition !== undefined) {
+      copy.status = 'available';
+    }
+    copy.isAvailable = copy.status === 'available';
+    copy.updatedAt = new Date();
+    return this.copies.save(copy);
+  }
+
+  async insertConditionHistory(copyId: string, condition: string, changedBy?: string | null, note?: string | null) {
+    const existing = await this.copies.findOne({ where: { id: copyId } });
+    const row = this.conditionHistory.create({
+      copyId,
+      previousCondition: existing?.condition ?? null,
+      condition,
+      changedBy: changedBy || null,
+      note: note || null,
+    });
+    return this.conditionHistory.save(row);
+  }
+
+  /**
+   * Single write-back point for a returned copy: condition, status,
+   * is_available (plus the book-level rollup) and the condition audit row.
+   */
+  async applyReturnToCopy(
+    copy: BookCopy,
+    condition: string,
+    record?: BorrowRecord | null,
+    changedBy?: string | null,
+    manager?: EntityManager,
+  ) {
+    const copyRepo = manager ? manager.getRepository(BookCopy) : this.copies;
+    const bookRepo = manager ? manager.getRepository(Book) : this.books;
+    const historyRepo = manager ? manager.getRepository(BookCopyConditionHistory) : this.conditionHistory;
+
+    const previousCondition = copy.condition ?? null;
+    copy.condition = condition;
+    copy.status = condition === 'lost' ? 'disposed' : 'available';
+    copy.isAvailable = copy.status === 'available';
+    copy.updatedAt = new Date();
+    await copyRepo.save(copy);
+
+    const availableCount = await copyRepo.count({ where: { bookId: copy.bookId, isAvailable: true } });
+    const book = await bookRepo.findOne({ where: { id: copy.bookId } });
+    if (book) {
+      book.isAvailable = availableCount > 0;
+      await bookRepo.save(book);
+    }
+
+    await historyRepo.save(
+      historyRepo.create({
+        copyId: copy.id,
+        previousCondition,
+        condition,
+        changedBy: changedBy || null,
+        note: record ? `Trả sách (phiếu ${record.id})` : 'Trả sách',
+      }),
+    );
+
+    return copy;
+  }
+
   async createCopiesBatchWithSkip(bookId: string, barcodes: string[], shelfLocation?: string | null) {
-    const normalized = barcodes.map(b => this.normalizeCode(b));
+    const normalized = [...new Set(barcodes.map(b => this.normalizeCode(b)))];
 
     // Batch check which barcodes already exist
     const existingCopies = await this.copies.find({
@@ -195,12 +295,16 @@ export class BorrowRepository {
     if (newBarcodes.length === 0) return [];
 
     // Batch insert new copies
+    const now = new Date();
     const newCopies = this.copies.create(
       newBarcodes.map(barcode => ({
         bookId,
         barcode,
         isAvailable: true,
         shelfLocation: shelfLocation || null,
+        condition: DEFAULT_CONDITION,
+        status: DEFAULT_COPY_STATUS,
+        importedAt: now,
       }))
     );
     return this.copies.save(newCopies);
@@ -233,6 +337,38 @@ export class BorrowRepository {
 
   getBorrowRecordById(id: string) {
     return this.records.findOne({ where: { id }, relations: { book: true, copy: true } });
+  }
+
+  async findUnpaidFines(): Promise<BorrowRecord[]> {
+    const records = await this.records.find({
+      where: { finePaid: false },
+      relations: { book: true, copy: true },
+      order: { returnAt: 'DESC' },
+    });
+    return records.filter((r) => (Number(r.fineAmount) || 0) + (Number(r.damageFee) || 0) > 0);
+  }
+
+  async findUnpaidFinesByPatron(patronId: string): Promise<BorrowRecord[]> {
+    const records = await this.records.find({
+      where: { patronId, finePaid: false },
+      relations: { book: true, copy: true },
+      order: { returnAt: 'DESC' },
+    });
+    return records.filter((r) => (Number(r.fineAmount) || 0) + (Number(r.damageFee) || 0) > 0);
+  }
+
+  async findFineRecordsByIds(ids: string[]): Promise<BorrowRecord[]> {
+    if (ids.length === 0) return [];
+    return this.records.find({ where: { id: In(ids) }, relations: { book: true, copy: true } });
+  }
+
+  async saveBorrowRecords(records: BorrowRecord[]): Promise<BorrowRecord[]> {
+    return this.records.save(records);
+  }
+
+  async hasUnpaidFinesForPatron(patronId: string): Promise<boolean> {
+    const recs = await this.records.find({ where: { patronId, finePaid: false } });
+    return recs.some((r) => (Number(r.fineAmount) || 0) + (Number(r.damageFee) || 0) > 0);
   }
 
   getAllActiveBorrows() {
@@ -282,7 +418,7 @@ export class BorrowRepository {
     return this.records.save(record);
   }
 
-  async returnBook(record: BorrowRecord, returnedByUserId?: string | null, returnedByEmail?: string | null, returnMethod?: string | null, note?: string | null) {
+  async returnBook(record: BorrowRecord, returnedByUserId?: string | null, returnedByEmail?: string | null, returnMethod?: string | null, note?: string | null, payment?: PaymentFinalization) {
     record.returnAt = new Date();
     record.status = 'returned';
     record.returnedByUserId = returnedByUserId || null;
@@ -291,13 +427,8 @@ export class BorrowRepository {
     record.note = note || null;
     record.updatedAt = new Date();
 
-    const now = new Date();
-    if (record.dueAt && now > new Date(record.dueAt)) {
-      const overdueMs = now.getTime() - new Date(record.dueAt).getTime();
-      const overdueDays = Math.ceil(overdueMs / (1000 * 60 * 60 * 24));
-      const fineConfig = await configService.getFineConfig();
-      record.fineAmount = calculateOverdueFine(overdueDays, fineConfig.fineBrackets, fineConfig.finePerDay);
-    }
+    const fineConfig = await configService.getFineConfig();
+    finalizeReturnFees(record, payment ?? {}, fineConfig);
 
     const saved = await this.records.save(record);
     if (record.slipId) {
@@ -353,7 +484,7 @@ export class BorrowRepository {
     return match ? Number(match[1]) : 0;
   }
 
-  async updateBook(bookId: string, fields: Partial<Pick<Book, 'title' | 'subtitle' | 'author' | 'coverUrl' | 'publisher' | 'publishedDate' | 'description' | 'pageCount' | 'categories' | 'averageRating' | 'language' | 'shelfLocation'>>): Promise<Book | null> {
+  async updateBook(bookId: string, fields: Partial<Pick<Book, 'title' | 'subtitle' | 'author' | 'coverUrl' | 'publisher' | 'publishedDate' | 'description' | 'pageCount' | 'categories' | 'averageRating' | 'language' | 'shelfLocation' | 'price'>>): Promise<Book | null> {
     const book = await this.books.findOne({ where: { id: bookId } });
     if (!book) return null;
     Object.assign(book, fields, { updatedAt: new Date() });
@@ -375,6 +506,11 @@ export class BorrowRepository {
       .andWhere('record.status = :status', { status: 'borrowed' })
       .andWhere('record.returnAt IS NULL')
       .getCount();
+    return count > 0;
+  }
+
+  async hasActiveBorrowsForCopy(copyId: string): Promise<boolean> {
+    const count = await this.records.count({ where: { copyId, status: 'borrowed', returnAt: IsNull() } });
     return count > 0;
   }
 
@@ -472,7 +608,7 @@ export class BorrowRepository {
           if (!copy.isAvailable) {
             throw new Error(`Bản sao ${copy.barcode} vừa được mượn bởi người khác. Vui lòng thử lại.`);
           }
-          copy.isAvailable = false;
+          markCopyAsBorrowed(copy);
           copy.updatedAt = new Date();
         }
         await qr.manager.getRepository(BookCopy).save(lockedCopies);

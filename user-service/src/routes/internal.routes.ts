@@ -211,6 +211,23 @@ router.delete('/patrons/:id', async (req, res) => {
   }
 });
 
+router.post('/patrons/:id/card/suspend-auto-fine', async (req, res) => {
+  try {
+    const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim() : '[AUTO-FINE] Khoản phí chưa thu';
+    res.json(await patronService.suspendCardAutoFine(req.params.id, reason));
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to suspend card' });
+  }
+});
+
+router.post('/patrons/:id/card/activate-auto-fine', async (req, res) => {
+  try {
+    res.json(await patronService.activateCardAutoFine(req.params.id));
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message || 'Failed to activate card' });
+  }
+});
+
 router.delete('/users/:id', async (req, res) => {
   try {
     res.json(await userService.deleteUser(req.params.id));

@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { In } from 'typeorm';
-import { AppDataSource } from '../data-source';
 import { auth, AuthRequest, requireRole, requireDynamicPermission } from '../middlewares/auth';
 import { HttpError } from '../middlewares/errorHandler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
@@ -13,6 +12,9 @@ import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
 import { configService } from '../services/ConfigService';
+import { ReturnService } from '../services/ReturnService';
+import { SlipService } from '../services/SlipService';
+import { CONDITION_CODES, markCopyAsBorrowed } from '../constants/copy';
 
 const router = Router();
 router.use(auth);
@@ -39,29 +41,6 @@ function patronSummary(patron: PatronSummary) {
   };
 }
 
-function normalizeBookCode(value: string) {
-  return value
-    .trim()
-    .replace(/\s+/g, '')
-    .replace(/-/g, '')
-    .replace(/\.0+$/, '');
-}
-
-async function lookupBookAndCopy(repo: BorrowRepository, barcode: string, isbn?: string) {
-  const lookupIsbn = isbn || barcode;
-  const book = lookupIsbn ? await repo.getBookByIsbn(lookupIsbn) : null;
-
-  if (!book) return { book: null, copy: null, reason: 'Khong co sach nay trong thu vien' };
-
-  const totalCopies = await repo.countCopies(book.id, false);
-  const availableCopies = await repo.countCopies(book.id, true);
-
-  const copy = await repo.getAvailableCopy(book.id);
-  if (!copy) return { book, copy: null, reason: `Sach "${book.title}" da het ban co the muon`, totalCopies, availableCopies };
-
-  return { book, copy, reason: null, totalCopies, availableCopies };
-}
-
 async function getOrCreateBookAndCopy(repo: BorrowRepository, barcode: string, isbn?: string) {
   const existingCopy = await repo.getCopyByBarcode(barcode);
   if (existingCopy) return { book: existingCopy.book || await repo.getBookById(existingCopy.bookId), copy: existingCopy };
@@ -69,7 +48,7 @@ async function getOrCreateBookAndCopy(repo: BorrowRepository, barcode: string, i
 }
 
 // POST /staff/slip/lookup
-router.post('/slip/lookup', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
+router.post(['/slip/lookup', '/staff/slip/lookup'], requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
       patron_id: z.string().min(1),
@@ -79,87 +58,17 @@ router.post('/slip/lookup', requireRole(['admin', 'staff'], 'Chi quan tri vien h
       })).min(1),
     }).parse(req.body);
 
-    const repo = new BorrowRepository();
-    const patron = await lookupPatronById(body.patron_id);
-    if (!patron) throw new HttpError(404, 'Không tìm thấy độc giả');
-
     const isStaff = req.user?.role === 'admin' || req.user?.role === 'staff';
-    const accessStatus = isStaff
-      ? await getPatronRawAccessStatus(body.patron_id)
-      : await getPatronAccessStatus(body.patron_id);
-    if (!accessStatus.inside) {
-      if (accessStatus.isExpired) {
-        throw new HttpError(403, `Phiên làm việc đã hết hạn (${config.maxEntryHours}h). Vui lòng vào lại qua cổng.`);
-      }
-      throw new HttpError(403, 'Độc giả không có mặt trong thư viện.');
-    }
-
-    const results: {
-      barcode: string;
-      isbn: string | undefined;
-      can_borrow: boolean;
-      reason: string | null;
-      book: ReturnType<typeof serializeBookWithStats> | null;
-      copy: ReturnType<typeof serializeCopy> | null;
-    }[] = [];
-    const errors: string[] = [];
-
-    for (const item of body.items) {
-      const barcode = item.barcode.trim();
-      const isbn = item.isbn?.trim();
-      const { book, copy, reason, totalCopies, availableCopies } = await lookupBookAndCopy(repo, barcode, isbn);
-
-      if (!book || !copy) {
-        results.push({ barcode, isbn, can_borrow: false, reason: reason || 'Khong tim thay sach', book: book ? serializeBookWithStats(book, totalCopies!, availableCopies!) : null, copy: null });
-        if (reason) errors.push(reason);
-        continue;
-      }
-
-      const active = await repo.getActiveBorrow(body.patron_id, book.id);
-      if (active) {
-        results.push({ barcode, isbn, can_borrow: false, reason: `Sach "${book.title}" da duoc muon`, book: null, copy: null });
-        errors.push(`Sach "${book.title}" đã được độc giả này mượn`);
-        continue;
-      }
-
-      results.push({
-        barcode,
-        isbn,
-        can_borrow: true,
-        reason: null,
-        book: serializeBookWithStats(book, totalCopies!, availableCopies!),
-        copy: serializeCopy(copy),
-      });
-    }
-
-    const overdue = await repo.getOverdueBorrows(body.patron_id);
-    if (overdue.length) errors.push(`Độc giả có ${overdue.length} sách quá hạn`);
-
-    const activeCount = await repo.countActiveBorrows(body.patron_id);
-    const validItems = results.filter((r) => r.can_borrow).length;
-    const limits = await configService.getBorrowLimits();
-    if (activeCount + validItems > limits.maxBorrowBooks) {
-      errors.push(`Qua gioi han muon sach (toi da ${limits.maxBorrowBooks} cuon)`);
-    }
-    if (validItems > limits.maxBorrowBooksPerSlip) {
-      errors.push(`Moi phieu muon toi da ${limits.maxBorrowBooksPerSlip} cuon`);
-    }
-
-    res.json({
-      can_create: errors.length === 0 && validItems > 0,
-      patron: patronSummary(patron),
-      items: results,
-      errors,
-      total_items: results.length,
-      available_items: validItems,
-    });
+    const slipService = new SlipService();
+    const result = await slipService.lookup(body.patron_id, body.items, isStaff);
+    res.json(result);
   } catch (error) {
     next(error);
   }
 });
 
 // POST /staff/slip/confirm
-router.post('/slip/confirm', requireDynamicPermission('borrows', 'create'), async (req: AuthRequest, res, next) => {
+router.post(['/slip/confirm', '/staff/slip/confirm'], requireDynamicPermission('borrows', 'create'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
       patron_id: z.string().min(1),
@@ -211,7 +120,9 @@ router.post('/slip/confirm', requireDynamicPermission('borrows', 'create'), asyn
       if (!book) throw new HttpError(400, `Sach ${item.book_id} không tồn tại`);
 
       if (!copy.isAvailable) throw new HttpError(409, `Bản sao ${item.barcode} dang duoc muon`);
-      if (copy.barcode !== item.barcode) throw new HttpError(400, 'Dữ liệu không hợp lệ: barcode không khớp');
+      const normCopyBarcode = (copy.barcode || '').replace(/[\s-]+/g, '').toLowerCase();
+      const normItemBarcode = (item.barcode || '').replace(/[\s-]+/g, '').toLowerCase();
+      if (normCopyBarcode !== normItemBarcode) throw new HttpError(400, 'Dữ liệu không hợp lệ: barcode không khớp');
 
       const active = await repo.getActiveBorrow(body.patron_id, book.id);
       if (active) throw new HttpError(409, `Sach "${book.title}" đã được độc giả này mượn`);
@@ -268,7 +179,7 @@ router.post('/slip/confirm', requireDynamicPermission('borrows', 'create'), asyn
 });
 
 // POST /staff/slip/create
-router.post('/slip/create', requireDynamicPermission('borrows', 'create'), async (req: AuthRequest, res, next) => {
+router.post(['/slip/create', '/staff/slip/create'], requireDynamicPermission('borrows', 'create'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
       patron_id: z.string().min(1),
@@ -341,7 +252,7 @@ router.post('/slip/create', requireDynamicPermission('borrows', 'create'), async
     const copiesMap = new Map(allCopies.map(c => [c.id, c]));
     const copiesToUpdate = validCopyIds.map(id => copiesMap.get(id)).filter(Boolean) as BookCopy[];
     for (const copy of copiesToUpdate) {
-      copy.isAvailable = false;
+      markCopyAsBorrowed(copy);
       copy.updatedAt = new Date();
     }
     if (copiesToUpdate.length > 0) {
@@ -387,148 +298,85 @@ router.post('/slip/create', requireDynamicPermission('borrows', 'create'), async
 });
 
 // POST /staff-return
-router.post('/return', requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
+router.post(['/return', '/staff-return'], requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
   try {
-    const body = z.object({ barcode: z.string().min(1), note: z.string().nullable().optional() }).parse(req.body);
-    const repo = new BorrowRepository();
-    const copy = await repo.getCopyByBarcode(body.barcode.trim());
-    if (!copy) throw new HttpError(404, `Khong tim thay ban sao nao voi ma vach ${body.barcode}`);
-    const record = await repo.getActiveBorrowByCopy(copy.id);
-    if (!record) throw new HttpError(404, 'Khong co ban ghi muon dang hoat dong cho ban sao nay');
-    await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_web', body.note);
-    await repo.setCopyAvailable(copy, true);
-
-    publishEvent('book.returned', {
-      bookId: record.bookId,
-      title: record.book?.title,
-      patronId: record.patronId,
-      barcode: copy.barcode,
-      fineAmount: record.fineAmount || 0,
+    const body = z.object({
+      barcode: z.string().min(1),
+      note: z.string().nullable().optional(),
+      condition: z.enum(CONDITION_CODES).optional(),
+      is_paid_immediately: z.boolean().optional(),
+      payment_method: z.enum(['cash', 'qr_code']).optional(),
+    }).parse(req.body);
+    const record = await new ReturnService().returnByBarcode(body.barcode, req.user?.id, req.user?.email, body.note, body.condition, {
+      isPaidImmediately: body.is_paid_immediately,
+      paymentMethod: body.payment_method,
     });
-
-    res.json({ status: 'success', message: 'Trả sách thành công', record: serializeBorrowRecord(record) });
+    res.json({ status: 'success', message: 'Trả sách thành công', record });
   } catch (error) {
     next(error);
   }
 });
 
 // POST /staff-return/by-patron
-router.post('/return/by-patron', requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
+router.post(['/return/by-patron', '/staff-return/by-patron'], requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
   try {
-    const body = z.object({ student_code: z.string().min(1), barcode_or_isbn: z.string().min(1), note: z.string().nullable().optional() }).parse(req.body);
-    const patron = patronSummary(await lookupPatronByStudentCode(body.student_code));
-    const repo = new BorrowRepository();
-    const rawScanned = body.barcode_or_isbn.trim();
-    const scanned = normalizeBookCode(rawScanned);
-    let book = await repo.getBookByNormalizedIsbn(scanned);
-    const legacyCopy = !book ? await repo.getCopyByBarcode(rawScanned) : null;
-    if (!book && legacyCopy) book = legacyCopy.book || await repo.getBookById(legacyCopy.bookId);
-    if (!book) throw new HttpError(404, 'Khong tim thay sach voi ma vua quet');
-    const records = await repo.getActiveBorrowsByPatronAndBook(patron.id, book.id);
-    if (!records.length) throw new HttpError(404, 'Độc giả này không mượn sách có mã này');
-    if (records.length > 1) throw new HttpError(409, 'Co nhieu ban ghi muon trung sach. Vui long chon ban ghi thu cong hoac dung barcode ban sao.');
-    const record = records[0];
-    const copy = legacyCopy || (record.copyId ? await repo.getCopyById(record.copyId) : null);
-    await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_mobile', body.note);
-    if (copy) await repo.setCopyAvailable(copy, true);
-
-    publishEvent('book.returned', {
-      bookId: book.id,
-      title: book.title,
-      patronId: patron.id,
-      barcode: copy?.barcode,
-      fineAmount: record.fineAmount || 0,
-    });
-
-    res.json({ status: 'success', message: 'Trả sách thành công', record: serializeBorrowRecord(record) });
+    const body = z.object({
+      student_code: z.string().min(1),
+      barcode_or_isbn: z.string().min(1),
+      note: z.string().nullable().optional(),
+      condition: z.enum(CONDITION_CODES).optional(),
+      is_paid_immediately: z.boolean().optional(),
+      payment_method: z.enum(['cash', 'qr_code']).optional(),
+    }).parse(req.body);
+    const record = await new ReturnService().returnByPatron(
+      body.student_code,
+      body.barcode_or_isbn,
+      req.user?.id,
+      req.user?.email,
+      body.note,
+      body.condition,
+      { isPaidImmediately: body.is_paid_immediately, paymentMethod: body.payment_method },
+    );
+    res.json({ status: 'success', message: 'Trả sách thành công', record });
   } catch (error) {
     next(error);
   }
 });
 
 // POST /staff-return/batch
-router.post('/return/batch', requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
+router.post(['/return/batch', '/staff-return/batch'], requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
       student_code: z.string().min(1),
       items: z.array(z.object({
         barcode_or_isbn: z.string().min(1),
         note: z.string().nullable().optional(),
+        condition: z.enum(CONDITION_CODES).optional(),
+        is_paid_immediately: z.boolean().optional(),
+        payment_method: z.enum(['cash', 'qr_code']).optional(),
       })).min(1).max(50),
     }).parse(req.body);
 
-    const patron = patronSummary(await lookupPatronByStudentCode(body.student_code));
-    const repo = new BorrowRepository();
-    const results: Array<{ barcode_or_isbn: string; status: string; message: string }> = [];
-    let ok = 0;
-    let fail = 0;
-
-    for (const item of body.items) {
-      const rawScanned = item.barcode_or_isbn.trim();
-      const scanned = normalizeBookCode(rawScanned);
-      try {
-        let book = await repo.getBookByNormalizedIsbn(scanned);
-        const legacyCopy = !book ? await repo.getCopyByBarcode(rawScanned) : null;
-        if (!book && legacyCopy) book = legacyCopy.book || await repo.getBookById(legacyCopy.bookId);
-        if (!book) {
-          throw new HttpError(404, 'Khong tim thay sach voi ma vua quet');
-        }
-        const records = await repo.getActiveBorrowsByPatronAndBook(patron.id, book.id);
-        if (!records.length) {
-          throw new HttpError(404, 'Độc giả này không mượn sách có mã này');
-        }
-        if (records.length > 1) {
-          throw new HttpError(409, 'Co nhieu ban ghi muon trung sach. Vui long chon ban ghi thu cong hoac dung barcode ban sao.');
-        }
-        const record = records[0];
-        const copy = legacyCopy || (record.copyId ? await repo.getCopyById(record.copyId) : null);
-        await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_mobile', item.note || null);
-        if (copy) await repo.setCopyAvailable(copy, true);
-
-        publishEvent('book.returned', {
-          bookId: book.id,
-          title: book.title,
-          patronId: patron.id,
-          barcode: copy?.barcode,
-          fineAmount: record.fineAmount || 0,
-        });
-
-        results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'success', message: 'Trả sách thành công' });
-        ok += 1;
-      } catch (err) {
-        const msg = err instanceof HttpError ? err.message : (err instanceof Error ? err.message : 'Loi khong xac dinh');
-        results.push({ barcode_or_isbn: item.barcode_or_isbn, status: 'failed', message: msg });
-        fail += 1;
-      }
-    }
-
-    res.json({ results, ok, fail });
+    res.json(await new ReturnService().batchReturn(body.student_code, body.items, req.user?.id, req.user?.email));
   } catch (error) {
     next(error);
   }
 });
 
 // POST /staff-return/record/:record_id
-router.post('/return/record/:record_id', requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
+router.post(['/return/record/:record_id', '/staff-return/record/:record_id'], requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
   try {
-    const body = z.object({ note: z.string().nullable().optional() }).parse(req.body);
-    const repo = new BorrowRepository();
-    const record = await repo.getBorrowRecordById(req.params.record_id);
-    if (!record) throw new HttpError(404, 'Khong tim thay phieu muon');
-    if (record.status !== 'borrowed' || record.returnAt) throw new HttpError(409, 'Phieu muon nay da duoc tra hoac khong con hieu luc');
-    const copy = record.copyId ? await repo.getCopyById(record.copyId) : null;
-    await repo.returnBook(record, req.user?.id, req.user?.email, 'staff_web', body.note);
-    if (copy) await repo.setCopyAvailable(copy, true);
-
-    publishEvent('book.returned', {
-      bookId: record.bookId,
-      title: record.book?.title,
-      patronId: record.patronId,
-      barcode: copy?.barcode,
-      fineAmount: record.fineAmount || 0,
+    const body = z.object({
+      note: z.string().nullable().optional(),
+      condition: z.enum(CONDITION_CODES).optional(),
+      is_paid_immediately: z.boolean().optional(),
+      payment_method: z.enum(['cash', 'qr_code']).optional(),
+    }).parse(req.body);
+    const record = await new ReturnService().returnById(req.params.record_id, req.user?.id, req.user?.email, body.note, body.condition, {
+      isPaidImmediately: body.is_paid_immediately,
+      paymentMethod: body.payment_method,
     });
-
-    res.json({ status: 'success', message: 'Trả sách thành công', record: serializeBorrowRecord(record) });
+    res.json({ status: 'success', message: 'Trả sách thành công', record });
   } catch (error) {
     next(error);
   }
@@ -549,7 +397,7 @@ router.get('/barcode/:barcode', requireRole(['admin', 'staff'], 'Chi quan tri vi
 });
 
 // GET /active-borrowers
-router.get('/active-borrowers', requireRole(['admin', 'staff'], 'Chỉ quản trị viên hoặc nhân viên thư viện mới có thể xem danh sách độc giả đang mượn'), async (_req, res, next) => {
+router.get(['/active-borrowers', '/staff/active-borrowers'], requireRole(['admin', 'staff'], 'Chỉ quản trị viên hoặc nhân viên thư viện mới có thể xem danh sách độc giả đang mượn'), async (_req, res, next) => {
   try {
     const repo = new BorrowRepository();
     const records = await repo.getAllActiveBorrows();
@@ -590,7 +438,7 @@ router.get('/active', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nh
 });
 
 // GET /patrons/:student_code/active
-router.get('/patrons/:student_code/active', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra cuu sach dang muon'), async (req, res, next) => {
+router.get(['/patrons/:student_code/active', '/staff/patrons/:student_code/active'], requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra cuu sach dang muon'), async (req, res, next) => {
   try {
     const raw = await lookupPatronByStudentCode(req.params.student_code);
     const status = raw.current_status || raw.currentStatus;

@@ -82,6 +82,7 @@ export class BookService {
     if (fields.language !== undefined) updateFields.language = fields.language;
     if (fields.shelf_location !== undefined) updateFields.shelfLocation = fields.shelf_location;
     if (fields.cover_url !== undefined) updateFields.coverUrl = fields.cover_url;
+    if (fields.price !== undefined) updateFields.price = fields.price;
     
     const updated = await this.repo.updateBook(book.id, updateFields);
     if (!updated) throw new HttpError(500, 'Cập nhật sách thất bại');

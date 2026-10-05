@@ -7,6 +7,7 @@ import { HttpError } from '../middlewares/errorHandler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { serializeBook, serializeBookWithStats, serializeCopy } from '../services/serializers';
+import { normalizeCondition, normalizeCopyStatus } from '../constants/copy';
 import { Book } from '../entities/Book';
 
 const router = Router();
@@ -173,6 +174,124 @@ router.get('/books/export', async (_req, res, next) => {
   }
 });
 
+// GET /books/:book_id/copies
+router.get('/books/:book_id/copies', requireDynamicPermission('books', 'read'), async (req, res, next) => {
+  try {
+    const repo = new BorrowRepository();
+    const book = await repo.getBookById(req.params.book_id);
+    if (!book) throw new HttpError(404, 'Sách không tồn tại');
+    const items = await repo.listCopiesByBook(book.id);
+    res.json({ items: items.map(serializeCopy), total: items.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /copies
+router.post('/copies', requireDynamicPermission('books', 'create'), async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({
+      book_id: z.string().uuid(),
+      barcode: z.string().min(1).optional(),
+      shelf_location: z.string().nullable().optional(),
+      condition: z.string().optional(),
+      status: z.string().optional(),
+      imported_at: z.string().nullable().optional(),
+    }).parse(req.body);
+
+    const condition = normalizeCondition(body.condition);
+    const status = normalizeCopyStatus(body.status);
+
+    const repo = new BorrowRepository();
+    const book = await repo.getBookById(body.book_id);
+    if (!book) throw new HttpError(404, 'Sách không tồn tại');
+
+    let barcode = body.barcode?.trim();
+    if (!barcode) {
+      const offset = await repo.getMaxBarcodeNumberForBook(book);
+      barcode = `LIB-${book.isbn}-${String(offset + 1).padStart(3, '0')}`;
+    }
+
+    let copy;
+    try {
+      copy = await repo.createCopy(book.id, barcode, body.shelf_location ?? null, {
+        condition,
+        status,
+        importedAt: body.imported_at ? new Date(body.imported_at) : undefined,
+      });
+    } catch (error: any) {
+      if (error?.code === '23505') throw new HttpError(400, `Mã vạch "${barcode}" đã tồn tại`);
+      throw error;
+    }
+
+    res.status(201).json({ copy: serializeCopy(copy) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PATCH /copies/:id
+router.patch('/copies/:id', requireDynamicPermission('books', 'update'), async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({
+      condition: z.string().optional(),
+      status: z.string().optional(),
+      shelf_location: z.string().nullable().optional(),
+      barcode: z.string().min(1).optional(),
+      note: z.string().optional(),
+    }).parse(req.body);
+
+    const condition = body.condition !== undefined ? normalizeCondition(body.condition) : undefined;
+    const status = body.status !== undefined ? normalizeCopyStatus(body.status) : undefined;
+
+    const repo = new BorrowRepository();
+    const copy = await repo.getCopyById(req.params.id);
+    if (!copy) throw new HttpError(404, 'Bản sao không tồn tại');
+
+    const fields: Record<string, any> = {};
+    if (condition !== undefined) fields.condition = condition;
+    if (status !== undefined) fields.status = status;
+    if (body.shelf_location !== undefined) fields.shelfLocation = body.shelf_location;
+    if (body.barcode !== undefined) fields.barcode = body.barcode;
+
+    const conditionChanged = condition !== undefined && condition !== copy.condition;
+
+    // Written before the update so previous_condition still reflects the stored value.
+    if (conditionChanged) {
+      const previous = copy.condition || 'good';
+      await repo.insertConditionHistory(
+        copy.id,
+        condition!,
+        req.user?.id || null,
+        body.note || `${previous} → ${condition}`,
+      );
+    }
+
+    const updated = await repo.updateCopy(copy.id, fields);
+    if (!updated) throw new HttpError(500, 'Cập nhật bản sao thất bại');
+
+    res.json({ copy: serializeCopy(updated) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE /copies/:id
+router.delete('/copies/:id', requireDynamicPermission('books', 'delete'), async (req, res, next) => {
+  try {
+    const repo = new BorrowRepository();
+    const copy = await repo.getCopyById(req.params.id);
+    if (!copy) throw new HttpError(404, 'Bản sao không tồn tại');
+    if (await repo.hasActiveBorrowsForCopy(copy.id)) {
+      throw new HttpError(409, 'Bản sao đang được mượn nên không thể xóa');
+    }
+    await repo.deleteCopies([copy]);
+    res.json({ success: true, deleted: 1 });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /books/:book_id
 router.get('/books/:book_id', async (req, res, next) => {
   try {
@@ -203,6 +322,7 @@ router.put('/books/:book_id', requireDynamicPermission('books', 'update'), async
       language: z.string().nullable().optional(),
       shelf_location: z.string().nullable().optional(),
       cover_url: z.string().nullable().optional(),
+      price: z.coerce.number().min(0).nullable().optional(),
     }).parse(req.body);
     const repo = new BorrowRepository();
     const book = await repo.getBookById(req.params.book_id);
@@ -220,6 +340,7 @@ router.put('/books/:book_id', requireDynamicPermission('books', 'update'), async
     if (body.language !== undefined) fields.language = body.language;
     if (body.shelf_location !== undefined) fields.shelfLocation = body.shelf_location;
     if (body.cover_url !== undefined) fields.coverUrl = body.cover_url;
+    if (body.price !== undefined) fields.price = body.price;
     const updated = await repo.updateBook(book.id, fields);
     if (!updated) throw new HttpError(500, 'Cập nhật sách thất bại');
     const total = await repo.countCopies(book.id);

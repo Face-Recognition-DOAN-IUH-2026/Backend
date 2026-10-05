@@ -1,5 +1,5 @@
 import { User } from '../entities/User.entity';
-import { UserRepository } from './UserRepository';
+import { UserRepository, USER_SELECT_COLUMNS } from './UserRepository';
 
 export class PatronRepository extends UserRepository {
   async findPatrons(options?: {
@@ -10,6 +10,7 @@ export class PatronRepository extends UserRepository {
   }): Promise<[User[], number]> {
     const qb = this.repo
       .createQueryBuilder('user')
+      .select(USER_SELECT_COLUMNS)
       .where('user.role = :role', { role: 'patron' });
 
     if (options?.query) {
@@ -31,13 +32,13 @@ export class PatronRepository extends UserRepository {
   }
 
   async getActivePatrons(): Promise<User[]> {
-    return this.repo.find({
-      where: {
-        role: 'patron',
-        currentStatus: 'inside',
-        status: 'active',
-      },
-    });
+    return this.repo
+      .createQueryBuilder('user')
+      .select(USER_SELECT_COLUMNS)
+      .where('user.role = :role', { role: 'patron' })
+      .andWhere('user.currentStatus = :currentStatus', { currentStatus: 'inside' })
+      .andWhere('user.status = :status', { status: 'active' })
+      .getMany();
   }
 
   async countActivePatrons(): Promise<number> {
