@@ -168,6 +168,24 @@ router.get('/stats', auth, requireRole(['admin', 'staff']), async (_req, res, ne
   }
 });
 
+router.get('/stats/recognition', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
+  try {
+    const days = req.query.days ? Number(req.query.days) : 30;
+    res.json(await accessService.getRecognitionStats(days));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/stats/hourly', auth, requireRole(['admin', 'staff']), async (req, res, next) => {
+  try {
+    const date = req.query.date as string | undefined;
+    res.json(await accessService.getHourlyStats(date));
+  } catch (error) {
+    next(error);
+  }
+});
+
 /**
  * @swagger
  * /access/test-broadcast:

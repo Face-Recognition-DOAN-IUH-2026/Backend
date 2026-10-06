@@ -5,7 +5,7 @@ import { PatronRepository } from '../repositories/PatronRepository';
 import { RedisService } from './RedisService';
 import { CloudinaryService } from './CloudinaryService';
 import { UserPublicDto } from '../dto';
-import { NotFoundError, BadRequestError, UnauthorizedError } from '../errors';
+import { NotFoundError, BadRequestError, UnauthorizedError, ForbiddenError } from '../errors';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { getServiceToken } from '../../../shared/auth';
@@ -27,16 +27,19 @@ export class UserService {
 
   async getAllUsers(skip = 0, limit = 200): Promise<{ users: UserPublicDto[]; total: number }> {
     const [users, total] = await this.userRepo.findAll(skip, limit);
-    const result: UserPublicDto[] = [];
-    for (const user of users) {
-      let hasFace = false;
+    const unknownFaceIds = users.filter((u) => !u.hasFace).map((u) => u.id);
+    let batchMap: Record<string, boolean> = {};
+    if (unknownFaceIds.length > 0) {
       try {
-        hasFace = await faceServiceClient.checkEnrollment(user.id);
+        batchMap = await faceServiceClient.checkEnrollmentBatch(unknownFaceIds);
       } catch {
-        hasFace = false;
+        batchMap = {};
       }
-      result.push(this.toPublic(user, hasFace));
     }
+    const result: UserPublicDto[] = users.map((user) => {
+      const hasFace = Boolean(user.hasFace || batchMap[user.id]);
+      return this.toPublic(user, hasFace);
+    });
     return { users: result, total };
   }
 
@@ -228,15 +231,178 @@ export class UserService {
     return this.toPublic(updatedUser!, false);
   }
 
-  async changePassword(id: string, oldPass: string, newPass: string): Promise<void> {
+  private validatePasswordStrength(password: string): void {
+    if (!password || password.length < 8) {
+      throw new BadRequestError('Mật khẩu mới phải có tối thiểu 8 ký tự');
+    }
+    if (password.length > 32) {
+      throw new BadRequestError('Mật khẩu mới không được vượt quá 32 ký tự');
+    }
+    if (/\s/.test(password)) {
+      throw new BadRequestError('Mật khẩu không được chứa khoảng trắng');
+    }
+    if (!/[A-Z]/.test(password)) {
+      throw new BadRequestError('Mật khẩu phải chứa ít nhất 1 chữ cái in hoa (A-Z)');
+    }
+    if (!/[a-z]/.test(password)) {
+      throw new BadRequestError('Mật khẩu phải chứa ít nhất 1 chữ cái in thường (a-z)');
+    }
+    if (!/[0-9]/.test(password)) {
+      throw new BadRequestError('Mật khẩu phải chứa ít nhất 1 chữ số (0-9)');
+    }
+  }
+
+  async requestPasswordChangeOtp(id: string, oldPass: string, newPass: string): Promise<void> {
     const user = await this.userRepo.findById(id);
     if (!user) throw new NotFoundError('User not found');
 
+    // Chống brute-force: kiểm tra số lần thử sai
+    const failCount = await this.redis.getFailedPasswordAttempts(id);
+    if (failCount >= 5) {
+      throw new ForbiddenError('Tài khoản đã nhập sai mật khẩu quá 5 lần. Vui lòng thử lại sau 15 phút để đảm bảo an toàn.');
+    }
+
     const isMatch = await bcrypt.compare(oldPass, user.passwordHash);
-    if (!isMatch) throw new UnauthorizedError('Mật khẩu hiện tại không đúng');
+    if (!isMatch) {
+      const count = await this.redis.recordFailedPasswordAttempt(id);
+      const remaining = Math.max(0, 5 - count);
+      throw new UnauthorizedError(
+        'Mật khẩu hiện tại không chính xác' +
+        (remaining > 0 ? ` (Còn ${remaining} lần thử trước khi bị tạm khóa)` : ' (Tài khoản đã bị tạm khóa 15 phút)')
+      );
+    }
+
+    // Xóa bộ đếm sai khi nhập đúng mật khẩu
+    await this.redis.clearFailedPasswordAttempts(id);
+
+    if (oldPass === newPass) {
+      throw new BadRequestError('Mật khẩu mới không được trùng với mật khẩu hiện tại');
+    }
+
+    this.validatePasswordStrength(newPass);
+
+    const pendingHash = await bcrypt.hash(newPass, 10);
+    const code = crypto.randomInt(100000, 999999).toString();
+    await this.redis.setPasswordChangeOtp(id, code, pendingHash);
+
+    try {
+      await retryWithBackoff(async () => {
+        if (!notificationCircuit.canRequest()) {
+          throw new Error('Notification service temporarily unavailable');
+        }
+        try {
+          const response = await axios.post(
+            `${config.notificationServiceUrl}/internal/send-password-change-otp`,
+            { toEmail: user.email, code },
+            {
+              headers: { Authorization: `Bearer ${getServiceToken('user-service', config.jwtSecret)}` },
+              timeout: 5000,
+            }
+          );
+          notificationCircuit.recordSuccess();
+          return response;
+        } catch (err: any) {
+          if (err?.response?.status >= 500 || err?.code === 'ECONNABORTED' || err?.code === 'ECONNREFUSED') {
+            notificationCircuit.recordFailure();
+          }
+          throw err;
+        }
+      }, 2, 500);
+    } catch (e: any) {
+      console.error('[UserService] Failed to send password change OTP:', e.response?.status, e.response?.data || e.message);
+      throw new Error('Không thể gửi mã xác thực qua email, vui lòng thử lại sau');
+    }
+  }
+
+  async verifyAndChangePassword(id: string, code: string, newPass?: string): Promise<void> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    const storedCode = await this.redis.getPasswordChangeOtp(id);
+    if (!storedCode || storedCode !== code.trim()) {
+      throw new UnauthorizedError('Mã OTP không hợp lệ hoặc đã hết hạn');
+    }
+
+    let passwordHash = await this.redis.getPendingPasswordHash(id);
+    if (!passwordHash && newPass) {
+      this.validatePasswordStrength(newPass);
+      passwordHash = await bcrypt.hash(newPass, 10);
+    }
+    if (!passwordHash) {
+      throw new BadRequestError('Không tìm thấy thông tin mật khẩu mới cần cập nhật');
+    }
+
+    await this.userRepo.update(id, { passwordHash, passwordAutoGenerated: false });
+    await this.redis.deletePasswordChangeOtp(id);
+    await this.redis.clearFailedPasswordAttempts(id);
+
+    // Gửi email cảnh báo bảo mật
+    try {
+      await axios.post(
+        `${config.notificationServiceUrl}/internal/send-password-changed-alert`,
+        { toEmail: user.email },
+        {
+          headers: { Authorization: `Bearer ${getServiceToken('user-service', config.jwtSecret)}` },
+          timeout: 5000,
+        }
+      ).catch((err) => console.warn('Failed to send security alert email:', err.message));
+    } catch (err: any) {
+      console.warn('Failed to send security alert:', err?.message);
+    }
+
+    this.redis.publishUserUpdated(id, user.email);
+  }
+
+  async changePassword(id: string, oldPass: string, newPass: string, code?: string): Promise<void> {
+    if (code) {
+      return await this.verifyAndChangePassword(id, code, newPass);
+    }
+
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundError('User not found');
+
+    // Chống brute-force
+    const failCount = await this.redis.getFailedPasswordAttempts(id);
+    if (failCount >= 5) {
+      throw new ForbiddenError('Tài khoản đã nhập sai mật khẩu quá 5 lần. Vui lòng thử lại sau 15 phút để đảm bảo an toàn.');
+    }
+
+    const isMatch = await bcrypt.compare(oldPass, user.passwordHash);
+    if (!isMatch) {
+      const count = await this.redis.recordFailedPasswordAttempt(id);
+      const remaining = Math.max(0, 5 - count);
+      throw new UnauthorizedError(
+        'Mật khẩu hiện tại không chính xác' +
+        (remaining > 0 ? ` (Còn ${remaining} lần thử trước khi bị tạm khóa)` : ' (Tài khoản đã bị tạm khóa 15 phút)')
+      );
+    }
+
+    await this.redis.clearFailedPasswordAttempts(id);
+
+    if (oldPass === newPass) {
+      throw new BadRequestError('Mật khẩu mới không được trùng với mật khẩu cũ');
+    }
+
+    this.validatePasswordStrength(newPass);
 
     const passwordHash = await bcrypt.hash(newPass, 10);
-    await this.userRepo.update(id, { passwordHash });
+    await this.userRepo.update(id, { passwordHash, passwordAutoGenerated: false });
+
+    // Gửi email cảnh báo bảo mật
+    try {
+      await axios.post(
+        `${config.notificationServiceUrl}/internal/send-password-changed-alert`,
+        { toEmail: user.email },
+        {
+          headers: { Authorization: `Bearer ${getServiceToken('user-service', config.jwtSecret)}` },
+          timeout: 5000,
+        }
+      ).catch((err) => console.warn('Failed to send security alert email:', err.message));
+    } catch (err: any) {
+      console.warn('Failed to send security alert:', err?.message);
+    }
+
+    this.redis.publishUserUpdated(id, user.email);
   }
 
   async requestEmailChangeOtp(id: string, newEmail: string): Promise<void> {

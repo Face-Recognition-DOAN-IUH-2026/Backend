@@ -289,4 +289,78 @@ Neu ban khong thuc hien yeu cau nay, vui long bo qua email.
     };
     await this.transporter.sendMail(mailOptions);
   }
+
+  async sendPasswordChangeOtp(toEmail: string, code: string): Promise<void> {
+    console.log(`[EmailService] Sending password change OTP to: ${toEmail}`);
+    const mailOptions = {
+      from: config.smtp.from,
+      to: toEmail,
+      subject: '[ThuVienIUH] Mã xác thực đổi mật khẩu tài khoản',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #0A2540 0%, #8B0000 100%); padding: 24px; text-align: center; border-radius: 12px 12px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 22px;">Thư Viện Đại Học Công Nghiệp TP.HCM</h1>
+          </div>
+          <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px; border: 1px solid #e0e0e0;">
+            <h2 style="color: #0A2540; margin: 0 0 14px; font-size: 18px;">Xác thực yêu cầu đổi mật khẩu</h2>
+            <p style="color: #555; font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
+              Hệ thống nhận được yêu cầu đổi mật khẩu cho tài khoản liên kết với email này. Vui lòng nhập mã OTP dưới đây để hoàn tất xác thực:
+            </p>
+            <div style="background: #f8fafc; border: 2px dashed #0A2540; padding: 20px; text-align: center; border-radius: 10px; margin: 20px 0;">
+              <span style="font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #8B0000; font-family: monospace;">${code}</span>
+            </div>
+            <p style="color: #666; font-size: 13px; line-height: 1.6; margin: 0 0 16px;">
+              Mã xác thực có hiệu lực trong <strong>10 phút</strong>. Tuyệt đối không chia sẻ mã này cho bất kỳ ai khác.
+            </p>
+            <div style="background: #fff3cd; border: 1px solid #ffeeba; border-radius: 8px; padding: 14px; margin: 18px 0;">
+              <p style="color: #856404; font-size: 13px; margin: 0; line-height: 1.5;">
+                <strong>Cảnh báo bảo mật:</strong> Nếu bạn KHÔNG thực hiện yêu cầu này, có thể ai đó đang cố gắng truy cập tài khoản của bạn. Vui lòng bỏ qua email và thông báo cho Thư viện ngay.
+              </p>
+            </div>
+            <p style="color: #999; font-size: 12px; text-align: center; margin: 24px 0 0;">
+              Email tự động từ Hệ thống Quản lý Thư viện Thông minh IUH. Vui lòng không phản hồi email này.
+            </p>
+          </div>
+        </div>
+      `,
+      text: `THU VIEN IUH - MA XAC THUC DOI MAT KHAU\n\nMa OTP cua ban la: ${code}\n\nMa co hieu luc trong 10 phut.\nNeu ban khong thuc hien yeu cau nay, vui long bo qua email.`
+    };
+    await this.transporter.sendMail(mailOptions);
+  }
+
+  async sendPasswordChangedAlert(toEmail: string): Promise<void> {
+    console.log(`[EmailService] Sending password changed alert to: ${toEmail}`);
+    const timeStr = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const mailOptions = {
+      from: config.smtp.from,
+      to: toEmail,
+      subject: '[ThuVienIUH] Cảnh báo an ninh: Mật khẩu của bạn vừa được thay đổi',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #8B0000 0%, #0A2540 100%); padding: 24px; text-align: center; border-radius: 12px 12px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 22px;">Thư Viện Đại Học Công Nghiệp TP.HCM</h1>
+          </div>
+          <div style="background: #ffffff; padding: 32px; border-radius: 0 0 12px 12px; border: 1px solid #e0e0e0;">
+            <h2 style="color: #8B0000; margin: 0 0 14px; font-size: 18px;">Mật khẩu tài khoản đã được thay đổi</h2>
+            <p style="color: #333; font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
+              Mật khẩu tài khoản Thư viện IUH của bạn vừa được thay đổi thành công vào lúc:
+            </p>
+            <div style="background: #f1f5f9; padding: 14px; border-radius: 8px; text-align: center; margin: 16px 0;">
+              <strong style="color: #0A2540; font-size: 15px;">${timeStr} (Giờ Việt Nam)</strong>
+            </div>
+            <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 14px; margin: 18px 0;">
+              <p style="color: #991b1b; font-size: 13px; margin: 0; line-height: 1.5;">
+                <strong>Quan trọng:</strong> Nếu bạn KHÔNG thực hiện thay đổi này, tài khoản của bạn có thể đã bị xâm phạm. Vui lòng sử dụng chức năng <strong>"Quên mật khẩu"</strong> ngay lập tức để lấy lại tài khoản hoặc liên hệ Ban Quản lý Thư viện IUH để được hỗ trợ khẩn cấp.
+              </p>
+            </div>
+            <p style="color: #999; font-size: 12px; text-align: center; margin: 24px 0 0;">
+              Email tự động từ Hệ thống Quản lý Thư viện Thông minh IUH. Vui lòng không phản hồi email này.
+            </p>
+          </div>
+        </div>
+      `,
+      text: `THU VIEN IUH - CANH BAO DOI MAT KHAU\n\nMat khau tai khoan cua ban vua duoc doi luc: ${timeStr}.\nNeu khong phai ban thuc hien, vui long dung chuc nang Quen mat khau ngay lap tuc.`
+    };
+    await this.transporter.sendMail(mailOptions);
+  }
 }

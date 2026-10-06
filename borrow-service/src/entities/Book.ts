@@ -56,6 +56,9 @@ export class Book {
   @Column({ name: 'shelf_location', type: 'varchar', length: 100, nullable: true })
   shelfLocation!: string | null;
 
+  @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true })
+  price!: number | null;
+
   @Column({ name: 'created_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt!: Date;
 

@@ -11,7 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.dependencies import get_current_user, get_db_session, require_role
-from core.schemas import PatronCreate, PatronPublic, PatronUpdate, PatronRegisterRequest, PatronLoginRequest, PatronAuthResponse
+from core.schemas import PatronCreate, PatronPublic, PatronUpdate, PatronLoginRequest, PatronAuthResponse
 from core.service_token import get_auth_headers
 from infra.config import settings
 from infra.milvus_client import get_milvus_client
@@ -110,17 +110,6 @@ async def _patron_to_public(user_data: dict, db: AsyncSession) -> PatronPublic:
     )
 
 
-@router.post("/register", response_model=PatronAuthResponse)
-async def register_patron(
-    body: PatronRegisterRequest,
-):
-    result = await _proxy_to_user_service("POST", "/patrons/register", body.model_dump())
-    user_data = result.get("patron", result.get("user", {}))
-    return PatronAuthResponse(
-        access_token=result["access_token"],
-        token_type="bearer",
-        patron=PatronPublic(**_convert_keys(user_data)),
-    )
 
 
 @router.post("/login", response_model=PatronAuthResponse)
@@ -141,7 +130,7 @@ async def search_patrons(
     q: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=1000),
     db: AsyncSession = Depends(get_db_session),
     _=Depends(get_current_user),
 ):

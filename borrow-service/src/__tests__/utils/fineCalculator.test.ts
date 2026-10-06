@@ -1,4 +1,4 @@
-import { calculateOverdueFine } from '../../utils/fineCalculator';
+import { calculateOverdueFine, calculateDamageFee, applyPaymentState, generatePaymentRef } from '../../utils/fineCalculator';
 
 describe('calculateOverdueFine', () => {
   it('returns 0 when not overdue (0 days)', () => {
@@ -52,5 +52,101 @@ describe('calculateOverdueFine', () => {
       ];
       expect(calculateOverdueFine(8, closedBrackets, 3000)).toBe(24000);
     });
+  });
+});
+
+const DAMAGE_CONFIG = {
+  damageFeePct: { minor: 30, major: 70, lost: 100 },
+  damageFeeFixed: { minor: 5000, major: 10000, lost: 10000 },
+  fallbackBookPrice: 100000,
+};
+
+describe('calculateDamageFee', () => {
+  it.each(['new', 'good', null, undefined])('returns 0 for condition %j', (condition) => {
+    expect(calculateDamageFee(condition as any, 120000, DAMAGE_CONFIG)).toBe(0);
+  });
+
+  it('minor_damage = round(price*30%) + 5000', () => {
+    expect(calculateDamageFee('minor_damage', 100000, DAMAGE_CONFIG)).toBe(35000);
+  });
+
+  it('major_damage = round(price*70%) + 10000', () => {
+    expect(calculateDamageFee('major_damage', 100000, DAMAGE_CONFIG)).toBe(80000);
+  });
+
+  it('lost = round(price*100%) + 10000', () => {
+    expect(calculateDamageFee('lost', 100000, DAMAGE_CONFIG)).toBe(110000);
+  });
+
+  it('uses fallback price when book price is null', () => {
+    expect(calculateDamageFee('lost', null, DAMAGE_CONFIG)).toBe(110000);
+  });
+
+  it('uses fallback price when book price is 0', () => {
+    expect(calculateDamageFee('major_damage', 0, DAMAGE_CONFIG)).toBe(80000);
+  });
+
+  it('honors custom config pcts/fixed and fallback', () => {
+    const custom = {
+      damageFeePct: { minor: 10, major: 50, lost: 90 },
+      damageFeeFixed: { minor: 1000, major: 2000, lost: 3000 },
+      fallbackBookPrice: 50000,
+    };
+    expect(calculateDamageFee('minor_damage', 200000, custom)).toBe(21000);
+    expect(calculateDamageFee('major_damage', undefined, custom)).toBe(27000);
+    expect(calculateDamageFee('lost', undefined, custom)).toBe(48000);
+  });
+});
+
+describe('applyPaymentState', () => {
+  const buildRecord = (total: number) => ({ fineAmount: total, damageFee: 0, finePaid: false, paymentMethod: null as string | null, paymentRef: null as string | null, paidAt: null as Date | null });
+
+  it('marks zero-total record as paid with no payment details', () => {
+    const record = buildRecord(0);
+    applyPaymentState(record, { isPaidImmediately: true, paymentMethod: 'cash' });
+    expect(record.finePaid).toBe(true);
+    expect(record.paymentMethod).toBeNull();
+    expect(record.paymentRef).toBeNull();
+    expect(record.paidAt).toBeNull();
+  });
+
+  it('sets full payment details when total > 0 and paid immediately', () => {
+    const record = buildRecord(90000);
+    applyPaymentState(record, { isPaidImmediately: true, paymentMethod: 'qr_code' });
+    expect(record.finePaid).toBe(true);
+    expect(record.paymentMethod).toBe('qr_code');
+    expect(record.paymentRef).toMatch(/^TXN-\d{8}-[0-9a-f]{8}$/);
+    expect(record.paidAt).toBeInstanceOf(Date);
+  });
+
+  it('defaults payment method to cash when immediate payment and method omitted', () => {
+    const record = buildRecord(10000);
+    applyPaymentState(record, { isPaidImmediately: true });
+    expect(record.paymentMethod).toBe('cash');
+  });
+
+  it('leaves debt when not paid immediately', () => {
+    const record = buildRecord(90000);
+    applyPaymentState(record, { isPaidImmediately: false, paymentMethod: 'cash' });
+    expect(record.finePaid).toBe(false);
+    expect(record.paymentMethod).toBeNull();
+    expect(record.paymentRef).toBeNull();
+    expect(record.paidAt).toBeNull();
+  });
+
+  it('payment state treats fineAmount+damageFee as the settled total', () => {
+    const record = { fineAmount: 10000, damageFee: 80000, finePaid: false, paymentMethod: null as string | null, paymentRef: null as string | null, paidAt: null as Date | null };
+    applyPaymentState(record, { isPaidImmediately: true, paymentMethod: 'cash' });
+    expect(record.finePaid).toBe(true);
+  });
+});
+
+describe('generatePaymentRef', () => {
+  it('produces TXN-YYYYMMDD-<8 hex> and is unique across calls', () => {
+    const a = generatePaymentRef();
+    const b = generatePaymentRef();
+    expect(a).toMatch(/^TXN-\d{8}-[0-9a-f]{8}$/);
+    expect(b).toMatch(/^TXN-\d{8}-[0-9a-f]{8}$/);
+    expect(a).not.toBe(b);
   });
 });

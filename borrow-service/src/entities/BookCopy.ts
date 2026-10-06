@@ -2,6 +2,7 @@ import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } 
 import { Book } from './Book';
 
 @Index(['bookId', 'isAvailable'])
+@Index(['bookId', 'status'])
 @Entity({ name: 'book_copies' })
 export class BookCopy {
   @PrimaryGeneratedColumn('uuid')
@@ -15,6 +16,15 @@ export class BookCopy {
 
   @Column({ name: 'is_available', type: 'boolean', default: true })
   isAvailable!: boolean;
+
+  @Column({ type: 'varchar', length: 30, default: 'good' })
+  condition!: string;
+
+  @Column({ type: 'varchar', length: 20, default: 'available' })
+  status!: string;
+
+  @Column({ name: 'imported_at', type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  importedAt!: Date;
 
   @Column({ name: 'shelf_location', type: 'varchar', length: 100, nullable: true })
   shelfLocation!: string | null;

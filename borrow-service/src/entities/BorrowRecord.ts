@@ -9,6 +9,7 @@ import { BookCopy } from './BookCopy';
 @Index(['slipId'])
 @Index(['dueAt'])
 @Index(['copyId', 'status'])
+@Index(['finePaid', 'returnAt'])
 @Entity({ name: 'borrow_records' })
 export class BorrowRecord {
   @PrimaryGeneratedColumn('uuid')
@@ -47,6 +48,9 @@ export class BorrowRecord {
   @Column({ name: 'return_method', type: 'varchar', length: 50, nullable: true })
   returnMethod!: string | null;
 
+  @Column({ name: 'return_condition', type: 'varchar', length: 30, nullable: true })
+  returnCondition!: string | null;
+
   @Column({ name: 'slip_id', type: 'uuid', nullable: true })
   slipId!: string | null;
 
@@ -55,6 +59,18 @@ export class BorrowRecord {
 
   @Column({ name: 'fine_amount', type: 'decimal', precision: 10, scale: 2, default: 0 })
   fineAmount!: number;
+
+  @Column({ name: 'damage_fee', type: 'decimal', precision: 12, scale: 2, default: 0 })
+  damageFee!: number;
+
+  @Column({ name: 'payment_method', type: 'varchar', length: 20, nullable: true })
+  paymentMethod!: string | null;
+
+  @Column({ name: 'payment_ref', type: 'varchar', length: 40, nullable: true })
+  paymentRef!: string | null;
+
+  @Column({ name: 'paid_at', type: 'timestamp', nullable: true })
+  paidAt!: Date | null;
 
   @Column({ name: 'fine_paid', type: 'boolean', default: false })
   finePaid!: boolean;

@@ -50,19 +50,33 @@ class Settings(BaseSettings):
     entry_cam_url: str = ""
     exit_cam_url: str = ""
     relay_api_url: str = ""
-    face_match_threshold: float = 0.45
+    face_match_threshold: float = 0.65
     access_cooldown_seconds: int = 10
     max_entry_hours: int = 24
+    liveness_threshold: float = 0.5
+    enable_active_liveness: bool = True
+    active_liveness_reject_below: float = 0.45
+    active_liveness_live_above: float = 0.65
+    active_liveness_frames: int = 3
+    active_liveness_interval_ms: int = 1500
+    active_liveness_max_attempts: int = 3
     enable_person_detection: bool = True
     enable_multi_angle: bool = True
     min_face_size: int = 80
     frame_process_interval: float = 1.0
     direction_grace_seconds: int = 120
+    strict_direction: bool = False
     camera_max_queue_depth: int = 50
 
     user_service_url: str = "http://user-service:3001"
     access_service_url: str = "http://access-service:3003"
     service_jwt_secret: str = ""
+
+    @model_validator(mode="after")
+    def resolve_celery_result_backend(self) -> "Settings":
+        if not self.celery_result_backend and getattr(self, "redis_url", ""):
+            self.celery_result_backend = self.redis_url
+        return self
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":

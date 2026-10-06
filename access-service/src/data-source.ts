@@ -5,6 +5,7 @@ import { AccessLog } from './entities/AccessLog';
 import { KioskDevice } from './entities/KioskDevice';
 import { KioskApprovalRequest } from './entities/KioskApprovalRequest';
 import { PatronAccessState } from './entities/PatronAccessState';
+import { AccessRecognitionDaily } from './entities/AccessRecognitionDaily';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -13,7 +14,7 @@ export const AppDataSource = new DataSource({
   database: config.db.database,
   username: config.db.user,
   password: config.db.password,
-  entities: [AccessLog, KioskDevice, KioskApprovalRequest, PatronAccessState],
+  entities: [AccessLog, KioskDevice, KioskApprovalRequest, PatronAccessState, AccessRecognitionDaily],
   migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
   synchronize: false,
   logging: process.env.TYPEORM_LOGGING === 'true',

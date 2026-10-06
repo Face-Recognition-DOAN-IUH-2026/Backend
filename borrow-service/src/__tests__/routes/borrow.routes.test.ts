@@ -1,7 +1,9 @@
 import express, { Express } from 'express';
 import request from 'supertest';
 import borrowRoutes from '../../routes/borrow.routes';
-import { HttpError } from '../../middlewares/errorHandler';
+import bookRoutes from '../../routes/book.routes';
+import staffRoutes from '../../routes/staff.routes';
+import { HttpError, errorHandler } from '../../middlewares/errorHandler';
 import * as AccessServiceClient from '../../clients/AccessServiceClient';
 import * as UserServiceClient from '../../clients/UserServiceClient';
 import {
@@ -42,6 +44,15 @@ jest.mock('../../middlewares/auth', () => {
       }
       next();
     },
+    requireDynamicPermission: (_resource: string, action: string) => (req: any, res: any, next: any) => {
+      const role = req.headers['x-test-role'] || 'patron';
+      req.user = req.user || { id: PATRON_UUID, email: 'patron@test.com', role };
+      if (req.headers['x-test-deny-permission'] || role === 'patron' || (action === 'delete' && role !== 'admin')) {
+        res.status(403).json({ error: 'Permission denied' });
+        return;
+      }
+      next();
+    },
   };
 });
 
@@ -58,9 +69,16 @@ const mockBorrowRepo = {
   createSlip: jest.fn().mockResolvedValue({}),
   confirmSlip: jest.fn().mockResolvedValue(undefined),
   listBooks: jest.fn().mockResolvedValue({ items: [], total: 0, stats: new Map() }),
+  getAggregateStats: jest.fn().mockResolvedValue({ totalBooks: 1, totalCopies: 5, availableCopies: 3 }),
   listBarcodes: jest.fn().mockResolvedValue([]),
   countCopies: jest.fn().mockResolvedValue(0),
   updateBookQuantity: jest.fn().mockResolvedValue(undefined),
+  updateBook: jest.fn().mockResolvedValue(null),
+  findUnpaidFines: jest.fn().mockResolvedValue([]),
+  findUnpaidFinesByPatron: jest.fn().mockResolvedValue([]),
+  findFineRecordsByIds: jest.fn().mockResolvedValue([]),
+  saveBorrowRecords: jest.fn().mockImplementation((recs: any[]) => Promise.resolve(recs)),
+  hasUnpaidFinesForPatron: jest.fn().mockResolvedValue(false),
   bulkDeleteBooks: jest.fn().mockResolvedValue({ deleted: 0, errors: [] }),
   getActiveBorrowCount: jest.fn().mockResolvedValue(0),
   getOverdueBorrows: jest.fn().mockResolvedValue([]),
@@ -89,12 +107,9 @@ function createApp(): Express {
   const app = express();
   app.use(express.json());
   app.use('/borrow', borrowRoutes);
-  app.use((err: any, _req: any, res: any, _next: any) => {
-    if (err instanceof HttpError) {
-      return res.status(err.statusCode).json({ error: err.message });
-    }
-    res.status(500).json({ error: 'Internal server error' });
-  });
+  app.use('/borrow', bookRoutes);
+  app.use('/borrow', staffRoutes);
+  app.use(errorHandler);
   return app;
 }
 
@@ -134,6 +149,17 @@ describe('Borrow Routes', () => {
       expect(response.body.max_borrow_books).toBe(3);
       expect(response.body.max_borrow_books_per_slip).toBe(5);
       expect(response.body.max_borrow_days).toBe(14);
+    });
+
+    it('should expose the fine config object additively', async () => {
+      const response = await request(app).get('/borrow/config');
+      expect(response.status).toBe(200);
+      expect(response.body.fine).toBeDefined();
+      expect(response.body.fine.fine_per_day).toBe(5000);
+      expect(response.body.fine.damage_fee_pct).toEqual({ minor: 30, major: 70, lost: 100 });
+      expect(response.body.fine.damage_fee_fixed).toEqual({ minor: 5000, major: 10000, lost: 10000 });
+      expect(response.body.fine.fallback_book_price).toBe(100000);
+      expect(response.body.fine.fine_lock_threshold_days).toBe(30);
     });
   });
 
@@ -215,7 +241,47 @@ describe('Borrow Routes', () => {
         .send({ barcode: 'LIB-001' });
 
       expect(response.status).toBe(403);
-      expect(response.body.error || response.body.detail || '').toContain('het han');
+      expect(response.body.error || response.body.detail || '').toMatch(/h[eế]t h[aạ]n/i);
+    });
+
+    it('normalizes invisible control characters before the barcode lookup', async () => {
+      mockAccessService.getPatronAccessStatus = jest.fn().mockResolvedValue({
+        inside: true,
+        isExpired: false,
+      });
+      mockBorrowRepo.getCopyByBarcode = jest.fn().mockResolvedValue(null);
+
+      const response = await request(app)
+        .post('/borrow/')
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
+        .send({ barcode: '\u001dLIB-9780123456789-001' });
+
+      expect(response.status).toBe(404);
+      expect(mockBorrowRepo.getCopyByBarcode).toHaveBeenCalledWith('LIB-9780123456789-001');
+    });
+
+    it('suggests the nearest existing copies when the scanned copy is missing', async () => {
+      mockAccessService.getPatronAccessStatus = jest.fn().mockResolvedValue({
+        inside: true,
+        isExpired: false,
+      });
+      const book = createMockBook({ title: 'Gapped Book' });
+      mockBorrowRepo.getCopyByBarcode = jest.fn().mockResolvedValue(null);
+      mockBorrowRepo.getBookByIsbn = jest.fn().mockResolvedValue(book);
+      mockBorrowRepo.countCopies = jest.fn().mockResolvedValue(2);
+      mockBorrowRepo.getCopyBarcodesByBookId = jest.fn().mockResolvedValue([
+        'LIB-9780123456789-029',
+        'LIB-9780123456789-031',
+      ]);
+
+      const response = await request(app)
+        .post('/borrow/')
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
+        .send({ barcode: 'LIB-9780123456789-030' });
+
+      expect(response.status).toBe(404);
+      expect(response.body.error || response.body.detail || '').toContain('Các bản gần nhất');
+      expect(response.body.error || response.body.detail || '').not.toContain('từ 001 đến');
     });
   });
 
@@ -321,7 +387,114 @@ describe('Borrow Routes', () => {
         .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
         .send({});
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe('GET /borrow/fines', () => {
+    it('should return unpaid fines with patron hydration and totals', async () => {
+      const book = createMockBook({ title: 'Test Book' });
+      const record: any = {
+        id: '3fa85f64-5717-4562-b3fc-2c963f66afa6', patronId: PATRON_UUID, bookId: book.id, fineAmount: 10000, damageFee: 80000,
+        finePaid: false, paymentMethod: null, paymentRef: null, paidAt: null,
+        returnAt: new Date('2026-10-01'), dueAt: new Date('2026-09-20'), book, copy: { barcode: 'LIB-9780123456789-001' },
+      };
+      mockBorrowRepo.findUnpaidFines = jest.fn().mockResolvedValue([record]);
+      (mockUserService.lookupPatronsByIds as jest.Mock).mockResolvedValue(new Map([[PATRON_UUID, { id: PATRON_UUID, full_name: 'Nguyen Van A', student_code: 'SV001' }]]));
+
+      const response = await request(app)
+        .get('/borrow/fines?unpaid=true')
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveLength(1);
+      expect(response.body[0].record_id).toBe('3fa85f64-5717-4562-b3fc-2c963f66afa6');
+      expect(response.body[0].overdue_fine).toBe(10000);
+      expect(response.body[0].damage_fee).toBe(80000);
+      expect(response.body[0].total).toBe(90000);
+      expect(response.body[0].patron.full_name).toBe('Nguyen Van A');
+      expect(response.body[0].barcode).toBe('LIB-9780123456789-001');
+    });
+  });
+
+  describe('GET /borrow/patron/fines', () => {
+    it('returns unpaid fines for the authenticated patron', async () => {
+      const book = createMockBook({ title: 'Design Patterns' });
+      const record: any = {
+        id: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+        patronId: PATRON_UUID,
+        fineAmount: 15000,
+        damageFee: 20000,
+        finePaid: false,
+        returnAt: new Date('2026-10-02'),
+        book,
+        copy: { barcode: 'LIB-9780123456789-002' },
+      };
+      mockBorrowRepo.findUnpaidFinesByPatron = jest.fn().mockResolvedValue([record]);
+
+      const response = await request(app)
+        .get('/borrow/patron/fines')
+        .set('Authorization', 'Bearer test-token');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveLength(1);
+      expect(response.body[0].record_id).toBe('3fa85f64-5717-4562-b3fc-2c963f66afa6');
+      expect(response.body[0].overdue_fine).toBe(15000);
+      expect(response.body[0].damage_fee).toBe(20000);
+      expect(response.body[0].total).toBe(35000);
+      expect(response.body[0].book.title).toBe('Design Patterns');
+      expect(response.body[0].barcode).toBe('LIB-9780123456789-002');
+    });
+  });
+
+  describe('POST /borrow/fines/pay', () => {
+    it('marks records paid, generates a ref, and activates the patron when debt is cleared', async () => {
+      const record: any = { id: '3fa85f64-5717-4562-b3fc-2c963f66afa6', patronId: PATRON_UUID, fineAmount: 10000, damageFee: 0, finePaid: false };
+      mockBorrowRepo.findFineRecordsByIds = jest.fn().mockResolvedValue([record]);
+      mockBorrowRepo.hasUnpaidFinesForPatron = jest.fn().mockResolvedValue(false);
+      const activateMock = jest.fn().mockResolvedValue({ status: 'active' });
+      (mockUserService as any).activateCardAutoFine = activateMock;
+
+      const response = await request(app)
+        .post('/borrow/fines/pay')
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
+        .send({ record_ids: ['3fa85f64-5717-4562-b3fc-2c963f66afa6'], payment_method: 'qr_code' });
+
+      expect(response.status).toBe(200);
+      expect(record.finePaid).toBe(true);
+      expect(record.paymentMethod).toBe('qr_code');
+      expect(record.paymentRef).toMatch(/^TXN-\d{8}-[0-9a-f]{8}$/);
+      expect(record.paidAt).toBeInstanceOf(Date);
+      expect(activateMock).toHaveBeenCalledWith(PATRON_UUID);
+      expect(mockBorrowRepo.saveBorrowRecords).toHaveBeenCalled();
+    });
+
+    it('is idempotent for already-paid records and keeps manual suspensions', async () => {
+      const record: any = { id: '3fa85f64-5717-4562-b3fc-2c963f66afa6', patronId: PATRON_UUID, fineAmount: 10000, damageFee: 0, finePaid: true, paymentMethod: 'cash', paymentRef: 'TXN-20261001-deadbeef' };
+      mockBorrowRepo.findFineRecordsByIds = jest.fn().mockResolvedValue([record]);
+      mockBorrowRepo.hasUnpaidFinesForPatron = jest.fn().mockResolvedValue(true);
+      const activateMock = jest.fn();
+      (mockUserService as any).activateCardAutoFine = activateMock;
+
+      const response = await request(app)
+        .post('/borrow/fines/pay')
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
+        .send({ record_ids: ['3fa85f64-5717-4562-b3fc-2c963f66afa6'] });
+
+      expect(response.status).toBe(200);
+      expect(record.paymentRef).toBe('TXN-20261001-deadbeef');
+      expect(activateMock).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 when a record id is unknown', async () => {
+      mockBorrowRepo.findFineRecordsByIds = jest.fn().mockResolvedValue([]);
+
+      const response = await request(app)
+        .post('/borrow/fines/pay')
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
+        .send({ record_ids: ['3fa85f64-5717-4562-b3fc-2c963f66afa6'] });
+
+      expect(response.status).toBe(404);
     });
   });
 
@@ -461,13 +634,60 @@ describe('Borrow Routes', () => {
     });
   });
 
+  describe('PUT /borrow/books/:book_id', () => {
+    it('should persist price when staff updates it', async () => {
+      const mockBook = createMockBook();
+      mockBorrowRepo.getBookById = jest.fn().mockResolvedValue(mockBook);
+      mockBorrowRepo.countCopies = jest.fn().mockResolvedValue(2);
+      mockBorrowRepo.updateBook = jest.fn().mockResolvedValue({ ...mockBook, price: 125000 });
+
+      const response = await request(app)
+        .put(`/borrow/books/${mockBook.id}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
+        .send({ price: 125000 });
+
+      expect(response.status).toBe(200);
+      expect(mockBorrowRepo.updateBook).toHaveBeenCalledWith(mockBook.id, expect.objectContaining({ price: 125000 }));
+      expect(response.body.price).toBe(125000);
+    });
+
+    it('should allow clearing price back to null', async () => {
+      const mockBook = createMockBook({ price: 125000 });
+      mockBorrowRepo.getBookById = jest.fn().mockResolvedValue(mockBook);
+      mockBorrowRepo.countCopies = jest.fn().mockResolvedValue(2);
+      mockBorrowRepo.updateBook = jest.fn().mockResolvedValue({ ...mockBook, price: null });
+
+      const response = await request(app)
+        .put(`/borrow/books/${mockBook.id}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
+        .send({ price: null });
+
+      expect(response.status).toBe(200);
+      expect(mockBorrowRepo.updateBook).toHaveBeenCalledWith(mockBook.id, expect.objectContaining({ price: null }));
+      expect(response.body.price).toBeNull();
+    });
+
+    it('should return 400 for a negative price', async () => {
+      const mockBook = createMockBook();
+      mockBorrowRepo.getBookById = jest.fn().mockResolvedValue(mockBook);
+
+      const response = await request(app)
+        .put(`/borrow/books/${mockBook.id}`)
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
+        .send({ price: -5000 });
+
+      expect(response.status).toBe(400);
+      expect(mockBorrowRepo.updateBook).not.toHaveBeenCalled();
+    });
+  });
+
   describe('PUT /borrow/books/:book_id/quantity', () => {
     it('should return 404 for non-existent book', async () => {
       mockBorrowRepo.getBookById = jest.fn().mockResolvedValue(null);
 
       const response = await request(app)
         .put('/borrow/books/00000000-0000-0000-0000-000000000000/quantity')
-        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron')
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
         .send({ quantity: 5 });
 
       expect(response.status).toBe(404);
@@ -480,7 +700,7 @@ describe('Borrow Routes', () => {
 
       const response = await request(app)
         .put(`/borrow/books/${mockBook.id}/quantity`)
-        .set('Authorization', 'Bearer test-token').set('x-test-role', 'patron')
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
         .send({ quantity: -1 });
 
       expect(response.status).toBe(400);

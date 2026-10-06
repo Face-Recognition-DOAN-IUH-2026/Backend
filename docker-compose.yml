@@ -91,7 +91,7 @@ services:
     env_file:
       - ./.env
     environment:
-      POSTGRES_URL: ${POSTGRES_URL:?Set POSTGRES_URL in Backend/.env}
+      POSTGRES_URL: postgresql+psycopg://postgres:postgres@postgres:5432/facedb
       POSTGRES_DB: facedb
     depends_on:
       postgres:
@@ -108,11 +108,12 @@ services:
     env_file:
       - ./.env
     environment:
-      POSTGRES_URL: ${POSTGRES_URL:?Set POSTGRES_URL in Backend/.env}
+      POSTGRES_URL: postgresql+psycopg://postgres:postgres@postgres:5432/facedb
       POSTGRES_DB: facedb
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
+      - ./face-recognition-service:/app
       - insightface_models:/root/.insightface/models
     depends_on:
       postgres:
@@ -143,16 +144,17 @@ services:
     restart: unless-stopped
     shm_size: "2gb"
     deploy:
-      replicas: 3
-    command: ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=2", "--include=worker.tasks"]
+      replicas: 1
+    command: ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=1", "--include=worker.tasks"]
     env_file:
       - ./.env
     environment:
-      POSTGRES_URL: ${POSTGRES_URL:?Set POSTGRES_URL in Backend/.env}
+      POSTGRES_URL: postgresql+psycopg://postgres:postgres@postgres:5432/facedb
       POSTGRES_DB: facedb
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
+      - ./face-recognition-service:/app
       - insightface_models:/root/.insightface/models
     depends_on:
       postgres:

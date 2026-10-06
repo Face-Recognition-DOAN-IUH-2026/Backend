@@ -199,4 +199,18 @@ router.delete('/access/frames/:frameId', async (req, res, next) => {
   }
 });
 
+router.post('/access/rollup-recognition', async (req, res, next) => {
+  try {
+    const { date } = req.body || {};
+    if (!date || typeof date !== 'string') {
+      res.status(400).json({ error: 'date string (YYYY-MM-DD) is required' });
+      return;
+    }
+    const result = await accessService.rollupRecognition(date);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

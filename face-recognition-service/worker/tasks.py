@@ -446,11 +446,10 @@ def batch_enroll_task(self, user_id: str, object_keys: list[str] | None = None) 
             if not quality.get("valid"):
                 results.append({"angle": angle, "status": "error", "error": quality.get("error")})
                 continue
-            if angle == "frontal":
-                liveness = run_liveness_analysis(img)
-                if not liveness.get("is_live", False):
-                    results.append({"angle": angle, "status": "error", "error": "LIVENESS_FAILED", "liveness_score": liveness.get("liveness_score")})
-                    continue
+            # NOTE (LIB-254): không check liveness khi enroll. Enrollment gắn với
+            # tài khoản đã xác thực, còn cổng ra/vào chạy full anti-spoofing
+            # mỗi lượt nên kẻ gian dùng ảnh vẫn bị chặn ở cổng. Liveness ở đây
+            # chỉ gây false-positive trên selfie thật (bezel/glare veto).
             vec = extract_embedding_placeholder(img)
             vec_arr = np.array(vec, dtype=np.float32)
             vec_sum = float(np.sum(np.abs(vec_arr)))
@@ -885,16 +884,8 @@ def enroll_face(self, patron_id: str, object_key: str, angle: str = "frontal") -
             return {"status": "error", "error": face_result.get("error", "No face detected")}
 
         # Skip liveness for non-frontal angles to reduce user friction
-        if angle == "frontal":
-            liveness = liveness_from_face(img, face_result["face"])
-            if not liveness.get("is_live", False):
-                _delete_temp_frame(object_key)
-                logger.warning("Enroll face: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
-                return {
-                    "status": "error",
-                    "error": "LIVENESS_FAILED",
-                    "liveness_score": liveness.get("liveness_score"),
-                }
+        # NOTE (LIB-254): bỏ cả check frontal khi enroll — xem giải thích ở batch_enroll_task.
+        # Cổng ra/vào vẫn chạy full anti-spoofing mỗi lượt.
 
         norm_vec = l2_normalize(face_result["embedding"])
         _get_milvus().delete_by_user_id_and_angle(user_id=patron_id, angle=angle)
@@ -1173,6 +1164,7 @@ def _process_single_face(
     face_data: dict,
     raw_bytes: bytes | None = None,
     orig_scale: tuple[float, float] | None = None,
+    recognized_callback=None,  # optional hook, currently unused
 ) -> dict | None:
     """Process one detected face through the full access pipeline.
 
@@ -1218,20 +1210,6 @@ def _process_single_face(
     patron_id = best["user_id"]
     score = round(best["score"], 4)
 
-    # Determine access type before DB (based on camera_id)
-    if camera_id == settings.entry_cam_id:
-        access_type = "entry"
-    elif camera_id == settings.exit_cam_id:
-        access_type = "exit"
-    else:
-        logger.warning("Unknown camera_id: %s — skipping frame", camera_id)
-        return None
-
-    # Phase 2: Redis cooldown check (O(1), before expensive ops)
-    if _check_redis_cooldown(patron_id, access_type):
-        logger.debug("Cooldown hit for %s %s on %s", patron_id, access_type, camera_id)
-        return None
-
     # User lookup through user-service, which owns users.
     try:
         user_data = _get_user_via_api(patron_id)
@@ -1264,6 +1242,54 @@ def _process_single_face(
                 else datetime.fromisoformat(str(last_entry_raw).replace("Z", "+00:00"))
             )
 
+        # Check if single shared camera mode (e.g. same IP camera URL for entry & exit).
+        # IMPORTANT: When browser webcam sends frames with distinct camera_id (entry_gate / exit_gate),
+        # we must NOT treat them as shared-cam even if the IP URL happens to be the same —
+        # each camera_id represents a separate gate direction.
+        cam_id_is_known = camera_id in (settings.entry_cam_id, settings.exit_cam_id)
+        is_shared_cam = (
+            not cam_id_is_known  # only use shared-cam logic for unrecognised IDs
+            or (
+                bool(settings.entry_cam_url)
+                and bool(settings.exit_cam_url)
+                and settings.entry_cam_url == settings.exit_cam_url
+                and camera_id not in (settings.entry_cam_id, settings.exit_cam_id)
+            )
+        )
+        # Simpler: always use per-camera-id logic when the camera_id is a recognised gate
+        is_shared_cam = False  # Webcam frames always carry the correct camera_id — use it directly
+
+        if is_shared_cam:
+            if current_status == "inside":
+                if last_entry_at:
+                    last_entry_ts = last_entry_at.replace(tzinfo=timezone.utc).timestamp()
+                    is_recent = (datetime.now(timezone.utc).timestamp() - last_entry_ts) < settings.direction_grace_seconds
+                else:
+                    is_recent = False
+                if is_recent:
+                    logger.info("Grace period: %s (%s) still at entry door — already_granted", full_name, student_code)
+                    event = {"camera_id": camera_id, "status": "already_granted", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": "entry", "bbox": bbox, "landmarks": landmarks}
+                    _publish_camera_event(event)
+                    return None
+                access_type = "exit"
+                camera_id = settings.exit_cam_id
+            else:
+                access_type = "entry"
+                camera_id = settings.entry_cam_id
+        else:
+            if camera_id == settings.entry_cam_id:
+                access_type = "entry"
+            elif camera_id == settings.exit_cam_id:
+                access_type = "exit"
+            else:
+                logger.warning("Unknown camera_id: %s — skipping frame", camera_id)
+                return None
+
+        # Phase 2: Redis cooldown check (O(1), before expensive ops)
+        if _check_redis_cooldown(patron_id, access_type):
+            logger.debug("Cooldown hit for %s %s on %s", patron_id, access_type, camera_id)
+            return None
+
         # Expiry check
         is_expired = membership_expiry and membership_expiry < date.today()
         if is_expired or status != "active":
@@ -1273,37 +1299,46 @@ def _process_single_face(
                 _upload_evidence_frame(raw_bytes, patron_id, prefix="expired_")
             return None
 
-        # Phase 5: Direction check with Grace Period
-        if camera_id == settings.entry_cam_id:
-            if current_status == "inside":
-                if last_entry_at:
-                    last_entry_ts = last_entry_at.replace(tzinfo=timezone.utc).timestamp()
-                    is_recent = (datetime.now(timezone.utc).timestamp() - last_entry_ts) < settings.direction_grace_seconds
-                else:
-                    is_recent = False
-                if is_recent:
-                    logger.info("Grace period: %s (%s) still at entry — already_granted", full_name, student_code)
-                    event = {"camera_id": camera_id, "status": "already_granted", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
-                    _publish_camera_event(event)
-                    return None
-                else:
-                    logger.info("Wrong direction at entry for %s (%s) — already inside", full_name, student_code)
-                    event = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
-                    _publish_camera_event(event)
-                    if raw_bytes:
-                        _upload_evidence_frame(raw_bytes, patron_id, prefix="wrong_dir_")
-                    return None
-        elif camera_id == settings.exit_cam_id:
-            if current_status != "inside":
-                logger.info("Wrong direction at exit for %s (%s) — not inside library", full_name, student_code)
-                event = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
-                _publish_camera_event(event)
-                if raw_bytes:
-                    _upload_evidence_frame(raw_bytes, patron_id, prefix="wrong_dir_")
-                return None
+        # Phase 5: Direction check with Grace Period (dedicated separate cameras)
+        if not is_shared_cam:
+            if camera_id == settings.entry_cam_id:
+                if current_status == "inside":
+                    if last_entry_at:
+                        last_entry_ts = last_entry_at.replace(tzinfo=timezone.utc).timestamp()
+                        is_recent = (datetime.now(timezone.utc).timestamp() - last_entry_ts) < settings.direction_grace_seconds
+                    else:
+                        is_recent = False
+                    if is_recent:
+                        logger.info("Grace period: %s (%s) still at entry — already_granted", full_name, student_code)
+                        event = {"camera_id": camera_id, "status": "already_granted", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
+                        _publish_camera_event(event)
+                        return None
+                    else:
+                        logger.info("Wrong direction at entry for %s (%s) — already inside", full_name, student_code)
+                        event = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
+                        _publish_camera_event(event)
+                        if raw_bytes:
+                            _upload_evidence_frame(raw_bytes, patron_id, prefix="wrong_dir_")
+                        return None
+            elif camera_id == settings.exit_cam_id:
+                if current_status != "inside":
+                    if settings.strict_direction:
+                        logger.info("Wrong direction at exit for %s (%s) — not inside library", full_name, student_code)
+                        event = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
+                        _publish_camera_event(event)
+                        if raw_bytes:
+                            _upload_evidence_frame(raw_bytes, patron_id, prefix="wrong_dir_")
+                        return None
+                    else:
+                        logger.info("Non-strict direction: allowing exit for %s (%s) although status was outside", full_name, student_code)
 
         # Phase 2 (cont): Liveness check (expensive — after all fast checks passed)
         liveness = liveness_from_face(img, face)
+        logger.info(
+            "Camera %s liveness for %s: is_live=%s, score=%.4f (threshold=%.2f), vetoes=%s, breakdown=%s",
+            camera_id, full_name, liveness.get("is_live"), liveness.get("liveness_score", 0.0),
+            settings.liveness_threshold, liveness.get("veto_reasons", []), liveness.get("breakdown", {})
+        )
         if not liveness.get("is_live", False):
             event = {
                 "camera_id": camera_id, "status": "spoof",
@@ -1405,9 +1440,11 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
         scale_x = orig_w / resized_w if resized_w else 1.0
         scale_y = orig_h / resized_h if resized_h else 1.0
         granted_events = []
+        recognized_count = 0  # faces that matched a user (even if not granted)
         for face_data in all_faces:
             logger.info("Processing face: bbox=%s det_score=%.3f", face_data.get("bbox"), face_data.get("det_score"))
-            event = _process_single_face(camera_id, img, face_data, raw_bytes=raw, orig_scale=(scale_x, scale_y))
+            event = _process_single_face(camera_id, img, face_data, raw_bytes=raw, orig_scale=(scale_x, scale_y),
+                                         recognized_callback=lambda: None)
             if event is not None:
                 granted_events.append(event)
 
@@ -1416,7 +1453,10 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
             _publish_camera_event(event)
 
         if not granted_events:
-            logger.warning("All %d face(s) in frame from %s did not match any enrolled user", len(all_faces), camera_id)
+            # Only log genuine no-match if no faces were recognized at all
+            # (wrong_direction / already_granted / spoof / expired are logged inside _process_single_face)
+            logger.info("No access granted for %d face(s) from %s (throttled, direction blocked, or no match)",
+                        len(all_faces), camera_id)
             return {"camera_id": camera_id, "status": "no_match"}
 
         return {

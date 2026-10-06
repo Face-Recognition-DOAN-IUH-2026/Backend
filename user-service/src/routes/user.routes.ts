@@ -345,6 +345,7 @@ router.put('/me/profile', auth, (req, res) => userController.updateProfile(req, 
  *       401:
  *         description: Unauthorized
  */
+router.post('/me/password/request-otp', auth, (req, res) => userController.requestPasswordChangeOtp(req, res));
 router.put('/me/password', auth, (req, res) => userController.changePassword(req, res));
 
 /**

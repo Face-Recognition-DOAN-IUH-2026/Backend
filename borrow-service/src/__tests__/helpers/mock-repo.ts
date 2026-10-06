@@ -7,6 +7,7 @@ export interface MockBook extends Partial<Book> {
   id: string;
   isbn: string;
   title: string;
+  price?: number | null;
 }
 
 export interface MockCopy extends Partial<BookCopy> {
@@ -14,6 +15,9 @@ export interface MockCopy extends Partial<BookCopy> {
   bookId: string;
   barcode: string;
   isAvailable: boolean;
+  condition?: any;
+  status?: any;
+  importedAt?: any;
 }
 
 export interface MockRecord extends Partial<BorrowRecord> {
@@ -21,6 +25,7 @@ export interface MockRecord extends Partial<BorrowRecord> {
   patronId: string;
   bookId: string;
   status: string;
+  returnCondition?: any;
 }
 
 export interface MockSlip extends Partial<BorrowSlip> {
@@ -39,6 +44,7 @@ export function createMockBook(overrides: Partial<MockBook> = {}): MockBook {
     author: null,
     coverUrl: null,
     shelfLocation: null,
+    price: null,
     isAvailable: true,
     copies: [],
     createdAt: now,
@@ -57,6 +63,9 @@ export function createMockCopy(overrides: Partial<MockCopy> = {}): MockCopy {
     barcode: `LIB-9780123456789-001`,
     isAvailable: true,
     shelfLocation: null,
+    condition: 'good',
+    status: 'available',
+    importedAt: now,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -83,6 +92,7 @@ export function createMockRecord(overrides: Partial<MockRecord> = {}): MockRecor
     returnedByUserId: null,
     returnedByEmail: null,
     returnMethod: null,
+    returnCondition: null,
     note: null,
     createdAt: now,
     updatedAt: now,
@@ -127,6 +137,7 @@ export type MockBorrowRepository = {
   getOverdueBorrows: jest.Mock;
   countActiveBorrows: jest.Mock;
   countCopies: jest.Mock;
+  getCopyBarcodesByBookId: jest.Mock;
   setCopyAvailable: jest.Mock;
   createBorrowRecord: jest.Mock;
   returnBook: jest.Mock;
@@ -143,6 +154,11 @@ export type MockBorrowRepository = {
   getMaxBarcodeNumberForBook: jest.Mock;
   getAvailableCopiesByBarcodeDesc: jest.Mock;
   hasActiveBorrows: jest.Mock;
+  hasActiveBorrowsForCopy: jest.Mock;
+  listCopiesByBook: jest.Mock;
+  updateCopy: jest.Mock;
+  insertConditionHistory: jest.Mock;
+  applyReturnToCopy: jest.Mock;
   createQueryBuilder: jest.Mock;
   copies: {
     find: jest.Mock;
@@ -179,13 +195,18 @@ export function createMockBorrowRepository(): MockBorrowRepository {
     getOverdueBorrows: jest.fn().mockResolvedValue([]),
     countActiveBorrows: jest.fn().mockResolvedValue(0),
     countCopies: jest.fn().mockResolvedValue(0),
+    getCopyBarcodesByBookId: jest.fn().mockResolvedValue([]),
     setCopyAvailable: jest.fn().mockResolvedValue(undefined),
     createBorrowRecord: jest.fn().mockImplementation((patronId: string, bookId: string, copyId: string | null | undefined, shelfLocation: string | null) =>
       Promise.resolve(createMockRecord({ patronId, bookId, copyId: copyId || undefined, shelfLocation: shelfLocation || undefined }))
     ),
-    returnBook: jest.fn().mockImplementation((record: any) => {
+    returnBook: jest.fn().mockImplementation((record: any, userId?: string | null, email?: string | null, method?: string, note?: string | null) => {
       record.returnAt = new Date();
       record.status = 'returned';
+      record.returnMethod = method ?? null;
+      record.returnedByUserId = userId ?? null;
+      record.returnedByEmail = email ?? null;
+      if (note !== undefined) record.note = note;
       return Promise.resolve(record);
     }),
     createSlip: jest.fn().mockImplementation((patronId: string, bookIds: string[], copyIds: (string | null)[], shelfLocations: (string | null)[], createdByUserId?: string | null, createdByEmail?: string | null) => {
@@ -217,6 +238,17 @@ export function createMockBorrowRepository(): MockBorrowRepository {
     getMaxBarcodeNumberForBook: jest.fn().mockResolvedValue(0),
     getAvailableCopiesByBarcodeDesc: jest.fn().mockResolvedValue([]),
     hasActiveBorrows: jest.fn().mockResolvedValue(false),
+    hasActiveBorrowsForCopy: jest.fn().mockResolvedValue(false),
+    listCopiesByBook: jest.fn().mockResolvedValue([]),
+    updateCopy: jest.fn().mockResolvedValue(undefined),
+    insertConditionHistory: jest.fn().mockResolvedValue(undefined),
+    applyReturnToCopy: jest.fn().mockImplementation((copy: any, condition: string, record: any) => {
+      copy.condition = condition;
+      copy.status = condition === 'lost' ? 'disposed' : 'available';
+      copy.isAvailable = copy.status === 'available';
+      if (record) record.returnCondition = condition;
+      return Promise.resolve(copy);
+    }),
     createQueryBuilder: jest.fn().mockReturnValue({
       leftJoinAndSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),

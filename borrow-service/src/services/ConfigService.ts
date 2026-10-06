@@ -4,6 +4,25 @@ import { config as envConfig } from '../config';
 import { publishEvent } from '../utils/eventPublisher';
 import type { FineBracket } from '../utils/fineCalculator';
 
+function parseDamageMap(raw: unknown, fallback: { minor: number; major: number; lost: number }) {
+  let parsed: any = raw;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = undefined;
+    }
+  }
+  if (parsed && typeof parsed === 'object') {
+    return {
+      minor: parsed.minor !== undefined ? Number(parsed.minor) : fallback.minor,
+      major: parsed.major !== undefined ? Number(parsed.major) : fallback.major,
+      lost: parsed.lost !== undefined ? Number(parsed.lost) : fallback.lost,
+    };
+  }
+  return { ...fallback };
+}
+
 const repo = () => AppDataSource.getRepository(SystemConfig);
 
 export interface BorrowLimits {
@@ -16,7 +35,16 @@ export interface BorrowLimits {
 export interface FineConfig {
   fineBrackets: FineBracket[];
   finePerDay: number;
+  damageFeePct: { minor: number; major: number; lost: number };
+  damageFeeFixed: { minor: number; major: number; lost: number };
+  fallbackBookPrice: number;
+  fineLockThresholdDays: number;
 }
+
+const DEFAULT_DAMAGE_FEE_PCT = { minor: 30, major: 70, lost: 100 };
+const DEFAULT_DAMAGE_FEE_FIXED = { minor: 5000, major: 10000, lost: 10000 };
+const DEFAULT_FALLBACK_BOOK_PRICE = 100000;
+const DEFAULT_FINE_LOCK_THRESHOLD_DAYS = 30;
 
 let cachedBorrowLimits: BorrowLimits | null = null;
 let cachedFineConfig: FineConfig | null = null;
@@ -182,6 +210,10 @@ export class ConfigService {
       cachedFineConfig = {
         fineBrackets: Array.isArray(brackets) ? brackets : [],
         finePerDay: map['fine_per_day'] !== undefined ? Number(map['fine_per_day']) : envConfig.finePerDay,
+        damageFeePct: parseDamageMap(map['damage_fee_pct'], DEFAULT_DAMAGE_FEE_PCT),
+        damageFeeFixed: parseDamageMap(map['damage_fee_fixed'], DEFAULT_DAMAGE_FEE_FIXED),
+        fallbackBookPrice: map['fallback_book_price'] !== undefined ? Number(map['fallback_book_price']) : DEFAULT_FALLBACK_BOOK_PRICE,
+        fineLockThresholdDays: map['fine_lock_threshold_days'] !== undefined ? Number(map['fine_lock_threshold_days']) : DEFAULT_FINE_LOCK_THRESHOLD_DAYS,
       };
       lastFineCacheTime = now;
       return cachedFineConfig;
@@ -190,6 +222,10 @@ export class ConfigService {
       return {
         fineBrackets: [],
         finePerDay: envConfig.finePerDay,
+        damageFeePct: { ...DEFAULT_DAMAGE_FEE_PCT },
+        damageFeeFixed: { ...DEFAULT_DAMAGE_FEE_FIXED },
+        fallbackBookPrice: DEFAULT_FALLBACK_BOOK_PRICE,
+        fineLockThresholdDays: DEFAULT_FINE_LOCK_THRESHOLD_DAYS,
       };
     }
   }

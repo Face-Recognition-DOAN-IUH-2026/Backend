@@ -13,12 +13,16 @@ import {
 describe('Serializers', () => {
   describe('serializeCopy', () => {
     it('should serialize BookCopy correctly', () => {
+      const importedAt = new Date('2026-01-15T00:00:00.000Z');
       const copy: BookCopy = {
         id: 'copy-id-123',
         bookId: 'book-id-456',
         barcode: 'LIB-9780123456789-001',
         isAvailable: true,
         shelfLocation: 'A-1',
+        condition: 'good',
+        status: 'available',
+        importedAt,
       } as BookCopy;
 
       const result = serializeCopy(copy);
@@ -29,7 +33,33 @@ describe('Serializers', () => {
         barcode: 'LIB-9780123456789-001',
         is_available: true,
         shelf_location: 'A-1',
+        condition: 'good',
+        condition_label: 'Tốt',
+        status: 'available',
+        status_label: 'Sẵn sàng',
+        imported_at: importedAt,
       });
+    });
+
+    it('should expose non-default condition and status with labels', () => {
+      const copy = {
+        id: 'copy-id',
+        bookId: 'book-id',
+        barcode: 'LIB-002',
+        isAvailable: false,
+        shelfLocation: null,
+        condition: 'major_damage',
+        status: 'maintenance',
+        importedAt: new Date('2025-06-01T00:00:00.000Z'),
+      } as unknown as BookCopy;
+
+      const result = serializeCopy(copy);
+
+      expect(result.condition).toBe('major_damage');
+      expect(result.condition_label).toBe('Hư hỏng nặng');
+      expect(result.status).toBe('maintenance');
+      expect(result.status_label).toBe('Bảo trì');
+      expect(result.imported_at).toEqual(new Date('2025-06-01T00:00:00.000Z'));
     });
 
     it('should handle null shelf_location', () => {
@@ -39,6 +69,9 @@ describe('Serializers', () => {
         barcode: 'LIB-001',
         isAvailable: false,
         shelfLocation: null,
+        condition: 'good',
+        status: 'available',
+        importedAt: new Date(),
       } as BookCopy;
 
       const result = serializeCopy(copy);
@@ -66,6 +99,7 @@ describe('Serializers', () => {
         isbn10: '0123456789',
         isbn13: '9780123456789',
         shelfLocation: 'A-1',
+        price: 125000,
         isAvailable: true,
         copies: [],
         createdAt: now,
@@ -75,6 +109,7 @@ describe('Serializers', () => {
       const result = serializeBook(book);
 
       expect(result.id).toBe('book-id-123');
+      expect(result.price).toBe(125000);
       expect(result.isbn).toBe('9780123456789');
       expect(result.title).toBe('Test Book Title');
       expect(result.subtitle).toBe('Test Subtitle');
@@ -111,6 +146,7 @@ describe('Serializers', () => {
         isbn10: null,
         isbn13: null,
         shelfLocation: null,
+        price: null,
         isAvailable: true,
         copies: [],
         createdAt: now,
@@ -120,6 +156,7 @@ describe('Serializers', () => {
       const result = serializeBook(book);
 
       expect(result.subtitle).toBeNull();
+      expect(result.price).toBeNull();
       expect(result.author).toBeNull();
       expect(result.cover_url).toBeNull();
       expect(result.publisher).toBeNull();
@@ -231,6 +268,7 @@ describe('Serializers', () => {
         returnedByEmail: null,
         returnMethod: null,
         note: null,
+        returnCondition: null,
         book: null,
         createdAt: now,
         updatedAt: now,
@@ -252,6 +290,41 @@ describe('Serializers', () => {
       expect(result.returned_by_email).toBeNull();
       expect(result.return_method).toBeNull();
       expect(result.note).toBeNull();
+      expect(result.return_condition).toBeNull();
+    });
+
+    it('should expose payment fields and computed total_due', () => {
+      const rec: any = {
+        id: 'r1',
+        fineAmount: 10000,
+        damageFee: 80000,
+        finePaid: true,
+        paymentMethod: 'qr_code',
+        paymentRef: 'TXN-20261004-ab12cd34',
+        paidAt: new Date('2026-10-04T10:00:00Z'),
+      };
+
+      const result = serializeBorrowRecord(rec as BorrowRecord);
+
+      expect(result.fine_amount).toBe(10000);
+      expect((result as any).damage_fee).toBe(80000);
+      expect(result.fine_paid).toBe(true);
+      expect((result as any).payment_method).toBe('qr_code');
+      expect((result as any).payment_ref).toBe('TXN-20261004-ab12cd34');
+      expect((result as any).paid_at).toEqual(new Date('2026-10-04T10:00:00Z'));
+      expect((result as any).total_due).toBe(90000);
+    });
+
+    it('should default total_due to zero and payment fields to null', () => {
+      const rec: any = { id: 'r2' };
+      const result = serializeBorrowRecord(rec as BorrowRecord);
+
+      expect(result.fine_amount).toBe(0);
+      expect((result as any).damage_fee).toBe(0);
+      expect((result as any).total_due).toBe(0);
+      expect((result as any).payment_method).toBeNull();
+      expect((result as any).payment_ref).toBeNull();
+      expect((result as any).paid_at).toBeNull();
     });
 
     it('should serialize returned record', () => {
@@ -268,6 +341,7 @@ describe('Serializers', () => {
         returnedByUserId: 'staff-id',
         returnedByEmail: 'staff@example.com',
         note: 'Returned on time',
+        returnCondition: 'major_damage',
         createdAt: now,
         updatedAt: now,
       } as unknown as BorrowRecord;
@@ -275,6 +349,7 @@ describe('Serializers', () => {
       const result = serializeBorrowRecord(record);
 
       expect(result.status).toBe('returned');
+      expect(result.return_condition).toBe('major_damage');
       expect(result.return_at).toBe(now);
       expect(result.return_method).toBe('staff_web');
       expect(result.returned_by_user_id).toBe('staff-id');

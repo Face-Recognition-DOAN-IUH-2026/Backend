@@ -133,8 +133,9 @@ class FaceModel:
                 insightface_score = 1.0 - min(max(spoof_score, 0.0), 1.0)
             except Exception:
                 pass
-        if insightface_score is None:
-            insightface_score = float(face.det_score)
+        # Note: Do NOT fallback to face.det_score as a liveness score!
+        # det_score is merely detection confidence (>0.95 even for high-res photos on a phone).
+        # When no specialized anti-spoofing model is loaded, insightface_score remains None.
         h, w = img.shape[:2]
         bbox = face.bbox.astype(np.int32)
         x1, y1, x2, y2 = max(0, bbox[0]), max(0, bbox[1]), min(w, bbox[2]), min(h, bbox[3])
@@ -149,6 +150,8 @@ class FaceModel:
             cv_result.update(self._cv_analyzer.analyze_fft(face_roi))
             cv_result.update(self._cv_analyzer.analyze_multi_scale(face_roi))
             cv_result.update(self._cv_analyzer.analyze_bounding_box(face.bbox, w, h))
+            cv_result.update(self._cv_analyzer.analyze_screen_bezel(img, face.bbox))
+            cv_result.update(self._cv_analyzer.analyze_specular_glare(face_roi))
         return self._cv_analyzer.aggregate(cv_result, insightface_score=insightface_score)
 
 

@@ -240,6 +240,13 @@ export const accessClient = {
       body: { seconds },
     });
   },
+
+  async rollupRecognition(date: string) {
+    return request(`${config.services.accessService}/internal/access/rollup-recognition`, {
+      method: 'POST',
+      body: { date },
+    });
+  },
 };
 
 export const userClient = {

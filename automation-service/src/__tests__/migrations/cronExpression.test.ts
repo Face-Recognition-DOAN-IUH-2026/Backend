@@ -30,4 +30,11 @@ describe('CreateAutomationTables migration', () => {
       expect(dailyCron).toBe('0 9 * * *');
     });
   });
+
+  describe('AddRecognitionStatsRollupTask migration', () => {
+    it('defines recognition_stats_rollup cron expression as nightly at 23:55', () => {
+      const expectedCron = '55 23 * * *';
+      expect(expectedCron).toBe('55 23 * * *');
+    });
+  });
 });

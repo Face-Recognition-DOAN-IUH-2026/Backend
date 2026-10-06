@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from api.dependencies import get_current_user
@@ -12,6 +12,27 @@ from core.schemas import CameraStatusResponse
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/camera", tags=["camera"])
+
+
+@router.post("/frame/{camera_id}")
+async def submit_camera_frame(
+    camera_id: str,
+    file: UploadFile = File(...),
+):
+    """Receive a live video frame from browser webcam (e.g. laptop camera at gate)."""
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Empty frame")
+
+    import uuid as _uuid
+    from infra.redis_cache import redis_client as _redis_client
+    from worker.celery_app import celery_app as _celery_app
+
+    key = f"camera_frames/{camera_id}/{_uuid.uuid4()}.jpg"
+    _redis_client.setex(f"temp_frame:{key}", 60, raw)
+    task = _celery_app.send_task("process_camera_frame", args=[camera_id, key])
+    return {"ok": True, "job_id": task.id, "camera_id": camera_id}
+
 
 
 def _get_stream_service():

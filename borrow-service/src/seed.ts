@@ -39,11 +39,15 @@ const BOOKS_DATA = [
 
 const SETTINGS_SEED = [
   { category: 'borrow', configKey: 'max_borrow_days', configValue: 14, label: 'Số ngày mượn tối đa', description: 'Thời gian mượn sách tối đa (ngày)' },
-  { category: 'borrow', configKey: 'max_borrow_books', configValue: 3, label: 'Số sách mượn tối đa', description: 'Số lượng sách có thể mượn cùng lúc' },
-  { category: 'borrow', configKey: 'max_borrow_books_per_slip', configValue: 5, label: 'Số sách tối đa mỗi phiếu', description: 'Số lượng sách tối đa trên một phiếu mượn' },
+  { category: 'borrow', configKey: 'max_borrow_books', configValue: 3, label: 'Số sách mượn tối đa', description: 'Tổng số sách một độc giả được giữ cùng lúc (cộng dồn mọi phiếu chưa trả)' },
+  { category: 'borrow', configKey: 'max_borrow_books_per_slip', configValue: 5, label: 'Số sách tối đa mỗi phiếu', description: 'Số cuốn tối đa trong một phiếu mượn (buộc chia nhỏ giao dịch khi tổng hạn mức lớn)' },
   { category: 'borrow', configKey: 'max_renewals', configValue: 1, label: 'Số lần gia hạn tối đa', description: 'Số lần gia hạn sách tối đa' },
   { category: 'fine', configKey: 'fine_brackets', configValue: [{ from: 1, to: 7, amount: 10000 }, { from: 8, to: 14, amount: 20000 }, { from: 15, to: 30, amount: 50000 }, { from: 31, to: null, amount: 100000 }], label: 'Biểu phí phạt theo bậc', description: 'Các mức phí phạt dựa trên số ngày quá hạn' },
   { category: 'fine', configKey: 'fine_per_day', configValue: 5000, label: 'Phí phạt mỗi ngày', description: 'Phí phạt tuyến tính mỗi ngày quá hạn (VND)' },
+  { category: 'fine', configKey: 'damage_fee_pct', configValue: { minor: 30, major: 70, lost: 100 }, label: 'Tỉ lệ phí hư hỏng (%)', description: 'Phần trăm giá bìa tính phí hư hỏng theo mức: hư nhẹ / hư nặng / mất' },
+  { category: 'fine', configKey: 'damage_fee_fixed', configValue: { minor: 5000, major: 10000, lost: 10000 }, label: 'Phí cố định hư hỏng (VND)', description: 'Phí cố định cộng thêm theo mức hư nhẹ / hư nặng / mất (VND)' },
+  { category: 'fine', configKey: 'fallback_book_price', configValue: 100000, label: 'Giá bìa mặc định (VND)', description: 'Giá dùng khi sách chưa có giá bìa để tính phí hư hỏng' },
+  { category: 'fine', configKey: 'fine_lock_threshold_days', configValue: 30, label: 'Ngưỡng khóa thẻ (ngày)', description: 'Số ngày quá hạn chưa trả thì tự động khóa thẻ độc giả' },
   { category: 'smtp', configKey: 'host', configValue: 'smtp.gmail.com', label: 'SMTP Host', description: 'Địa chỉ host máy chủ SMTP', isEncrypted: false },
   { category: 'smtp', configKey: 'port', configValue: 587, label: 'SMTP Port', description: 'Cổng kết nối SMTP' },
   { category: 'smtp', configKey: 'secure', configValue: false, label: 'SMTP SSL/TLS', description: 'Bật SSL/TLS cho kết nối SMTP (dùng cho port 465)' },

@@ -108,6 +108,50 @@ export class RedisService {
     await this.client.del(key);
   }
 
+  async setPasswordChangeOtp(userId: string, code: string, pendingNewHash?: string): Promise<void> {
+    const codeKey = `pwd_change_otp:${userId}`;
+    await this.client.set(codeKey, code, 'EX', 10 * 60); // 10 minutes
+    if (pendingNewHash) {
+      const hashKey = `pwd_change_hash:${userId}`;
+      await this.client.set(hashKey, pendingNewHash, 'EX', 10 * 60);
+    }
+  }
+
+  async getPasswordChangeOtp(userId: string): Promise<string | null> {
+    const key = `pwd_change_otp:${userId}`;
+    return await this.client.get(key);
+  }
+
+  async getPendingPasswordHash(userId: string): Promise<string | null> {
+    const key = `pwd_change_hash:${userId}`;
+    return await this.client.get(key);
+  }
+
+  async deletePasswordChangeOtp(userId: string): Promise<void> {
+    await this.client.del(`pwd_change_otp:${userId}`);
+    await this.client.del(`pwd_change_hash:${userId}`);
+  }
+
+  async recordFailedPasswordAttempt(userId: string): Promise<number> {
+    const key = `pwd_fail_count:${userId}`;
+    const count = await this.client.incr(key);
+    if (count === 1) {
+      await this.client.expire(key, 15 * 60); // 15 mins lock window
+    }
+    return count;
+  }
+
+  async getFailedPasswordAttempts(userId: string): Promise<number> {
+    const key = `pwd_fail_count:${userId}`;
+    const val = await this.client.get(key);
+    return val ? parseInt(val, 10) : 0;
+  }
+
+  async clearFailedPasswordAttempts(userId: string): Promise<void> {
+    const key = `pwd_fail_count:${userId}`;
+    await this.client.del(key);
+  }
+
   async cacheFaceStatus(userId: string, enrolled: boolean): Promise<void> {
     const key = `face_status:${userId}`;
     await this.client.setex(key, 3600, JSON.stringify(enrolled));
@@ -122,36 +166,6 @@ export class RedisService {
 
   async invalidateFaceStatus(userId: string): Promise<void> {
     const key = `face_status:${userId}`;
-    await this.client.del(key);
-  }
-
-  async setPreRegisterOtp(email: string, code: string): Promise<void> {
-    const key = `pre_register_otp:${email.toLowerCase()}`;
-    await this.client.set(key, code, 'EX', 5 * 60);
-  }
-
-  async getPreRegisterOtp(email: string): Promise<string | null> {
-    const key = `pre_register_otp:${email.toLowerCase()}`;
-    return await this.client.get(key);
-  }
-
-  async deletePreRegisterOtp(email: string): Promise<void> {
-    const key = `pre_register_otp:${email.toLowerCase()}`;
-    await this.client.del(key);
-  }
-
-  async setPreRegisterToken(email: string, token: string): Promise<void> {
-    const key = `pre_register_token:${email.toLowerCase()}`;
-    await this.client.set(key, token, 'EX', 10 * 60);
-  }
-
-  async getPreRegisterToken(email: string): Promise<string | null> {
-    const key = `pre_register_token:${email.toLowerCase()}`;
-    return await this.client.get(key);
-  }
-
-  async deletePreRegisterToken(email: string): Promise<void> {
-    const key = `pre_register_token:${email.toLowerCase()}`;
     await this.client.del(key);
   }
 

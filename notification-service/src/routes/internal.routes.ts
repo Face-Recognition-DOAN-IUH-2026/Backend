@@ -79,6 +79,31 @@ router.post('/send-password-reset', async (req, res, next) => {
   }
 });
 
+router.post('/send-password-change-otp', async (req, res, next) => {
+  try {
+    const { toEmail, code } = z.object({
+      toEmail: z.string().email(),
+      code: z.string().length(6),
+    }).parse(req.body);
+    await emailService.sendPasswordChangeOtp(toEmail, code);
+    res.json({ success: true, message: 'Password change OTP email sent successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/send-password-changed-alert', async (req, res, next) => {
+  try {
+    const { toEmail } = z.object({
+      toEmail: z.string().email(),
+    }).parse(req.body);
+    await emailService.sendPasswordChangedAlert(toEmail);
+    res.json({ success: true, message: 'Password changed alert email sent successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/send-email-verification', async (req, res, next) => {
   try {
     const { toEmail, code } = z.object({
