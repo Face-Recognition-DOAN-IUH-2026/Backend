@@ -50,9 +50,16 @@ class Settings(BaseSettings):
     entry_cam_url: str = ""
     exit_cam_url: str = ""
     relay_api_url: str = ""
-    face_match_threshold: float = 0.45
+    face_match_threshold: float = 0.65
     access_cooldown_seconds: int = 10
     max_entry_hours: int = 24
+    liveness_threshold: float = 0.5
+    enable_active_liveness: bool = True
+    active_liveness_reject_below: float = 0.45
+    active_liveness_live_above: float = 0.65
+    active_liveness_frames: int = 3
+    active_liveness_interval_ms: int = 1500
+    active_liveness_max_attempts: int = 3
     enable_person_detection: bool = True
     enable_multi_angle: bool = True
     min_face_size: int = 80

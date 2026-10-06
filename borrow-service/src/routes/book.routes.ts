@@ -28,7 +28,7 @@ function normalizeIsbnCell(cell: ExcelJS.Cell) {
 }
 
 function parseExcelRows(buffer: Buffer) {
-  return new Promise<Array<{ isbn: string; quantity: number; line: number }>>(async (resolve, reject) => {
+  return new Promise<Array<{ isbn: string; quantity: number; price: number | null; line: number }>>(async (resolve, reject) => {
     try {
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(buffer as any);
@@ -39,15 +39,26 @@ function parseExcelRows(buffer: Buffer) {
       headerRow.eachCell((cell, col) => { headers[col] = normalizeRowValue(cell.value).toUpperCase(); });
       const isbnCol = headers.findIndex((h) => !!h && h.includes('ISBN'));
       const qtyCol = headers.findIndex((h) => !!h && (h.includes('QUANTITY') || h.includes('QTY') || h.includes('SO LUONG') || h.includes('SỐ LƯỢNG')));
+      const priceCol = headers.findIndex((h) => !!h && (
+        h.includes('PRICE') || h.includes('GIA') || h.includes('GIÁ') || h.includes('DON GIA') || h.includes('ĐƠN GIÁ') || h.includes('COST')
+      ));
       if (isbnCol < 1 || qtyCol < 1) throw new HttpError(400, "File phai co cot 'ISBN' va 'Quantity'");
-      const rows: Array<{ isbn: string; quantity: number; line: number }> = [];
+      const rows: Array<{ isbn: string; quantity: number; price: number | null; line: number }> = [];
       for (let line = 2; line <= ws.rowCount; line += 1) {
         const row = ws.getRow(line);
         const isbn = normalizeIsbnCell(row.getCell(isbnCol));
         if (!isbn || isbn === 'None') continue;
         const rawQty = normalizeRowValue(row.getCell(qtyCol).value);
         const quantity = Math.max(1, Number.isFinite(Number(rawQty)) ? Math.trunc(Number(rawQty)) : 1);
-        rows.push({ isbn, quantity, line });
+        let price: number | null = null;
+        if (priceCol >= 1) {
+          const rawPrice = normalizeRowValue(row.getCell(priceCol).value).replace(/[^\d.-]/g, '');
+          const num = Number(rawPrice);
+          if (Number.isFinite(num) && num >= 0) {
+            price = num;
+          }
+        }
+        rows.push({ isbn, quantity, price, line });
       }
       if (!rows.length) throw new HttpError(400, 'Khong co du lieu hop le');
       resolve(rows);
@@ -60,6 +71,7 @@ function parseExcelRows(buffer: Buffer) {
 const ImportFilteredRowSchema = z.object({
   isbn: z.string(),
   quantity: z.coerce.number().int().positive(),
+  price: z.coerce.number().min(0).nullable().optional(),
   title: z.string().nullable().optional(),
   subtitle: z.string().nullable().optional(),
   author: z.string().nullable().optional(),
@@ -136,9 +148,9 @@ router.get('/books/template', async (_req, res, next) => {
   try {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Books Import');
-    ws.addRow(['ISBN', 'Quantity']);
-    ws.addRow(['9780544003415', 2]);
-    ws.addRow(['9780439708180', 3]);
+    ws.addRow(['ISBN', 'Quantity', 'Price']);
+    ws.addRow(['9780544003415', 2, 120000]);
+    ws.addRow(['9780439708180', 3, 150000]);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=book_import_template.xlsx');
     await wb.xlsx.write(res);
@@ -156,14 +168,14 @@ router.get('/books/export', async (_req, res, next) => {
     const { items } = await repo.listBooks(0, MAX_EXPORT);
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Books');
-    ws.addRow(['ISBN', 'Title', 'Author', 'Total Copies', 'Available Copies', 'Shelf Location', 'Created At']);
+    ws.addRow(['ISBN', 'Title', 'Author', 'Total Copies', 'Available Copies', 'Shelf Location', 'Price (VND)', 'Created At']);
 
     const bookIds = items.map(b => b.id);
     const copyCounts = await repo.getCopyCountsByBookIds(bookIds);
 
     for (const book of items) {
       const counts = copyCounts.get(book.id) || { total: 0, available: 0 };
-      ws.addRow([book.isbn, book.title, book.author || '', counts.total, counts.available, book.shelfLocation || '', book.createdAt?.toISOString?.() || '']);
+      ws.addRow([book.isbn, book.title, book.author || '', counts.total, counts.available, book.shelfLocation || '', book.price ?? '', book.createdAt?.toISOString?.() || '']);
     }
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=books_export.xlsx');
@@ -280,13 +292,22 @@ router.patch('/copies/:id', requireDynamicPermission('books', 'update'), async (
 router.delete('/copies/:id', requireDynamicPermission('books', 'delete'), async (req, res, next) => {
   try {
     const repo = new BorrowRepository();
-    const copy = await repo.getCopyById(req.params.id);
-    if (!copy) throw new HttpError(404, 'Bản sao không tồn tại');
-    if (await repo.hasActiveBorrowsForCopy(copy.id)) {
-      throw new HttpError(409, 'Bản sao đang được mượn nên không thể xóa');
-    }
-    await repo.deleteCopies([copy]);
+    await repo.disposeCopy(req.params.id);
     res.json({ success: true, deleted: 1 });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /copies/bulk-dispose — permanently remove lost/damaged copies
+router.post('/copies/bulk-dispose', requireDynamicPermission('books', 'delete'), async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({
+      copy_ids: z.array(z.string().uuid()).min(1).max(200),
+    }).parse(req.body);
+    const repo = new BorrowRepository();
+    const result = await repo.disposeCopies(body.copy_ids);
+    res.json({ success: result.skipped.length === 0, deleted: result.deleted.length, deleted_ids: result.deleted, skipped: result.skipped });
   } catch (error) {
     next(error);
   }
@@ -392,6 +413,21 @@ router.post('/books/delete', requireDynamicPermission('books', 'delete'), async 
   }
 });
 
+// POST /books/bulk-price
+router.post('/books/bulk-price', requireDynamicPermission('books', 'update'), async (req: AuthRequest, res, next) => {
+  try {
+    const body = z.object({
+      book_ids: z.array(z.string().uuid()).min(1).max(200),
+      price: z.coerce.number().min(0),
+    }).parse(req.body);
+    const repo = new BorrowRepository();
+    const result = await repo.bulkUpdateBookPrices(body.book_ids, body.price);
+    res.json({ success: true, updated: result.updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /barcodes
 router.get('/barcodes', async (req, res, next) => {
   try {
@@ -422,6 +458,7 @@ router.post('/books/import/preview', upload.single('file'), async (req, res, nex
       preview.push({
         isbn: row.isbn,
         quantity: row.quantity,
+        price: row.price ?? (book?.price ? Number(book.price) : null),
         title: book?.title || meta?.title || `ISBN: ${row.isbn}`,
         subtitle: book?.subtitle || meta?.subtitle || null,
         author: book?.author || meta?.author || null,
@@ -477,11 +514,15 @@ router.post('/books/import', requireDynamicPermission('books', 'create'), upload
             language: meta.language ?? null,
             isbn10: meta.isbn10 ?? null,
             isbn13: meta.isbn13 ?? null,
-          } : undefined);
+            price: row.price ?? null,
+          } : row.price != null ? { price: row.price } : undefined);
           book = upserted.book;
           created = upserted.created;
           existing.set(row.isbn, book);
           offsets.set(row.isbn, 0);
+        } else if (row.price !== null && row.price !== undefined) {
+          await repo.updateBook(book.id, { price: row.price });
+          book.price = row.price;
         }
         const offset = offsets.get(row.isbn) || 0;
         const barcodes = Array.from({ length: row.quantity }, (_, i) => `LIB-${row.isbn}-${String(offset + i + 1).padStart(3, '0')}`);
@@ -556,11 +597,15 @@ router.post('/books/import/filtered', requireDynamicPermission('books', 'create'
             language: row.language ?? null,
             isbn10: row.isbn10 ?? null,
             isbn13: row.isbn13 ?? null,
+            price: row.price ?? null,
           });
           book = upserted.book;
           created = upserted.created;
           existing.set(isbnKey, book);
           offsets.set(isbnKey, 0);
+        } else if (row.price !== null && row.price !== undefined) {
+          await repo.updateBook(book.id, { price: row.price });
+          book.price = row.price;
         }
         const offset = offsets.get(isbnKey) || 0;
         const barcodes = Array.from({ length: row.totalQuantity }, (_, i) => `LIB-${isbnKey}-${String(offset + i + 1).padStart(3, '0')}`);

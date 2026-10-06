@@ -259,6 +259,30 @@ describe('Borrow Routes', () => {
       expect(response.status).toBe(404);
       expect(mockBorrowRepo.getCopyByBarcode).toHaveBeenCalledWith('LIB-9780123456789-001');
     });
+
+    it('suggests the nearest existing copies when the scanned copy is missing', async () => {
+      mockAccessService.getPatronAccessStatus = jest.fn().mockResolvedValue({
+        inside: true,
+        isExpired: false,
+      });
+      const book = createMockBook({ title: 'Gapped Book' });
+      mockBorrowRepo.getCopyByBarcode = jest.fn().mockResolvedValue(null);
+      mockBorrowRepo.getBookByIsbn = jest.fn().mockResolvedValue(book);
+      mockBorrowRepo.countCopies = jest.fn().mockResolvedValue(2);
+      mockBorrowRepo.getCopyBarcodesByBookId = jest.fn().mockResolvedValue([
+        'LIB-9780123456789-029',
+        'LIB-9780123456789-031',
+      ]);
+
+      const response = await request(app)
+        .post('/borrow/')
+        .set('Authorization', 'Bearer test-token').set('x-test-role', 'staff')
+        .send({ barcode: 'LIB-9780123456789-030' });
+
+      expect(response.status).toBe(404);
+      expect(response.body.error || response.body.detail || '').toContain('Các bản gần nhất');
+      expect(response.body.error || response.body.detail || '').not.toContain('từ 001 đến');
+    });
   });
 
   describe('GET /borrow/barcode/:barcode', () => {

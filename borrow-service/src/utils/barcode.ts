@@ -19,6 +19,27 @@ export function sanitizeBarcode(input: string): string {
   return input.replace(/[\u0000-\u001f\u007f]/g, '').trim();
 }
 
+// Suggest the closest existing copy barcodes when a scanned copy code is missing.
+// Copy sequences are not guaranteed contiguous (deleted/disposed copies leave
+// gaps), so instead of asserting a 001..N range, rank by sequence distance.
+export function nearestCopyBarcodes(scannedBarcode: string, existingBarcodes: string[], max = 3): string[] {
+  const scannedSeq = extractCopySeq(scannedBarcode);
+  if (scannedSeq === null) return [];
+  return existingBarcodes
+    .map((barcode) => ({ barcode, seq: extractCopySeq(barcode) }))
+    .filter((entry): entry is { barcode: string; seq: number } => entry.seq !== null)
+    .sort((a, b) => Math.abs(a.seq - scannedSeq) - Math.abs(b.seq - scannedSeq))
+    .slice(0, Math.max(0, max))
+    .map((entry) => entry.barcode);
+}
+
+function extractCopySeq(barcode: string): number | null {
+  const match = barcode.replace(/[\s-]/g, '').match(/(\d+)$/);
+  if (!match) return null;
+  const seq = Number(match[1]);
+  return Number.isFinite(seq) ? seq : null;
+}
+
 // <isbn><seq> glued without the LIB prefix: 9780140328721001 -> LIB-9780140328721-001.
 // Splits at the ISBN-13 boundary (14-17 digits) or the ISBN-10 boundary (11-13 digits),
 // and tries the checksum-converted ISBN form as well.

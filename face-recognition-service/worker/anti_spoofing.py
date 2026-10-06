@@ -1,9 +1,98 @@
 from __future__ import annotations
 
 import math
+import os
 
 import cv2
 import numpy as np
+
+DEFAULT_LIVENESS_THRESHOLD = 0.5
+DEFAULT_ACTIVE_REJECT_BELOW = 0.45
+DEFAULT_ACTIVE_LIVE_ABOVE = 0.65
+DEFAULT_MOTION_MIN_DISPLACEMENT = 0.15
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        raw = os.environ.get(name)
+        return float(raw) if raw not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
+def get_liveness_threshold() -> float:
+    """Passive-liveness decision threshold, read from env at call time."""
+    return _env_float("LIVENESS_THRESHOLD", DEFAULT_LIVENESS_THRESHOLD)
+
+
+def get_active_bands() -> tuple[float, float]:
+    """(reject_below, live_above) band edges for the active challenge."""
+    return (
+        _env_float("ACTIVE_LIVENESS_REJECT_BELOW", DEFAULT_ACTIVE_REJECT_BELOW),
+        _env_float("ACTIVE_LIVENESS_LIVE_ABOVE", DEFAULT_ACTIVE_LIVE_ABOVE),
+    )
+
+
+def decide_active_verdict(avg_score: float, has_motion: bool = True) -> str:
+    """Band a multi-frame average into live / inconclusive / spoof.
+
+    A texture-passing average without motion proof is inconclusive, never
+    live: static replays (printed photo, phone screen held still) must not
+    authenticate. Motion never overrides a texture spoof.
+    """
+    reject_below, live_above = get_active_bands()
+    if avg_score > live_above and has_motion:
+        return "live"
+    if avg_score < reject_below:
+        return "spoof"
+    return "inconclusive"
+
+
+def is_active_liveness_enabled(default: bool = True) -> bool:
+    """Feature flag for the kiosk active challenge, read at call time."""
+    raw = os.environ.get("ENABLE_ACTIVE_LIVENESS")
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def get_motion_min_displacement() -> float:
+    """Minimum normalized face-center displacement proving real motion."""
+    return _env_float("CHALLENGE_MOTION_MIN_DISPLACEMENT", DEFAULT_MOTION_MIN_DISPLACEMENT)
+
+
+def verify_challenge_motion(frames_kps: list) -> dict:
+    """Prove real head motion across challenge frames from 5-point kps.
+
+    Each entry is an insightface-style (5, 2) keypoint array
+    [left_eye, right_eye, nose, mouth_left, mouth_right] or None when no
+    face was detected in that frame.
+
+    Displacement of the face center is normalized by the inter-ocular
+    distance, so the check is scale-invariant (near/far camera). A static
+    replay (printed photo, phone screen held still) produces near-zero
+    displacement and never passes; hand tremor stays far below the default
+    0.15 threshold while a real turn/nod exceeds it comfortably.
+    """
+    valid = [np.asarray(k, dtype=np.float64) for k in frames_kps if k is not None]
+    valid = [k for k in valid if k.shape == (5, 2)]
+    if len(valid) < 2:
+        return {"has_motion": False, "displacement": 0.0, "frames_valid": len(valid)}
+    iods = [float(np.linalg.norm(k[0] - k[1])) for k in valid]
+    reference = float(np.median(iods))
+    if reference <= 0:
+        return {"has_motion": False, "displacement": 0.0, "frames_valid": len(valid)}
+    centers = [k.mean(axis=0) for k in valid]
+    displacement = 0.0
+    for i in range(len(centers)):
+        for j in range(i + 1, len(centers)):
+            displacement = max(displacement, float(np.linalg.norm(centers[i] - centers[j])))
+    normalized = displacement / reference
+    return {
+        "has_motion": bool(normalized >= get_motion_min_displacement()),
+        "displacement": float(normalized),
+        "frames_valid": len(valid),
+    }
 
 
 def _local_binary_pattern(gray: np.ndarray, radius: int = 1, n_points: int = 8) -> np.ndarray:
@@ -43,7 +132,7 @@ _UNIFORM_MAP = _uniform_patterns(8)
 
 class AntiSpoofingAnalyzer:
     def analyze_lbp(self, face_roi: np.ndarray) -> dict:
-        gray = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
+        gray = face_roi if face_roi.ndim == 2 else cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
         lbp = _local_binary_pattern(gray, radius=1, n_points=8)
         # Map to uniform patterns (0-58 uniform, 59 non-uniform)
         h, w = lbp.shape
@@ -61,16 +150,21 @@ class AntiSpoofingAnalyzer:
         entropy = -np.sum(hist * np.log(hist + 1e-7))
         variance = float(np.var(hist))
         max_bin = float(hist.max())
-        # Real faces: higher entropy (>3.5), lower max-bin concentration
-        # Spoofed: lower entropy, higher peak concentration
-        entropy_score = min(1.0, entropy / 5.0)
-        peak_penalty = max(0.0, 1.0 - max_bin * 3.0)
+        # Real faces: higher entropy (>2.0), lower max-bin concentration
+        # Spoofed (screens / prints / flat papers): unnaturally low entropy (<1.2) or high peak concentration (>0.65)
+        if entropy < 2.5:
+            entropy_score = max(0.0, entropy / 2.5)
+        else:
+            entropy_score = min(1.0, 0.6 + (entropy - 2.5) / 2.5)
+        peak_penalty = max(0.0, 1.0 - max_bin * 2.5)
         lbp_score = 0.6 * entropy_score + 0.4 * peak_penalty
         lbp_score = max(0.0, min(1.0, lbp_score))
+        lbp_veto = bool(entropy < 1.2 or max_bin > 0.65)
         return {
             "lbp_score": float(lbp_score),
             "lbp_entropy": float(entropy),
             "lbp_variance": variance,
+            "lbp_veto": lbp_veto,
         }
 
     def analyze_color_histogram(self, face_roi: np.ndarray) -> dict:
@@ -107,7 +201,7 @@ class AntiSpoofingAnalyzer:
         return {"noise_score": noise_score, "noise_variance": noise_var}
 
     def analyze_fft(self, face_roi: np.ndarray) -> dict:
-        gray = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
+        gray = face_roi if face_roi.ndim == 2 else cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
         f = np.fft.fft2(gray)
         fshift = np.fft.fftshift(f)
         magnitude = np.abs(fshift)
@@ -126,16 +220,19 @@ class AntiSpoofingAnalyzer:
         high_energy = float(np.mean(magnitude_log[high_mask]))
         high_low_ratio = high_energy / (low_energy + 1e-7)
         mid_low_ratio = mid_energy / (low_energy + 1e-7)
-        # Screen/print: abnormally high high-frequency energy
-        if high_low_ratio > 2.0:
-            fft_score = max(0.0, 1.0 - (high_low_ratio - 2.0) / 5.0)
+        # Real faces: ~0.45 - 0.65 (energy drops off naturally with frequency)
+        # Screen/print/moire: ratio > 0.75 indicates abnormal high-frequency noise or subpixel grid
+        if high_low_ratio > 0.75:
+            fft_score = max(0.0, 1.0 - (high_low_ratio - 0.75) * 4.0)
         else:
             fft_score = 1.0
         fft_score = max(0.0, min(1.0, fft_score))
+        fft_veto = bool(high_low_ratio > 0.88)
         return {
-            "fft_score": fft_score,
+            "fft_score": float(fft_score),
             "fft_high_low_ratio": float(high_low_ratio),
             "fft_mid_low_ratio": float(mid_low_ratio),
+            "fft_veto": fft_veto,
         }
 
     def analyze_multi_scale(self, face_roi: np.ndarray) -> dict:
@@ -189,34 +286,164 @@ class AntiSpoofingAnalyzer:
             "face_size_ratio": float(face_size_ratio),
         }
 
-    def aggregate(self, breakdown: dict, insightface_score: float | None = None) -> dict:
-        weights = {
-            "lbp": 0.18,
-            "color": 0.18,
-            "noise": 0.14,
-            "fft": 0.14,
-            "multi_scale": 0.14,
-            "bbox": 0.12,
+    def analyze_screen_bezel(self, full_img: np.ndarray, face_bbox: np.ndarray) -> dict:
+        """Detect rectangular screen bezel or photo borders in the context surrounding the face."""
+        if full_img is None or face_bbox is None or len(face_bbox) < 4:
+            return {"bezel_score": 0.5, "has_bezel": False, "bezel_veto": False}
+        h, w = full_img.shape[:2]
+        x1, y1, x2, y2 = int(face_bbox[0]), int(face_bbox[1]), int(face_bbox[2]), int(face_bbox[3])
+        fw, fh = x2 - x1, y2 - y1
+        if fw <= 20 or fh <= 20:
+            return {"bezel_score": 0.5, "has_bezel": False, "bezel_veto": False}
+
+        # Expand padding to 55% so phone chassis edges on sides/top/bottom are caught
+        pad_x = int(fw * 0.55)
+        pad_y = int(fh * 0.55)
+        cx1 = max(0, x1 - pad_x)
+        cy1 = max(0, y1 - pad_y)
+        cx2 = min(w, x2 + pad_x)
+        cy2 = min(h, y2 + pad_y)
+
+        context_roi = full_img[cy1:cy2, cx1:cx2]
+        if context_roi.size == 0 or context_roi.shape[0] < 30 or context_roi.shape[1] < 30:
+            return {"bezel_score": 0.5, "has_bezel": False, "bezel_veto": False}
+
+        gray_ctx = cv2.cvtColor(context_roi, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray_ctx, 40, 120)
+
+        # Mask out face interior so we only check margins for bezel lines
+        fx1 = max(0, x1 - cx1)
+        fy1 = max(0, y1 - cy1)
+        fx2 = min(edges.shape[1], x2 - cx1)
+        fy2 = min(edges.shape[0], y2 - cy1)
+        edges[fy1:fy2, fx1:fx2] = 0
+
+        # Detect straight line segments in margin
+        min_dim = min(fw, fh)
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=25, minLineLength=int(min_dim * 0.28), maxLineGap=10)
+        vert_count = 0
+        horiz_count = 0
+        long_line_count = 0
+        if lines is not None:
+            for line in lines:
+                lx1, ly1, lx2, ly2 = line[0]
+                dx = abs(lx2 - lx1)
+                dy = abs(ly2 - ly1)
+                line_len = np.sqrt(dx * dx + dy * dy)
+                if line_len > min_dim * 0.42:
+                    long_line_count += 1
+                if dy > 1.8 * (dx + 1e-5) and dy > min_dim * 0.28:
+                    vert_count += 1
+                elif dx > 1.8 * (dy + 1e-5) and dx > min_dim * 0.28:
+                    horiz_count += 1
+
+        # Phone/screen or paper edges:
+        # - Any corner (vert + horiz)
+        # - OR 2 parallel vertical edges (left & right sides of phone chassis)
+        # - OR 2 horizontal edges (top & bottom of phone)
+        # - OR at least one prominent long straight chassis edge
+        # - OR multiple straight lines in the margin (total >= 2)
+        has_bezel = bool(
+            (vert_count >= 1 and horiz_count >= 1)
+            or vert_count >= 2
+            or horiz_count >= 2
+            or long_line_count >= 1
+            or (vert_count + horiz_count >= 2)
+        )
+        bezel_score = 0.10 if has_bezel else 0.5
+        return {
+            "bezel_score": float(bezel_score),
+            "has_bezel": has_bezel,
+            "bezel_veto": has_bezel,
+            "vert_lines": vert_count,
+            "horiz_lines": horiz_count,
+            "long_lines": long_line_count,
         }
-        total_weight = sum(weights.values())
+
+    def analyze_specular_glare(self, face_roi: np.ndarray) -> dict:
+        """Detect harsh specular highlights caused by screen glass reflection."""
+        if face_roi is None or face_roi.size == 0:
+            return {"glare_score": 0.5, "glare_ratio": 0.0, "has_glare": False, "glare_veto": False}
+        hsv = cv2.cvtColor(face_roi, cv2.COLOR_BGR2HSV)
+        v = hsv[:, :, 2]
+        s = hsv[:, :, 1]
+        glare_mask = (v > 240) & (s < 35)
+        glare_ratio = float(np.mean(glare_mask))
+        if glare_ratio > 0.015:
+            glare_score = max(0.0, 1.0 - (glare_ratio - 0.015) * 25.0)
+        else:
+            glare_score = 0.5
+        glare_veto = bool(glare_ratio > 0.035)
+        has_glare = bool(glare_ratio > 0.015)
+        return {
+            "glare_score": float(glare_score),
+            "glare_ratio": float(glare_ratio),
+            "has_glare": has_glare,
+            "glare_veto": glare_veto,
+        }
+
+    def aggregate(self, breakdown: dict, insightface_score: float | None = None) -> dict:
+        veto_reasons = []
+        if breakdown.get("has_bezel", False) or breakdown.get("bezel_veto", False):
+            veto_reasons.append("SCREEN_BEZEL_DETECTED")
+        if breakdown.get("fft_veto", False):
+            veto_reasons.append("SCREEN_MOIRE_FREQUENCY_DETECTED")
+        if breakdown.get("lbp_veto", False):
+            veto_reasons.append("TEXTURE_UNNATURALLY_FLAT")
+        if breakdown.get("glare_veto", False):
+            veto_reasons.append("SCREEN_GLASS_GLARE_DETECTED")
+
+        # Positive liveness features
+        weights = {
+            "lbp": 0.28,
+            "fft": 0.28,
+            "color": 0.22,
+            "noise": 0.11,
+            "multi_scale": 0.11,
+        }
         if insightface_score is not None:
             weights["insightface"] = 0.10
-            total_weight += 0.10
+
         total_score = 0.0
         raw_breakdown = {}
+        active_weights_sum = 0.0
         for key, weight in weights.items():
             score_key = f"{key}_score"
             if key == "insightface" and insightface_score is not None:
                 total_score += insightface_score * weight
                 raw_breakdown[key] = insightface_score
+                active_weights_sum += weight
             elif score_key in breakdown:
                 total_score += breakdown[score_key] * weight
                 raw_breakdown[key] = breakdown[score_key]
-        if total_weight > 0:
-            total_score /= total_weight
+                active_weights_sum += weight
+
+        if active_weights_sum > 0:
+            total_score /= active_weights_sum
+
+        # Attack indicator penalties (bezel, glare)
+        if breakdown.get("has_bezel", False):
+            total_score *= 0.35
+            raw_breakdown["bezel_penalty"] = 0.35
+        if breakdown.get("has_glare", False):
+            total_score *= 0.55
+            raw_breakdown["glare_penalty"] = 0.55
+
         total_score = max(0.0, min(1.0, total_score))
-        return {
-            "liveness_score": total_score,
-            "is_live": total_score > 0.5,
+
+        threshold = get_liveness_threshold()
+        if veto_reasons:
+            is_live = False
+            total_score = min(total_score, 0.20)
+        else:
+            is_live = total_score > threshold
+
+        res = {
+            "liveness_score": float(total_score),
+            "is_live": is_live,
             "breakdown": raw_breakdown,
         }
+        if veto_reasons:
+            res["veto_reasons"] = veto_reasons
+        return res
+

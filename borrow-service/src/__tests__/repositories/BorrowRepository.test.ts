@@ -203,6 +203,110 @@ describe('BorrowRepository', () => {
     });
   });
 
+  describe('disposeCopy', () => {
+    it('detaches history records before deleting the copy', async () => {
+      const copy = createMockCopy();
+      const rec = createMockRecord({ copyId: copy.id });
+      (AppDataSource.getRepository('BookCopy').findOne as jest.Mock) = jest.fn().mockResolvedValue(copy);
+      (AppDataSource.getRepository('BorrowRecord').count as jest.Mock) = jest.fn().mockResolvedValue(0);
+      (AppDataSource.getRepository('BorrowRecord').find as jest.Mock) = jest.fn().mockResolvedValue([rec]);
+      const mockSave = jest.fn().mockImplementation((entity: any) => Promise.resolve(entity));
+      (AppDataSource.getRepository('BorrowRecord').save as jest.Mock) = mockSave;
+      const mockRemove = jest.fn().mockResolvedValue(copy);
+      (AppDataSource.getRepository('BookCopy').remove as jest.Mock) = mockRemove;
+
+      const result = await repo.disposeCopy(copy.id);
+
+      expect(result.detached).toBe(1);
+      expect(rec.copyId).toBeNull();
+      expect(mockSave).toHaveBeenCalled();
+      expect(mockRemove).toHaveBeenCalledWith(copy);
+    });
+
+    it('throws 404 for an unknown copy', async () => {
+      (AppDataSource.getRepository('BookCopy').findOne as jest.Mock) = jest.fn().mockResolvedValue(null);
+
+      await expect(repo.disposeCopy('missing-id')).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('throws 409 when the copy is currently on loan', async () => {
+      const copy = createMockCopy();
+      (AppDataSource.getRepository('BookCopy').findOne as jest.Mock) = jest.fn().mockResolvedValue(copy);
+      (AppDataSource.getRepository('BorrowRecord').count as jest.Mock) = jest.fn().mockResolvedValue(1);
+
+      await expect(repo.disposeCopy(copy.id)).rejects.toMatchObject({ statusCode: 409 });
+    });
+  });
+
+  describe('disposeCopies', () => {
+    it('deletes what it can and reports per-item skips', async () => {
+      const gone = createMockCopy();
+      (AppDataSource.getRepository('BookCopy').findOne as jest.Mock) = jest.fn().mockImplementation((opts: any) =>
+        Promise.resolve(opts.where.id === gone.id ? gone : null)
+      );
+      (AppDataSource.getRepository('BorrowRecord').count as jest.Mock) = jest.fn().mockResolvedValue(0);
+      (AppDataSource.getRepository('BorrowRecord').find as jest.Mock) = jest.fn().mockResolvedValue([]);
+      (AppDataSource.getRepository('BorrowRecord').save as jest.Mock) = jest.fn().mockImplementation((e: any) => Promise.resolve(e));
+      (AppDataSource.getRepository('BookCopy').remove as jest.Mock) = jest.fn().mockImplementation((e: any) => Promise.resolve(e));
+
+      const result = await repo.disposeCopies([gone.id, 'missing-id']);
+
+      expect(result.deleted).toEqual([gone.id]);
+      expect(result.skipped).toHaveLength(1);
+      expect(result.skipped[0].copy_id).toBe('missing-id');
+    });
+  });
+
+  describe('getAggregateStats', () => {
+    it('counts books with zero available copies across the whole warehouse', async () => {
+      const mockGetRawOne = jest.fn()
+        .mockResolvedValueOnce({ total: '10', available: '7' })
+        .mockResolvedValueOnce({ out_of_stock: '3' });
+      const mockQb = {
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getRawOne: mockGetRawOne,
+      };
+      (AppDataSource.getRepository('BookCopy').createQueryBuilder as jest.Mock) = jest.fn().mockReturnValue(mockQb);
+      (AppDataSource.getRepository('Book').createQueryBuilder as jest.Mock) = jest.fn().mockReturnValue(mockQb);
+
+      const stats = await repo.getAggregateStats();
+
+      expect(stats.totalCopies).toBe(10);
+      expect(stats.availableCopies).toBe(7);
+      expect(stats.borrowedCopies).toBe(3);
+      expect(stats.outOfStockBooks).toBe(3);
+    });
+  });
+
+  describe('getConditionDistribution', () => {
+    it('groups copies by condition and status', async () => {
+      const mockQb = {
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        groupBy: jest.fn().mockReturnThis(),
+        getRawMany: jest.fn()
+          .mockResolvedValueOnce([
+            { condition: 'good', count: '80' },
+            { condition: 'minor_damage', count: '5' },
+            { condition: 'lost', count: '2' },
+          ])
+          .mockResolvedValueOnce([
+            { status: 'available', count: '70' },
+            { status: 'borrowed', count: '17' },
+          ]),
+      };
+      (AppDataSource.getRepository('BookCopy').createQueryBuilder as jest.Mock) = jest.fn().mockReturnValue(mockQb);
+
+      const dist = await repo.getConditionDistribution();
+
+      expect(dist.conditions).toMatchObject({ good: 80, minor_damage: 5, lost: 2 });
+      expect(dist.statuses).toMatchObject({ available: 70, borrowed: 17 });
+      expect(dist.total_copies).toBe(87);
+    });
+  });
+
   describe('setCopyAvailable', () => {
     it('should update isAvailable to false', async () => {
       const copy = createMockCopy({ isAvailable: true });

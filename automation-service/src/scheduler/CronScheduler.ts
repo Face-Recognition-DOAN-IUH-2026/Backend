@@ -21,6 +21,7 @@ import { expireWaitlistNotifications } from '../handlers/expireWaitlistNotificat
 import { cleanupExpiredPending } from '../handlers/cleanupExpiredPending';
 import { staffScheduleExpireStaleBids } from '../handlers/staffScheduleExpireStaleBids';
 import { staffScheduleExpireStaleSwaps } from '../handlers/staffScheduleExpireStaleSwaps';
+import { recognitionStatsRollup } from '../handlers/recognitionStatsRollup';
 
 const taskRepo = () => AppDataSource.getRepository(AutomationTask);
 const runRepo = () => AppDataSource.getRepository(AutomationRun);
@@ -44,6 +45,7 @@ const handlers: Record<string, HandlerFn> = {
   cleanup_expired_pending: cleanupExpiredPending,
   staff_schedule_expire_stale_bids: staffScheduleExpireStaleBids,
   staff_schedule_expire_stale_swaps: staffScheduleExpireStaleSwaps,
+  recognition_stats_rollup: recognitionStatsRollup,
 };
 
 export class CronScheduler {

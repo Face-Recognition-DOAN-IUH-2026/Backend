@@ -6,6 +6,7 @@ import { AccessLog } from '../entities/AccessLog';
 import { KioskDevice } from '../entities/KioskDevice';
 import { KioskApprovalRequest } from '../entities/KioskApprovalRequest';
 import { PatronAccessState } from '../entities/PatronAccessState';
+import { AccessRecognitionDaily } from '../entities/AccessRecognitionDaily';
 import {
   AccessRealtimeEvent,
   AccessRealtimeEventSchema,
@@ -17,11 +18,13 @@ import {
 } from '../contracts';
 import { UserServiceClient } from '../clients/UserServiceClient';
 import { realtimeHub } from '../realtime/RealtimeHub';
+import { getAccessCounters, incrementAccessCounter } from '../redis';
 import { HttpError } from '../../../shared/error-handler';
 import { config } from '../config';
 
 const logRepo = () => AppDataSource.getRepository(AccessLog);
 const stateRepo = () => AppDataSource.getRepository(PatronAccessState);
+const dailyRepo = () => AppDataSource.getRepository(AccessRecognitionDaily);
 const users = new UserServiceClient();
 
 function toIso(value: Date | string | undefined | null) {
@@ -127,8 +130,36 @@ export class AccessService {
       await this.upsertState(patronId, accessType, cameraId, new Date(occurredAt));
     }
 
+    if (status === 'spoof') {
+      await logRepo().save(logRepo().create({
+        patronId,
+        accessType: accessType || 'entry',
+        verifyMethod: parsedInput.verify_method || 'face',
+        confidence: realtimeEvent.score ?? null,
+        cameraId,
+        imageUrl: realtimeEvent.image_url || null,
+        status: 'spoof',
+        eventId: realtimeEvent.event_id,
+        source: realtimeEvent.source,
+        accessTime: new Date(occurredAt),
+      }));
+      await this.safeIncrementCounter(cameraId, 'spoof');
+    }
+
+    if (status === 'no_match') {
+      await this.safeIncrementCounter(cameraId, 'no_match');
+    }
+
     await realtimeHub.publish(realtimeEvent);
     return realtimeEvent;
+  }
+
+  private async safeIncrementCounter(cameraId: string, status: 'spoof' | 'no_match'): Promise<void> {
+    try {
+      await incrementAccessCounter({ cameraId, status });
+    } catch (err: any) {
+      console.warn('[AccessService] counter increment failed (fail-open):', err?.message);
+    }
   }
 
   async getRecent(limit = 20) {
@@ -268,6 +299,16 @@ export class AccessService {
     const todayEntries = Number(entryExitCounts.find(c => c.accessType === 'entry')?.count || 0);
     const todayExits = Number(entryExitCounts.find(c => c.accessType === 'exit')?.count || 0);
 
+    let todaySpoof = 0;
+    let todayNoMatch = 0;
+    try {
+      const counters = await getAccessCounters();
+      todaySpoof = counters.spoof;
+      todayNoMatch = counters.no_match;
+    } catch {
+      // fail-open: dashboard counts degrade to zero, audit rows remain in DB
+    }
+
     return {
       active_inside: activeCount,
       activeInside: activeCount,
@@ -277,6 +318,10 @@ export class AccessService {
       todayExits,
       today_total: todayEntries + todayExits,
       todayTotal: todayEntries + todayExits,
+      today_spoof: todaySpoof,
+      todaySpoof,
+      today_no_match: todayNoMatch,
+      todayNoMatch,
     };
   }
 
@@ -508,6 +553,270 @@ export class AccessService {
       lastExitAt: state.lastExitAt ? state.lastExitAt.toISOString() : null,
       lastExitCamera: state.lastExitCamera || null,
     }).catch((err: any) => console.error('[AMQP] Failed to publish status changed event:', err.message));
+  }
+
+  async rollupRecognition(dateStr: string): Promise<{
+    date: string;
+    cameras: Array<{
+      camera_id: string;
+      granted: number;
+      spoof: number;
+      no_match: number;
+      other: number;
+      avg_confidence: number | null;
+    }>;
+  }> {
+    const targetDate = dateStr.trim();
+    const startOfDay = new Date(`${targetDate}T00:00:00.000Z`);
+    const endOfDay = new Date(`${targetDate}T23:59:59.999Z`);
+
+    const rawRows: Array<{
+      camera_id: string;
+      granted: string | number;
+      spoof: string | number;
+      no_match: string | number;
+      other: string | number;
+      avg_confidence: string | number | null;
+    }> = await logRepo()
+      .createQueryBuilder('log')
+      .select('log.camera_id', 'camera_id')
+      .addSelect(`SUM(CASE WHEN log.status IN ('granted', 'success') THEN 1 ELSE 0 END)`, 'granted')
+      .addSelect(`SUM(CASE WHEN log.status = 'spoof' THEN 1 ELSE 0 END)`, 'spoof')
+      .addSelect(`SUM(CASE WHEN log.status IN ('no_match', 'unknown') THEN 1 ELSE 0 END)`, 'no_match')
+      .addSelect(`SUM(CASE WHEN log.status NOT IN ('granted', 'success', 'spoof', 'no_match', 'unknown') THEN 1 ELSE 0 END)`, 'other')
+      .addSelect(`AVG(CASE WHEN log.confidence IS NOT NULL THEN log.confidence ELSE NULL END)`, 'avg_confidence')
+      .where('log.access_time >= :startOfDay', { startOfDay })
+      .andWhere('log.access_time <= :endOfDay', { endOfDay })
+      .andWhere('log.camera_id IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
+      .groupBy('log.camera_id')
+      .getRawMany();
+
+    const cameraResults: Array<{
+      camera_id: string;
+      granted: number;
+      spoof: number;
+      no_match: number;
+      other: number;
+      avg_confidence: number | null;
+    }> = [];
+
+    for (const row of rawRows) {
+      const granted = Number(row.granted) || 0;
+      const spoof = Number(row.spoof) || 0;
+      const noMatch = Number(row.no_match) || 0;
+      const other = Number(row.other) || 0;
+      const avgConfidence = row.avg_confidence !== null && row.avg_confidence !== undefined ? Number(row.avg_confidence) : null;
+
+      cameraResults.push({
+        camera_id: row.camera_id,
+        granted,
+        spoof,
+        no_match: noMatch,
+        other,
+        avg_confidence: avgConfidence,
+      });
+
+      await dailyRepo()
+        .createQueryBuilder()
+        .insert()
+        .into(AccessRecognitionDaily)
+        .values({
+          statDate: targetDate,
+          cameraId: row.camera_id,
+          granted,
+          spoof,
+          noMatch,
+          other,
+          avgConfidence,
+          updatedAt: new Date(),
+        })
+        .orUpdate(['granted', 'spoof', 'no_match', 'other', 'avg_confidence', 'updated_at'], ['stat_date', 'camera_id'])
+        .execute();
+    }
+
+    return {
+      date: targetDate,
+      cameras: cameraResults,
+    };
+  }
+
+  async getHourlyStats(dateStr?: string): Promise<Array<{ hour: number; entries: number; exits: number; total: number }>> {
+    let targetDate = dateStr?.trim();
+    if (!targetDate) {
+      targetDate = new Date().toISOString().split('T')[0];
+    }
+
+    const startOfDay = new Date(`${targetDate}T00:00:00.000Z`);
+    const endOfDay = new Date(`${targetDate}T23:59:59.999Z`);
+
+    const rows: Array<{ hour: number | string; access_type: string; count: number | string }> = await logRepo()
+      .createQueryBuilder('log')
+      .select(`EXTRACT(HOUR FROM log.access_time)`, 'hour')
+      .addSelect('log.access_type', 'access_type')
+      .addSelect('COUNT(*)', 'count')
+      .where('log.access_time >= :startOfDay', { startOfDay })
+      .andWhere('log.access_time <= :endOfDay', { endOfDay })
+      .andWhere('log.camera_id IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
+      .andWhere(`log.status IN ('granted', 'success')`)
+      .groupBy('hour')
+      .addGroupBy('log.access_type')
+      .getRawMany();
+
+    const buckets = Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      entries: 0,
+      exits: 0,
+      total: 0,
+    }));
+
+    for (const r of rows) {
+      const h = Number(r.hour);
+      const count = Number(r.count) || 0;
+      if (h >= 0 && h < 24) {
+        if (r.access_type === 'entry') {
+          buckets[h].entries += count;
+        } else if (r.access_type === 'exit') {
+          buckets[h].exits += count;
+        }
+        buckets[h].total += count;
+      }
+    }
+
+    return buckets;
+  }
+
+  async getRecognitionStats(days = 30): Promise<Array<{
+    date: string;
+    granted: number;
+    spoof: number;
+    no_match: number;
+    other: number;
+    avg_confidence: number | null;
+    accuracy: number;
+  }>> {
+    const clampedDays = Math.min(Math.max(Number(days) || 30, 1), 90);
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - (clampedDays - 1));
+    const startDateStr = startDate.toISOString().split('T')[0];
+
+    // Fetch rolled-up records for past days
+    let pastEntities: AccessRecognitionDaily[] = [];
+    try {
+      pastEntities = await dailyRepo().find();
+    } catch {
+      pastEntities = [];
+    }
+
+    const rolledMap = new Map<string, { granted: number; spoof: number; no_match: number; other: number; confSum: number; confCount: number }>();
+    for (const row of pastEntities) {
+      const rawDate = row.statDate as unknown;
+      const dStr = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] : String(rawDate || '').slice(0, 10);
+      if (dStr >= todayStr) continue;
+
+      const existing = rolledMap.get(dStr) || { granted: 0, spoof: 0, no_match: 0, other: 0, confSum: 0, confCount: 0 };
+      existing.granted += Number(row.granted) || 0;
+      existing.spoof += Number(row.spoof) || 0;
+      existing.no_match += Number(row.noMatch) || 0;
+      existing.other += Number(row.other) || 0;
+      if (row.avgConfidence != null) {
+        existing.confSum += Number(row.avgConfidence);
+        existing.confCount += 1;
+      }
+      rolledMap.set(dStr, existing);
+    }
+
+    // Today live logs calculation
+    const startOfToday = new Date(`${todayStr}T00:00:00.000Z`);
+    const endOfToday = new Date(`${todayStr}T23:59:59.999Z`);
+
+    let todayLive = {
+      granted: 0,
+      spoof: 0,
+      no_match: 0,
+      other: 0,
+      avg_confidence: null as number | null,
+    };
+
+    try {
+      const todayLogRaw = await logRepo()
+        .createQueryBuilder('log')
+        .select(`SUM(CASE WHEN log.status IN ('granted', 'success') THEN 1 ELSE 0 END)`, 'granted')
+        .addSelect(`SUM(CASE WHEN log.status = 'spoof' THEN 1 ELSE 0 END)`, 'spoof')
+        .addSelect(`SUM(CASE WHEN log.status IN ('no_match', 'unknown') THEN 1 ELSE 0 END)`, 'no_match')
+        .addSelect(`SUM(CASE WHEN log.status NOT IN ('granted', 'success', 'spoof', 'no_match', 'unknown') THEN 1 ELSE 0 END)`, 'other')
+        .addSelect(`AVG(CASE WHEN log.confidence IS NOT NULL THEN log.confidence ELSE NULL END)`, 'avg_confidence')
+        .where('log.access_time >= :startOfToday', { startOfToday })
+        .andWhere('log.access_time <= :endOfToday', { endOfToday })
+        .andWhere('log.camera_id IN (:...cameraIds)', { cameraIds: ACTIVE_CAMERA_IDS })
+        .getRawOne();
+
+      if (todayLogRaw) {
+        todayLive = {
+          granted: Number(todayLogRaw.granted) || 0,
+          spoof: Number(todayLogRaw.spoof) || 0,
+          no_match: Number(todayLogRaw.no_match) || 0,
+          other: Number(todayLogRaw.other) || 0,
+          avg_confidence: todayLogRaw.avg_confidence != null ? Number(todayLogRaw.avg_confidence) : null,
+        };
+      }
+    } catch {
+      // Degrade gracefully if DB query fails
+    }
+
+    const results: Array<{
+      date: string;
+      granted: number;
+      spoof: number;
+      no_match: number;
+      other: number;
+      avg_confidence: number | null;
+      accuracy: number;
+    }> = [];
+
+    for (let i = clampedDays - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dKey = d.toISOString().split('T')[0];
+
+      let itemData: {
+        granted: number;
+        spoof: number;
+        no_match: number;
+        other: number;
+        avg_confidence: number | null;
+      };
+
+      if (dKey === todayStr) {
+        itemData = todayLive;
+      } else {
+        const rolled = rolledMap.get(dKey);
+        if (rolled) {
+          itemData = {
+            granted: rolled.granted,
+            spoof: rolled.spoof,
+            no_match: rolled.no_match,
+            other: rolled.other,
+            avg_confidence: rolled.confCount > 0 ? rolled.confSum / rolled.confCount : null,
+          };
+        } else {
+          itemData = { granted: 0, spoof: 0, no_match: 0, other: 0, avg_confidence: null };
+        }
+      }
+
+      const denom = itemData.granted + itemData.spoof + itemData.no_match;
+      const accuracy = denom > 0 ? itemData.granted / denom : 0;
+
+      results.push({
+        date: dKey,
+        ...itemData,
+        accuracy,
+      });
+    }
+
+    return results;
   }
 }
 

@@ -10,7 +10,7 @@ import { activateCardAutoFine } from '../clients/UserServiceClient';
 import { generatePaymentRef } from '../utils/fineCalculator';
 import { serializeBook, serializeBorrowRecord } from '../services/serializers';
 import { publishEvent } from '../utils/eventPublisher';
-import { sanitizeBarcode } from '../utils/barcode';
+import { nearestCopyBarcodes, sanitizeBarcode } from '../utils/barcode';
 import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
@@ -204,7 +204,11 @@ router.post('/', requireRole(['patron', 'admin', 'staff'], 'Chi nguoi dung hop l
           const parentBook = await repo.getBookByIsbn(match[1]);
           if (parentBook) {
             const totalCopies = await repo.countCopies(parentBook.id, false);
-            throw new HttpError(404, `Sách "${parentBook.title}" chỉ có ${totalCopies} bản sao (từ 001 đến ${String(totalCopies).padStart(3, '0')}). Không tìm thấy bản sao "${copyBarcode}".`);
+            const neighbors = nearestCopyBarcodes(copyBarcode, await repo.getCopyBarcodesByBookId(parentBook.id), 3);
+            const neighborHint = neighbors.length > 0
+              ? ` Các bản gần nhất: ${neighbors.map((b) => `"${b}"`).join(', ')}.`
+              : '';
+            throw new HttpError(404, `Sách "${parentBook.title}" hiện có ${totalCopies} bản. Không tìm thấy bản sao "${copyBarcode}".${neighborHint}`);
           }
         }
         throw new HttpError(404, `Khong tim thay ban sao nao voi ma vach ${barcode}`);

@@ -137,14 +137,14 @@ export class BookService {
     
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Books');
-    ws.addRow(['ISBN', 'Title', 'Author', 'Total Copies', 'Available Copies', 'Shelf Location', 'Created At']);
+    ws.addRow(['ISBN', 'Title', 'Author', 'Price', 'Total Copies', 'Available Copies', 'Shelf Location', 'Created At']);
 
     const bookIds = items.map(b => b.id);
     const copyCounts = await this.repo.getCopyCountsByBookIds(bookIds);
 
     for (const book of items) {
       const counts = copyCounts.get(book.id) || { total: 0, available: 0 };
-      ws.addRow([book.isbn, book.title, book.author || '', counts.total, counts.available, book.shelfLocation || '', book.createdAt?.toISOString?.() || '']);
+      ws.addRow([book.isbn, book.title, book.author || '', book.price ?? '', counts.total, counts.available, book.shelfLocation || '', book.createdAt?.toISOString?.() || '']);
     }
     
     return { workbook: wb, filename: 'books_export.xlsx' };
@@ -153,9 +153,9 @@ export class BookService {
   async getTemplate() {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Books Import');
-    ws.addRow(['ISBN', 'Quantity']);
-    ws.addRow(['9780544003415', 2]);
-    ws.addRow(['9780439708180', 3]);
+    ws.addRow(['ISBN', 'Quantity', 'Price']);
+    ws.addRow(['9780544003415', 2, 120000]);
+    ws.addRow(['9780439708180', 3, 150000]);
     return { workbook: wb, filename: 'book_import_template.xlsx' };
   }
 }

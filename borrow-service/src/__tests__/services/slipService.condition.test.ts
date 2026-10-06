@@ -123,18 +123,30 @@ describe('SlipService.lookup — exact copy resolution from scanned barcode', ()
     expect(res.can_create).toBe(false);
   });
 
-  it('warns about a major_damage copy without blocking slip creation', async () => {
+  it('blocks a major_damage copy and makes the slip uncreatable', async () => {
     const { copy } = copyWithBook('major_damage', 'available');
     mockRepo.getCopyByBarcode.mockResolvedValue(copy);
     mockRepo.getBookById.mockResolvedValue(createMockBook());
 
     const res = await new SlipService().lookup(PATRON_UUID, [{ barcode: copy.barcode }], true);
 
-    expect(res.items[0].can_borrow).toBe(true);
-    expect(res.items[0].copy?.id).toBe(copy.id);
+    expect(res.items[0].can_borrow).toBe(false);
     expect(res.items[0].reason!.toLowerCase()).toContain('hư hỏng nặng');
-    expect(res.errors).toEqual([]);
-    expect(res.can_create).toBe(true);
+    expect(res.errors).toHaveLength(1);
+    expect(res.can_create).toBe(false);
+  });
+
+  it('blocks a minor_damage copy and makes the slip uncreatable', async () => {
+    const { copy } = copyWithBook('minor_damage', 'available');
+    mockRepo.getCopyByBarcode.mockResolvedValue(copy);
+    mockRepo.getBookById.mockResolvedValue(createMockBook());
+
+    const res = await new SlipService().lookup(PATRON_UUID, [{ barcode: copy.barcode }], true);
+
+    expect(res.items[0].can_borrow).toBe(false);
+    expect(res.items[0].reason!.toLowerCase()).toContain('hư hỏng nhẹ');
+    expect(res.errors).toHaveLength(1);
+    expect(res.can_create).toBe(false);
   });
 
   it('blocks an ISBN-scanned book when its only copy is in maintenance', async () => {
@@ -246,6 +258,26 @@ describe('SlipService.lookup — scanned label format tolerance', () => {
     expect(res.errors).toEqual([]);
     expect(res.can_create).toBe(true);
   });
+
+  it('suggests the nearest existing copies instead of asserting a contiguous range', async () => {
+    const book = createMockBook();
+    mockRepo.getCopyByBarcode.mockResolvedValue(null);
+    mockRepo.getBookByIsbn.mockResolvedValue(book);
+    mockRepo.countCopies.mockResolvedValue(3);
+    mockRepo.getCopyBarcodesByBookId.mockResolvedValue([
+      'LIB-9780123456789-029',
+      'LIB-9780123456789-031',
+    ]);
+
+    const res = await new SlipService().lookup(PATRON_UUID, [{ barcode: 'LIB-9780123456789-030' }], true);
+
+    expect(res.items[0].can_borrow).toBe(false);
+    expect(res.items[0].reason).toContain('Các bản gần nhất');
+    expect(res.items[0].reason).toContain('LIB-9780123456789-029');
+    expect(res.items[0].reason).toContain('LIB-9780123456789-031');
+    expect(res.items[0].reason).not.toContain('từ 001 đến');
+  });
+});
 
   it('resolves a barcode carrying an invisible GS1 control character (FNC1 prefix)', async () => {
     const { book, copy } = copyWithBook('good', 'available');

@@ -52,10 +52,34 @@ export function markCopyAsBorrowed(copy: { isAvailable: boolean; status?: string
   }
 }
 
+export interface CopyActionRecommendation {
+  action: 'repair' | 'review' | 'dispose';
+  label: string;
+  reason: string;
+}
+
 export interface BorrowabilityAssessment {
   blocked: boolean;
   warning: string | null;
   reason: string | null;
+}
+
+/**
+ * What staff should do with a copy that needs attention.
+ * Returns null when the copy needs no action (new/good/unknown).
+ */
+export function recommendCopyAction(condition?: string | null): CopyActionRecommendation | null {
+  const normalized = condition ? String(condition).trim().toLowerCase() : null;
+  switch (normalized) {
+    case 'minor_damage':
+      return { action: 'repair', label: 'Đề xuất sửa chữa', reason: 'Bản sao hư hỏng nhẹ — nên sửa chữa, đóng lại trước khi cho mượn tiếp' };
+    case 'major_damage':
+      return { action: 'review', label: 'Đề xuất sửa chữa hoặc thanh lý', reason: 'Bản sao hư hỏng nặng — kiểm tra khả năng sửa, nếu không sửa được thì thanh lý' };
+    case 'lost':
+      return { action: 'dispose', label: 'Đề xuất thanh lý', reason: 'Sách đã mất — đề xuất thanh lý, ghi giảm khỏi kho' };
+    default:
+      return null;
+  }
 }
 
 const ALLOWED: BorrowabilityAssessment = { blocked: false, warning: null, reason: null };
@@ -67,11 +91,14 @@ const STATUS_MESSAGES: Record<string, string> = {
 };
 
 const LOST_MESSAGE = 'Bản sao đã bị đánh dấu mất';
-const MAJOR_DAMAGE_WARNING = 'Bản sao hư hỏng nặng — cần kiểm tra trước khi mượn';
+const MINOR_DAMAGE_MESSAGE = 'Bản sao bị hư hỏng nhẹ — không thể mượn, cần sửa chữa trước';
+const MAJOR_DAMAGE_MESSAGE = 'Bản sao bị hư hỏng nặng — không thể mượn, cần sửa chữa hoặc thanh lý';
 
 /**
  * Single source of truth for whether a copy may enter a borrow flow.
- * Blocks maintenance/disposed/lost copies, warns on major damage without blocking.
+ * Only new/good copies circulate: maintenance/disposed/lost copies and
+ * damaged (minor/major) copies are blocked so every loan starts from a
+ * good-condition copy and return damage fees stay fair.
  */
 export function assessCopyBorrowability(copy: {
   status?: string | null;
@@ -88,8 +115,11 @@ export function assessCopyBorrowability(copy: {
   if (condition === 'lost') {
     return { blocked: true, warning: null, reason: LOST_MESSAGE };
   }
+  if (condition === 'minor_damage') {
+    return { blocked: true, warning: null, reason: MINOR_DAMAGE_MESSAGE };
+  }
   if (condition === 'major_damage') {
-    return { blocked: false, warning: MAJOR_DAMAGE_WARNING, reason: null };
+    return { blocked: true, warning: null, reason: MAJOR_DAMAGE_MESSAGE };
   }
   return ALLOWED;
 }

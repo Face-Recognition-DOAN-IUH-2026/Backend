@@ -36,15 +36,26 @@ async function parseExcelRows(buffer: Buffer) {
   headerRow.eachCell((cell, col) => { headers[col] = normalizeRowValue(cell.value).toUpperCase(); });
   const isbnCol = headers.findIndex((h) => !!h && h.includes('ISBN'));
   const qtyCol = headers.findIndex((h) => !!h && (h.includes('QUANTITY') || h.includes('QTY') || h.includes('SO LUONG') || h.includes('SỐ LƯỢNG')));
+  const priceCol = headers.findIndex((h) => !!h && (
+    h.includes('PRICE') || h.includes('GIA') || h.includes('GIÁ') || h.includes('DON GIA') || h.includes('ĐƠN GIÁ') || h.includes('COST')
+  ));
   if (isbnCol < 1 || qtyCol < 1) throw new HttpError(400, "File phai co cot 'ISBN' va 'Quantity'");
-  const rows: Array<{ isbn: string; quantity: number; line: number }> = [];
+  const rows: Array<{ isbn: string; quantity: number; price: number | null; line: number }> = [];
   for (let line = 2; line <= ws.rowCount; line += 1) {
     const row = ws.getRow(line);
     const isbn = normalizeIsbnCell(row.getCell(isbnCol));
     if (!isbn || isbn === 'None') continue;
     const rawQty = normalizeRowValue(row.getCell(qtyCol).value);
     const quantity = Math.max(1, Number.isFinite(Number(rawQty)) ? Math.trunc(Number(rawQty)) : 1);
-    rows.push({ isbn, quantity, line });
+    let price: number | null = null;
+    if (priceCol >= 1) {
+      const rawPrice = normalizeRowValue(row.getCell(priceCol).value).replace(/[^\d.-]/g, '');
+      const num = Number(rawPrice);
+      if (Number.isFinite(num) && num >= 0) {
+        price = num;
+      }
+    }
+    rows.push({ isbn, quantity, price, line });
   }
   if (!rows.length) throw new HttpError(400, 'Khong co du lieu hop le');
   return rows;
@@ -53,6 +64,7 @@ async function parseExcelRows(buffer: Buffer) {
 const ImportFilteredRowSchema = z.object({
   isbn: z.string(),
   quantity: z.coerce.number().int().positive(),
+  price: z.coerce.number().min(0).nullable().optional(),
   title: z.string().nullable().optional(),
   subtitle: z.string().nullable().optional(),
   author: z.string().nullable().optional(),
@@ -87,6 +99,7 @@ export class BookImportService {
       preview.push({
         isbn: row.isbn,
         quantity: row.quantity,
+        price: row.price ?? (book?.price ? Number(book.price) : null),
         title: book?.title || meta?.title || `ISBN: ${row.isbn}`,
         subtitle: book?.subtitle || meta?.subtitle || null,
         author: book?.author || meta?.author || null,
@@ -135,22 +148,26 @@ export class BookImportService {
         if (!book) {
           const meta = metaMap.get(row.isbn) ?? null;
           noMeta = !meta;
-          const upserted = await this.repo.upsertBook(row.isbn, meta?.title || `ISBN: ${row.isbn}`, meta?.author, meta?.coverUrl, meta ? {
-            subtitle: meta.subtitle ?? null,
-            publisher: meta.publisher ?? null,
-            publishedDate: meta.publishedDate ?? null,
-            description: meta.description ?? null,
-            pageCount: meta.pageCount ?? null,
-            categories: meta.categories ?? null,
-            averageRating: meta.averageRating ?? null,
-            language: meta.language ?? null,
-            isbn10: meta.isbn10 ?? null,
-            isbn13: meta.isbn13 ?? null,
-          } : undefined);
+          const upserted = await this.repo.upsertBook(row.isbn, meta?.title || `ISBN: ${row.isbn}`, meta?.author, meta?.coverUrl, {
+            subtitle: meta?.subtitle ?? null,
+            publisher: meta?.publisher ?? null,
+            publishedDate: meta?.publishedDate ?? null,
+            description: meta?.description ?? null,
+            pageCount: meta?.pageCount ?? null,
+            categories: meta?.categories ?? null,
+            averageRating: meta?.averageRating ?? null,
+            language: meta?.language ?? null,
+            isbn10: meta?.isbn10 ?? null,
+            isbn13: meta?.isbn13 ?? null,
+            price: row.price ?? null,
+          });
           book = upserted.book;
           created = upserted.created;
           existing.set(row.isbn, book);
           offsets.set(row.isbn, 0);
+        } else if (row.price !== null && row.price !== undefined) {
+          await this.repo.updateBook(book.id, { price: row.price });
+          book.price = row.price;
         }
         const offset = offsets.get(row.isbn) || 0;
         const barcodes = Array.from({ length: row.quantity }, (_, i) => `LIB-${row.isbn}-${String(offset + i + 1).padStart(3, '0')}`);
@@ -218,11 +235,15 @@ export class BookImportService {
             language: row.language ?? null,
             isbn10: row.isbn10 ?? null,
             isbn13: row.isbn13 ?? null,
+            price: row.price ?? null,
           });
           book = upserted.book;
           created = upserted.created;
           existing.set(isbnKey, book);
           offsets.set(isbnKey, 0);
+        } else if (row.price !== null && row.price !== undefined) {
+          await this.repo.updateBook(book.id, { price: row.price });
+          book.price = row.price;
         }
         const offset = offsets.get(isbnKey) || 0;
         const barcodes = Array.from({ length: row.totalQuantity }, (_, i) => `LIB-${isbnKey}-${String(offset + i + 1).padStart(3, '0')}`);

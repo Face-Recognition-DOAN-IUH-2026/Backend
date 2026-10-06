@@ -9,7 +9,7 @@ import { config } from '../config';
 import { BookCopy } from '../entities/BookCopy';
 import { configService } from './ConfigService';
 import { assessCopyBorrowability, markCopyAsBorrowed } from '../constants/copy';
-import { findCopyByBarcode, sanitizeBarcode } from '../utils/barcode';
+import { findCopyByBarcode, nearestCopyBarcodes, sanitizeBarcode } from '../utils/barcode';
 import { convertIsbnFormat } from '../utils/isbn';
 
 function patronSummary(patron: any) {
@@ -65,10 +65,15 @@ async function lookupBookAndCopy(repo: BorrowRepository, barcode: string, isbn?:
         if (book) {
           const totalCopies = await repo.countCopies(book.id, false);
           const availableCopies = await repo.countCopies(book.id, true);
+          const existingBarcodes = await repo.getCopyBarcodesByBookId(book.id);
+          const neighbors = nearestCopyBarcodes(copyBarcode, existingBarcodes, 3);
+          const neighborHint = neighbors.length > 0
+            ? ` Các bản gần nhất: ${neighbors.map((b) => `"${b}"`).join(', ')}.`
+            : '';
           return {
             book,
             copy: null,
-            reason: `Sách "${book.title}" chỉ có ${totalCopies} bản sao (từ 001 đến ${String(totalCopies).padStart(3, '0')}). Không tìm thấy bản sao "${copyBarcode}".`,
+            reason: `Sách "${book.title}" hiện có ${totalCopies} bản. Không tìm thấy bản sao "${copyBarcode}".${neighborHint}`,
             totalCopies,
             availableCopies,
           };

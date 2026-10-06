@@ -319,33 +319,29 @@ describe('PATCH /borrow/copies/:id', () => {
 describe('DELETE /borrow/copies/:id', () => {
   it('deletes a copy that is not on loan', async () => {
     const copy = createMockCopy();
-    mockRepo.getCopyById.mockResolvedValue(copy);
-    mockRepo.hasActiveBorrowsForCopy.mockResolvedValue(false);
-    mockRepo.deleteCopies.mockResolvedValue([copy]);
+    (mockRepo as any).disposeCopy = jest.fn().mockResolvedValue({ detached: 2 });
 
     const res = await request(createBookApp())
       .delete(`/borrow/copies/${copy.id}`)
       .set(authHeader);
 
     expect(res.status).toBe(200);
-    expect(mockRepo.deleteCopies).toHaveBeenCalledWith([copy]);
+    expect(res.body).toMatchObject({ success: true, deleted: 1 });
+    expect((mockRepo as any).disposeCopy).toHaveBeenCalledWith(copy.id);
   });
 
   it('returns 409 when the copy has an active borrow', async () => {
-    const copy = createMockCopy();
-    mockRepo.getCopyById.mockResolvedValue(copy);
-    mockRepo.hasActiveBorrowsForCopy.mockResolvedValue(true);
+    (mockRepo as any).disposeCopy = jest.fn().mockRejectedValue(new HttpError(409, 'Bản sao đang được mượn nên không thể xóa'));
 
     const res = await request(createBookApp())
-      .delete(`/borrow/copies/${copy.id}`)
+      .delete(`/borrow/copies/${createMockCopy().id}`)
       .set(authHeader);
 
     expect(res.status).toBe(409);
-    expect(mockRepo.deleteCopies).not.toHaveBeenCalled();
   });
 
   it('returns 404 for an unknown copy', async () => {
-    mockRepo.getCopyById.mockResolvedValue(null);
+    (mockRepo as any).disposeCopy = jest.fn().mockRejectedValue(new HttpError(404, 'Bản sao không tồn tại'));
 
     const res = await request(createBookApp())
       .delete('/borrow/copies/cccccccc-cccc-cccc-cccc-cccccccccccc')
@@ -355,13 +351,16 @@ describe('DELETE /borrow/copies/:id', () => {
   });
 
   it('returns 403 when the caller lacks books:delete', async () => {
+    const disposeMock = jest.fn();
+    (mockRepo as any).disposeCopy = disposeMock;
+
     const res = await request(createBookApp())
       .delete('/borrow/copies/cccccccc-cccc-cccc-cccc-cccccccccccc')
       .set(authHeader)
       .set('x-test-deny-permission', '1');
 
     expect(res.status).toBe(403);
-    expect(mockRepo.deleteCopies).not.toHaveBeenCalled();
+    expect(disposeMock).not.toHaveBeenCalled();
   });
 });
 
@@ -447,7 +446,7 @@ describe('POST /borrow/ — condition-aware direct borrow', () => {
     expect(copy.status).toBe('borrowed');
   });
 
-  it('borrows a major_damage copy but surfaces a condition warning', async () => {
+  it('blocks a major_damage copy with 409 and creates nothing', async () => {
     const book = createMockBook();
     const copy = createMockCopy({ condition: 'major_damage', status: 'available', isAvailable: true });
     (copy as any).book = book;
@@ -460,9 +459,24 @@ describe('POST /borrow/ — condition-aware direct borrow', () => {
       .set('x-test-role', 'staff')
       .send({ barcode: copy.barcode });
 
-    expect(res.status).toBe(200);
-    expect(String(res.body.condition_warning || '').toLowerCase()).toContain('hư hỏng nặng');
-    expect(mockRepo.createBorrowRecord).toHaveBeenCalledTimes(1);
-    expect(copy.status).toBe('borrowed');
+    expect(res.status).toBe(409);
+    expect(mockRepo.createBorrowRecord).not.toHaveBeenCalled();
+  });
+
+  it('blocks a minor_damage copy with 409 and creates nothing', async () => {
+    const book = createMockBook();
+    const copy = createMockCopy({ condition: 'minor_damage', status: 'available', isAvailable: true });
+    (copy as any).book = book;
+    mockRepo.getCopyByBarcode.mockResolvedValue(copy);
+    mockRepo.getBookById.mockResolvedValue(book);
+
+    const res = await request(createBorrowApp())
+      .post('/borrow/')
+      .set(authHeader)
+      .set('x-test-role', 'staff')
+      .send({ barcode: copy.barcode });
+
+    expect(res.status).toBe(409);
+    expect(mockRepo.createBorrowRecord).not.toHaveBeenCalled();
   });
 });

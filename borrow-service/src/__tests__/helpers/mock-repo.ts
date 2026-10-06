@@ -137,6 +137,7 @@ export type MockBorrowRepository = {
   getOverdueBorrows: jest.Mock;
   countActiveBorrows: jest.Mock;
   countCopies: jest.Mock;
+  getCopyBarcodesByBookId: jest.Mock;
   setCopyAvailable: jest.Mock;
   createBorrowRecord: jest.Mock;
   returnBook: jest.Mock;
@@ -194,6 +195,7 @@ export function createMockBorrowRepository(): MockBorrowRepository {
     getOverdueBorrows: jest.fn().mockResolvedValue([]),
     countActiveBorrows: jest.fn().mockResolvedValue(0),
     countCopies: jest.fn().mockResolvedValue(0),
+    getCopyBarcodesByBookId: jest.fn().mockResolvedValue([]),
     setCopyAvailable: jest.fn().mockResolvedValue(undefined),
     createBorrowRecord: jest.fn().mockImplementation((patronId: string, bookId: string, copyId: string | null | undefined, shelfLocation: string | null) =>
       Promise.resolve(createMockRecord({ patronId, bookId, copyId: copyId || undefined, shelfLocation: shelfLocation || undefined }))

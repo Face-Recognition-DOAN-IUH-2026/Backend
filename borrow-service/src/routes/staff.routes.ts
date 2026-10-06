@@ -494,4 +494,55 @@ router.get('/stats', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nha
   }
 });
 
+// GET /stats/finance
+router.get('/stats/finance', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem thong ke'), async (req, res, next) => {
+  try {
+    const rawMonths = req.query.months ? Number(req.query.months) : 6;
+    const months = Math.min(Math.max(isNaN(rawMonths) ? 6 : rawMonths, 1), 24);
+    res.json(await new BorrowRepository().getFinanceStats(months));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /stats/inventory
+router.get('/stats/inventory', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem thong ke'), async (req, res, next) => {
+  try {
+    res.json(await new BorrowRepository().getInventoryStats());
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /stats/condition-distribution — copy counts by condition and status
+router.get('/stats/condition-distribution', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem thong ke'), async (req, res, next) => {
+  try {
+    res.json(await new BorrowRepository().getConditionDistribution());
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /stats/condition-attention — copies needing repair/disposal review
+router.get('/stats/condition-attention', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem thong ke'), async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
+    const { summary, items } = await new BorrowRepository().getConditionAttention(limit);
+    res.json({
+      summary,
+      items: items.map(({ copy, book, recommendation }) => ({
+        copy_id: copy.id,
+        barcode: copy.barcode,
+        condition: copy.condition,
+        status: copy.status,
+        shelf_location: copy.shelfLocation,
+        book: book ? { id: book.id, title: book.title, isbn: book.isbn } : null,
+        recommendation,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

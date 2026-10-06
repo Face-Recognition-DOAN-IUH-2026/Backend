@@ -1343,6 +1343,11 @@ def _process_single_face(
 
         # Phase 2 (cont): Liveness check (expensive — after all fast checks passed)
         liveness = liveness_from_face(img, face)
+        logger.info(
+            "Camera %s liveness for %s: is_live=%s, score=%.4f (threshold=%.2f), vetoes=%s, breakdown=%s",
+            camera_id, full_name, liveness.get("is_live"), liveness.get("liveness_score", 0.0),
+            settings.liveness_threshold, liveness.get("veto_reasons", []), liveness.get("breakdown", {})
+        )
         if not liveness.get("is_live", False):
             event = {
                 "camera_id": camera_id, "status": "spoof",

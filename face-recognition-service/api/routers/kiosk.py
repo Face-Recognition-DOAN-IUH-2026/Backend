@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
+import os
 import uuid as _uuid
 from datetime import date
 from typing import Optional
 
+import cv2
 import httpx
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile
+import numpy as np
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +21,13 @@ from infra.milvus_client import MilvusClient as _MilvusClient
 from infra.minio_client import MinioStorage as _MinioStorage
 from infra.patron_repository import PatronRepository
 from infra.redis_cache import redis_client as _redis_client
+from worker.anti_spoofing import (
+    decide_active_verdict,
+    is_active_liveness_enabled,
+    verify_challenge_motion,
+)
 from worker.celery_app import celery_app as _celery_app
+from worker.face_model import check_liveness, get_model
 from worker.tasks import _upload_temp_frame
 
 USER_SERVICE = settings.user_service_url
@@ -32,6 +42,7 @@ def _internal_headers() -> dict[str, str]:
 
 router = APIRouter(prefix="/kiosk", tags=["kiosk"])
 celery_app = _celery_app
+logger = logging.getLogger(__name__)
 
 
 def _get_milvus_client() -> _MilvusClient:
@@ -128,6 +139,116 @@ async def kiosk_lookup(
         "patron": (await _patron_to_public(user, repo)).model_dump(),
         "has_face": await repo.get_active_face(user_id) is not None,
         "is_expired": _is_expired(user),
+    }
+
+
+MAX_CHALLENGE_FRAME_BYTES = 5 * 1024 * 1024
+
+
+def _validate_challenge_frame(raw: bytes) -> None:
+    if not raw or len(raw) > MAX_CHALLENGE_FRAME_BYTES:
+        raise ValueError("Invalid frame size")
+    if not (raw[:3] == b"\xff\xd8\xff" or raw[:8] == b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("Invalid image data")
+
+
+def _analyze_frame_liveness(raw: bytes) -> float:
+    """Score one challenge frame. Undecodable frames fail closed at 0.0."""
+    img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError("Invalid image data")
+    try:
+        return float(check_liveness(img).get("liveness_score", 0.0) or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _extract_frame_kps(raw: bytes) -> list | None:
+    """insightface 5-point kps for one frame, or None (fail-closed: no motion proof)."""
+    img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        return None
+    try:
+        face = get_model().detect_face_once(img).get("face")
+        kps = getattr(face, "kps", None)
+        return np.asarray(kps, dtype=np.float64).tolist() if kps is not None else None
+    except Exception:
+        return None
+
+
+async def _record_challenge_spoof(student_code: str | None, patron_id: str | None) -> None:
+    """Fire-and-forget audit of a challenge-caught spoof.
+
+    Never fails the verdict response: recording is best-effort, the worker
+    passive path remains the backstop.
+    """
+    try:
+        payload: dict = {
+            "camera_id": "kiosk",
+            "status": "spoof",
+            "patron_id": patron_id,
+            "student_code": student_code,
+            "source": "face-recognition-service",
+        }
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                f"{settings.access_service_url}/internal/access/recognition-events",
+                json=payload,
+                headers=_internal_headers(),
+            )
+    except Exception as exc:
+        logger.warning("Challenge spoof audit failed (best-effort): %s", exc)
+
+
+@router.post("/liveness-active")
+async def kiosk_liveness_active(
+    frames: list[UploadFile] = File(...),
+    student_code: Optional[str] = Form(None),
+    patron_id: Optional[str] = Form(None),
+):
+    """Synchronous active-liveness challenge for the kiosk path.
+
+    Accepts the configured number of frames, scores each with the same
+    analyzer as the worker, and bands the average into live/inconclusive/spoof.
+    """
+    if not is_active_liveness_enabled(settings.enable_active_liveness):
+        raise HTTPException(status_code=400, detail="Active liveness challenge is disabled")
+    expected = settings.active_liveness_frames
+    if len(frames) != expected:
+        raise HTTPException(status_code=422, detail=f"Expected {expected} frames, got {len(frames)}")
+    raws: list[bytes] = []
+    for frame in frames:
+        raw = await frame.read()
+        try:
+            _validate_challenge_frame(raw)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        raws.append(raw)
+    scores: list[float] = []
+    kps_list: list = []
+    for raw in raws:
+        try:
+            score = await run_in_threadpool(_analyze_frame_liveness, raw)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        scores.append(max(0.0, min(1.0, score)))
+        kps_list.append(await run_in_threadpool(_extract_frame_kps, raw))
+    avg_score = sum(scores) / len(scores)
+    motion = verify_challenge_motion(kps_list)
+    verdict = decide_active_verdict(avg_score, motion["has_motion"])
+    if verdict == "spoof":
+        await _record_challenge_spoof(student_code, patron_id)
+    return {
+        "is_live": verdict == "live",
+        "liveness_score": avg_score,
+        "verdict": verdict,
+        "frames_evaluated": len(scores),
+        "detail": (
+            f"{len(scores)} frames averaged {avg_score:.3f}, "
+            f"motion displacement {motion['displacement']:.3f}"
+        ),
+        "motion_displacement": motion["displacement"],
+        "student_code": student_code,
     }
 
 

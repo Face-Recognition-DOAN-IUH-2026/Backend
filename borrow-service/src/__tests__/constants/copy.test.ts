@@ -6,6 +6,7 @@ import {
   COPY_STATUS_LABELS,
   DEFAULT_CONDITION,
   assessCopyBorrowability,
+  recommendCopyAction,
   markCopyAsBorrowed,
   normalizeCondition,
   normalizeCopyStatus,
@@ -76,18 +77,23 @@ describe('assessCopyBorrowability', () => {
     expect(result.warning).toBeNull();
   });
 
-  it('warns without blocking a major_damage copy', () => {
+  it('blocks a major_damage copy so damaged books never circulate', () => {
     const result = assessCopyBorrowability({ status: 'available', condition: 'major_damage' });
-    expect(result.blocked).toBe(false);
-    expect(result.reason).toBeNull();
-    expect(result.warning).toBeTruthy();
-    expect(result.warning).toContain('hư hỏng nặng');
+    expect(result.blocked).toBe(true);
+    expect(result.warning).toBeNull();
+    expect(result.reason).toContain('hư hỏng nặng');
+  });
+
+  it('blocks a minor_damage copy so damaged books never circulate', () => {
+    const result = assessCopyBorrowability({ status: 'available', condition: 'minor_damage' });
+    expect(result.blocked).toBe(true);
+    expect(result.warning).toBeNull();
+    expect(result.reason).toContain('hư hỏng nhẹ');
   });
 
   it.each([
     ['available', 'new'],
     ['available', 'good'],
-    ['available', 'minor_damage'],
   ])('allows status=%s condition=%s', (status, condition) => {
     const result = assessCopyBorrowability({ status, condition });
     expect(result).toEqual({ blocked: false, warning: null, reason: null });
@@ -121,6 +127,24 @@ describe('assessCopyBorrowability', () => {
   it('treats legacy copies without condition or status as borrowable', () => {
     const result = assessCopyBorrowability({ status: null, condition: null });
     expect(result).toEqual({ blocked: false, warning: null, reason: null });
+  });
+});
+
+describe('recommendCopyAction', () => {
+  it('recommends disposal for lost copies', () => {
+    expect(recommendCopyAction('lost')).toMatchObject({ action: 'dispose' });
+  });
+
+  it('recommends review (repair or dispose) for major_damage copies', () => {
+    expect(recommendCopyAction('major_damage')).toMatchObject({ action: 'review' });
+  });
+
+  it('recommends repair for minor_damage copies', () => {
+    expect(recommendCopyAction('minor_damage')).toMatchObject({ action: 'repair' });
+  });
+
+  it.each(['new', 'good', null, undefined])('returns null when no action is needed (%j)', (condition) => {
+    expect(recommendCopyAction(condition as any)).toBeNull();
   });
 });
 
