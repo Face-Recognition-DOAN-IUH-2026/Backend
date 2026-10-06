@@ -44,10 +44,8 @@ const globalLimiter = rateLimit({
     if (config.nodeEnv === 'production') return false;
     return [
       '/api/auth/login',
-      '/api/auth/register',
       '/api/auth/refresh',
       '/api/patrons/login',
-      '/api/patrons/register',
     ].some((path) => req.path === path);
   },
   standardHeaders: true,
@@ -132,9 +130,9 @@ const stripApiPrefixFromOriginalPath = (_path: string, req: any) => {
 // CLEAN PREFIX-BASED ROUTING
 // ============================================================================
 // Rules:
-//   /api/auth/*         → user-service (login, register, refresh)
+//   /api/auth/*         → user-service (login, refresh)
 //   /api/patrons/login  → user-service (patron login)
-//   /api/patrons/register → user-service (patron register)
+//   /api/patrons/template, /import → user-service (librarian batch Excel import)
 //   /api/patrons/me     → user-service (current patron)
 //   /api/patrons/:id/password → user-service (change password)
 //   /users/me           → user-service (current user)
@@ -171,17 +169,11 @@ app.use('/api/auth', authLimiter, createProxyMiddleware({
   pathRewrite: stripApiPrefixFromOriginalPath,  // /api/auth/login → /auth/login
 }));
 
-// Patron auth routes: login, register
+// Patron auth routes: login
 app.use('/api/patrons/login', authLimiter, createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,  // → /patrons/login
-}));
-
-app.use('/api/patrons/register', authLimiter, createProxyMiddleware({
-  target: config.services.userService,
-  changeOrigin: true,
-  pathRewrite: stripApiPrefixFromOriginalPath,  // → /patrons/register
 }));
 
 // Patron self-info routes: /patrons/me, /patrons/:id/password
@@ -346,15 +338,20 @@ app.use('/api/patrons/stats', createProxyMiddleware({
   pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
-// Check student code + email existence from user-service
-app.use('/api/patrons/check-exists', createProxyMiddleware({
+// Patron batch import Excel template & execution from user-service
+app.use('/api/patrons/template', createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,
 }));
 
-// Check student code existence from user-service (legacy)
-app.use('/api/patrons/check-code', createProxyMiddleware({
+app.use('/api/patrons/import/preview', createProxyMiddleware({
+  target: config.services.userService,
+  changeOrigin: true,
+  pathRewrite: stripApiPrefixFromOriginalPath,
+}));
+
+app.use('/api/patrons/import', createProxyMiddleware({
   target: config.services.userService,
   changeOrigin: true,
   pathRewrite: stripApiPrefixFromOriginalPath,

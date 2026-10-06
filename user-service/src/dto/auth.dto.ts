@@ -12,7 +12,6 @@ export interface RegisterDto {
   membershipExpiry?: string;
   phone?: string;
   skipVerification?: boolean;
-  verificationToken?: string;
 }
 
 export interface LoginDto {
@@ -30,6 +29,7 @@ export interface AuthResponse {
   refresh_token: string;
   token_type: string;
   user: UserPublicDto;
+  require_password_change?: boolean;
 }
 
 export interface TokenPayload {

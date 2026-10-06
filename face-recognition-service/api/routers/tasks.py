@@ -19,10 +19,11 @@ class TaskStatusResponse(BaseModel):
 
 def _get_task_result_sync(task_id: str) -> dict:
     task_result = AsyncResult(task_id, app=celery_app)
-    task_status = task_result.status
+    task_status = "PENDING"
     response_result = None
 
     try:
+        task_status = task_result.status
         if task_status == "SUCCESS":
             try:
                 raw = task_result.result
@@ -46,8 +47,8 @@ def _get_task_result_sync(task_id: str) -> dict:
             except Exception:
                 response_result = {"error": "Task failed", "type": "task_failure"}
     except Exception as e:
-        task_status = "ERROR"
-        response_result = {"error": str(e), "type": "unknown_error"}
+        task_status = "PENDING"
+        response_result = None
 
     return {
         "task_id": task_id,

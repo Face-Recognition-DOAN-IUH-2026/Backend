@@ -38,9 +38,9 @@ describe('Swagger Merge', () => {
 
     expect(merged.openapi).toBe('3.0.0');
     expect(merged.info.title).toBe('IUH Library System — Unified API');
-    expect(merged.paths['/user/patrons']).toBeDefined();
-    expect(merged.paths['/user/patrons/{id}']).toBeDefined();
-    expect(merged.paths['/borrow/borrows']).toBeDefined();
+    expect(merged.paths['/api/patrons']).toBeDefined();
+    expect(merged.paths['/api/patrons/{id}']).toBeDefined();
+    expect(merged.paths['/api/borrows']).toBeDefined();
   });
 
   it('should add service tags to each endpoint', async () => {
@@ -53,7 +53,7 @@ describe('Swagger Merge', () => {
 
     expect(merged.tags).toBeDefined();
     const tagNames = merged.tags!.map((t: any) => t.name);
-    expect(tagNames).toContain('user-service');
+    expect(tagNames).toContain('Patrons');
   });
 
   it('should gracefully handle unreachable services', async () => {
@@ -64,9 +64,9 @@ describe('Swagger Merge', () => {
 
     const merged = await fetchAndMergeSpecs();
 
-    expect(merged.paths['/user/patrons']).toBeDefined();
+    expect(merged.paths['/api/patrons']).toBeDefined();
     // Other services' paths should not exist
-    const nonUserPaths = Object.keys(merged.paths).filter(p => p.startsWith('/borrow'));
+    const nonUserPaths = Object.keys(merged.paths).filter(p => p.startsWith('/api/borrows'));
     expect(nonUserPaths).toHaveLength(0);
   });
 
@@ -88,11 +88,10 @@ describe('Swagger Merge', () => {
 
     const merged = await fetchAndMergeSpecs();
 
-    // user-service paths prefixed with /user
-    expect(merged.paths['/user/patrons']).toBeDefined();
-    expect(merged.paths['/user/patrons/{id}']).toBeDefined();
-    // borrow-service paths prefixed with /borrow
-    expect(merged.paths['/borrow/borrows']).toBeDefined();
+    // user-service and borrow-service paths prefixed with /api
+    expect(merged.paths['/api/patrons']).toBeDefined();
+    expect(merged.paths['/api/patrons/{id}']).toBeDefined();
+    expect(merged.paths['/api/borrows']).toBeDefined();
     // Original paths should not exist
     expect(merged.paths['/patrons']).toBeUndefined();
     expect(merged.paths['/borrows']).toBeUndefined();

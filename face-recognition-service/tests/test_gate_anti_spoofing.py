@@ -127,3 +127,27 @@ class TestGateAntiSpoofing:
         # Neither should trigger a hard veto
         assert lbp_res["lbp_veto"] is False
         assert fft_res["fft_veto"] is False
+
+    def test_single_straight_line_is_not_bezel(self, analyzer):
+        """Hồi quy LIB-254: khung cửa/kệ/gạch (1 đường thẳng dài đơn lẻ) quanh
+        mặt thật KHÔNG được coi là viền màn hình."""
+        full_img = np.zeros((480, 640, 3), dtype=np.uint8)
+        face_bbox = [200, 150, 400, 350]
+        # Một đường dọc dài duy nhất bên trái mặt (như khung cửa)
+        full_img[60:420, 100:103] = 255
+
+        bezel_result = analyzer.analyze_screen_bezel(full_img, face_bbox)
+        assert bezel_result["has_bezel"] is False
+        assert bezel_result["bezel_veto"] is False
+
+    def test_opposite_parallel_edges_still_veto(self, analyzer):
+        """2 cạnh song song đối xứng 2 bên mặt (thân máy) vẫn phải veto."""
+        full_img = np.zeros((480, 640, 3), dtype=np.uint8)
+        face_bbox = [200, 150, 400, 350]
+        # 2 đường dọc dài đối xứng trái/phải mặt (nằm trong ROI quanh mặt)
+        full_img[60:420, 120:123] = 255
+        full_img[60:420, 500:503] = 255
+
+        bezel_result = analyzer.analyze_screen_bezel(full_img, face_bbox)
+        assert bezel_result["has_bezel"] is True
+        assert bezel_result["bezel_veto"] is True

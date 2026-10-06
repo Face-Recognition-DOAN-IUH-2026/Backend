@@ -318,45 +318,68 @@ class AntiSpoofingAnalyzer:
         fy2 = min(edges.shape[0], y2 - cy1)
         edges[fy1:fy2, fx1:fx2] = 0
 
-        # Detect straight line segments in margin
+        # Detect straight line segments in margin (robust across cv2/numpy versions:
+        # HoughLinesP may return shape (N,1,4) or (N,4))
         min_dim = min(fw, fh)
         lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=25, minLineLength=int(min_dim * 0.28), maxLineGap=10)
-        vert_count = 0
-        horiz_count = 0
+        vert_lines = []  # (x_center, y1, y2) in context-roi coords
+        horiz_lines = []  # (y_center, x1, x2) in context-roi coords
         long_line_count = 0
         if lines is not None:
-            for line in lines:
-                lx1, ly1, lx2, ly2 = line[0]
+            import numpy as _np
+
+            for line in _np.asarray(lines).reshape(-1, 4):
+                lx1, ly1, lx2, ly2 = (float(v) for v in line)
                 dx = abs(lx2 - lx1)
                 dy = abs(ly2 - ly1)
-                line_len = np.sqrt(dx * dx + dy * dy)
+                line_len = _np.sqrt(dx * dx + dy * dy)
                 if line_len > min_dim * 0.42:
                     long_line_count += 1
                 if dy > 1.8 * (dx + 1e-5) and dy > min_dim * 0.28:
-                    vert_count += 1
+                    vert_lines.append(((lx1 + lx2) / 2.0, min(ly1, ly2), max(ly1, ly2)))
                 elif dx > 1.8 * (dy + 1e-5) and dx > min_dim * 0.28:
-                    horiz_count += 1
+                    horiz_lines.append(((ly1 + ly2) / 2.0, min(lx1, lx2), max(lx1, lx2)))
 
-        # Phone/screen or paper edges:
-        # - Any corner (vert + horiz)
-        # - OR 2 parallel vertical edges (left & right sides of phone chassis)
-        # - OR 2 horizontal edges (top & bottom of phone)
-        # - OR at least one prominent long straight chassis edge
-        # - OR multiple straight lines in the margin (total >= 2)
-        has_bezel = bool(
-            (vert_count >= 1 and horiz_count >= 1)
-            or vert_count >= 2
-            or horiz_count >= 2
-            or long_line_count >= 1
-            or (vert_count + horiz_count >= 2)
+        # A real screen/phone chassis forms a RECTANGLE around the face, not just
+        # stray straight lines (door frames, shelves, tiles, glasses arms).
+        # Veto only on rectangle structure, in context-roi coordinates:
+        # - corner: a vertical and horizontal line meeting nearby, OR
+        # - opposite parallel pair: lines on both sides of the face center.
+        tol = min_dim * 0.12
+        face_cx = (fx1 + fx2) / 2.0
+        face_cy = (fy1 + fy2) / 2.0
+        margin = min_dim * 0.15
+        has_corner = False
+        for vx, vy1, vy2 in vert_lines:
+            for hy, hx1, hx2 in horiz_lines:
+                if abs(vx - hx1) < tol or abs(vx - hx2) < tol:
+                    if abs(hy - vy1) < tol or abs(hy - vy2) < tol:
+                        has_corner = True
+                        break
+            if has_corner:
+                break
+        left_edges = [vx for vx, _, _ in vert_lines if vx < face_cx - margin]
+        right_edges = [vx for vx, _, _ in vert_lines if vx > face_cx + margin]
+        top_edges = [hy for hy, _, _ in horiz_lines if hy < face_cy - margin]
+        bottom_edges = [hy for hy, _, _ in horiz_lines if hy > face_cy + margin]
+        has_opposite_pair = bool(
+            (left_edges and right_edges) or (top_edges and bottom_edges)
         )
-        bezel_score = 0.10 if has_bezel else 0.5
+
+        has_bezel = bool(has_corner or has_opposite_pair)
+        if has_bezel:
+            bezel_score = 0.10
+        elif vert_lines or horiz_lines or long_line_count >= 1:
+            # Stray straight lines (furniture, tiles): suspicious but not a veto
+            bezel_score = 0.30
+        else:
+            bezel_score = 0.5
         return {
             "bezel_score": float(bezel_score),
             "has_bezel": has_bezel,
             "bezel_veto": has_bezel,
-            "vert_lines": vert_count,
-            "horiz_lines": horiz_count,
+            "vert_lines": len(vert_lines),
+            "horiz_lines": len(horiz_lines),
             "long_lines": long_line_count,
         }
 

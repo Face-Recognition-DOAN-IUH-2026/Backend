@@ -446,11 +446,10 @@ def batch_enroll_task(self, user_id: str, object_keys: list[str] | None = None) 
             if not quality.get("valid"):
                 results.append({"angle": angle, "status": "error", "error": quality.get("error")})
                 continue
-            if angle == "frontal":
-                liveness = run_liveness_analysis(img)
-                if not liveness.get("is_live", False):
-                    results.append({"angle": angle, "status": "error", "error": "LIVENESS_FAILED", "liveness_score": liveness.get("liveness_score")})
-                    continue
+            # NOTE (LIB-254): không check liveness khi enroll. Enrollment gắn với
+            # tài khoản đã xác thực, còn cổng ra/vào chạy full anti-spoofing
+            # mỗi lượt nên kẻ gian dùng ảnh vẫn bị chặn ở cổng. Liveness ở đây
+            # chỉ gây false-positive trên selfie thật (bezel/glare veto).
             vec = extract_embedding_placeholder(img)
             vec_arr = np.array(vec, dtype=np.float32)
             vec_sum = float(np.sum(np.abs(vec_arr)))
@@ -885,16 +884,8 @@ def enroll_face(self, patron_id: str, object_key: str, angle: str = "frontal") -
             return {"status": "error", "error": face_result.get("error", "No face detected")}
 
         # Skip liveness for non-frontal angles to reduce user friction
-        if angle == "frontal":
-            liveness = liveness_from_face(img, face_result["face"])
-            if not liveness.get("is_live", False):
-                _delete_temp_frame(object_key)
-                logger.warning("Enroll face: liveness check failed for patron_id %s, score=%.4f", patron_id, liveness.get("liveness_score", 0))
-                return {
-                    "status": "error",
-                    "error": "LIVENESS_FAILED",
-                    "liveness_score": liveness.get("liveness_score"),
-                }
+        # NOTE (LIB-254): bỏ cả check frontal khi enroll — xem giải thích ở batch_enroll_task.
+        # Cổng ra/vào vẫn chạy full anti-spoofing mỗi lượt.
 
         norm_vec = l2_normalize(face_result["embedding"])
         _get_milvus().delete_by_user_id_and_angle(user_id=patron_id, angle=angle)

@@ -44,22 +44,6 @@ export class PatronService {
     };
   }
 
-  async checkExists(studentCode: string, email: string): Promise<{ student_code_exists: boolean; email_exists: boolean }> {
-    const [codeExisting, emailExisting] = await Promise.all([
-      studentCode ? this.patronRepo.findByStudentCode(studentCode) : Promise.resolve(null),
-      email ? this.patronRepo.findByEmail(email) : Promise.resolve(null),
-    ]);
-    return {
-      student_code_exists: !!codeExisting,
-      email_exists: !!emailExisting,
-    };
-  }
-
-  async checkStudentCode(code: string): Promise<boolean> {
-    const existing = await this.patronRepo.findByStudentCode(code);
-    return !!existing;
-  }
-
   async lookup(
     studentCode?: string,
     cardNumber?: string,

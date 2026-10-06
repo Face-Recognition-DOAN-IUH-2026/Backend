@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     service_jwt_secret: str = ""
 
     @model_validator(mode="after")
+    def resolve_celery_result_backend(self) -> "Settings":
+        if not self.celery_result_backend and getattr(self, "redis_url", ""):
+            self.celery_result_backend = self.redis_url
+        return self
+
+    @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         if self.env.strip().lower() not in {"production", "prod"}:
             return self

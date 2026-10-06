@@ -20,7 +20,7 @@ def _camera_callback_factory():
     _worker = _Celery(
         "face_recognition",
         broker=settings.celery_broker_url,
-        backend=settings.celery_result_backend or None,
+        backend=settings.celery_result_backend or settings.redis_url,
     )
 
     def _on_frame(camera_id: str, frame):

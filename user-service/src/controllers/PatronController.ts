@@ -1,32 +1,45 @@
 import { Request, Response } from 'express';
 import { setAuthCookie } from '../../../shared/auth';
 import type { AuthRequest } from '../../../shared/auth/types';
-import { patronService } from '../services';
+import { patronService, patronImportService } from '../services';
 
 export class PatronController {
-  async register(req: Request, res: Response) {
+  async getTemplate(_req: Request, res: Response) {
     try {
-      const { student_code, password, full_name, class_name, course, permanent_address, email, verification_token } = req.body;
-      if (!student_code || !password || !full_name) {
-        res.status(400).json({ error: 'student_code, password, and full_name are required' });
+      const workbook = await patronImportService.generateTemplate();
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=patron_import_template.xlsx');
+      await workbook.xlsx.write(res);
+      res.end();
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Không thể tạo file mẫu' });
+    }
+  }
+
+  async previewImport(req: Request, res: Response) {
+    try {
+      if (!req.file || !req.file.buffer) {
+        res.status(400).json({ error: 'Vui lòng tải lên file Excel (.xlsx)' });
         return;
       }
-      const authService = (await import('../services')).authService;
-      const result = await authService.register({
-        email: email || `${student_code}@library.local`,
-        password,
-        fullName: full_name,
-        role: 'patron',
-        studentCode: student_code,
-        className: class_name,
-        course,
-        permanentAddress: permanent_address,
-        verificationToken: verification_token,
-      });
-      if (result.access_token) setAuthCookie(res, result.access_token, result.refresh_token);
-      res.status(201).json(result);
+      const result = await patronImportService.preview(req.file.buffer);
+      res.json(result);
     } catch (error: any) {
-      res.status(error.statusCode || 400).json({ error: error.message || 'Registration failed' });
+      res.status(error.statusCode || 400).json({ error: error.message || 'Lỗi đọc file Excel' });
+    }
+  }
+
+  async executeImport(req: Request, res: Response) {
+    try {
+      if (!req.file || !req.file.buffer) {
+        res.status(400).json({ error: 'Vui lòng tải lên file Excel (.xlsx)' });
+        return;
+      }
+      const mode = req.body?.mode === 'update' ? 'update' : 'skip';
+      const result = await patronImportService.execute(req.file.buffer, mode);
+      res.json(result);
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ error: error.message || 'Lỗi import độc giả' });
     }
   }
 
@@ -59,40 +72,12 @@ export class PatronController {
     }
   }
 
-  async checkExists(req: Request, res: Response) {
-    try {
-      const { student_code, email } = req.body;
-      if (!student_code && !email) {
-        res.status(400).json({ error: 'student_code or email is required' });
-        return;
-      }
-      const result = await patronService.checkExists(student_code, email);
-      res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ error: 'Failed to check existence' });
-    }
-  }
-
-  async checkStudentCode(req: AuthRequest, res: Response) {
-    try {
-      const code = req.params.code || req.query.code as string;
-      if (!code) {
-        res.status(400).json({ error: 'Student code is required' });
-        return;
-      }
-      const exists = await patronService.checkStudentCode(code);
-      res.json({ exists });
-    } catch (error: any) {
-      res.status(500).json({ error: 'Failed to check student code' });
-    }
-  }
-
   async search(req: AuthRequest, res: Response) {
     try {
       const q = req.query.q as string | undefined;
       const status = req.query.status as string | undefined;
       const skip = parseInt(req.query.skip as string) || 0;
-      const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 1000);
 
       const result = await patronService.search(q, status, skip, limit);
       res.json(result);

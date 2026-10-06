@@ -27,16 +27,19 @@ export class UserService {
 
   async getAllUsers(skip = 0, limit = 200): Promise<{ users: UserPublicDto[]; total: number }> {
     const [users, total] = await this.userRepo.findAll(skip, limit);
-    const result: UserPublicDto[] = [];
-    for (const user of users) {
-      let hasFace = false;
+    const unknownFaceIds = users.filter((u) => !u.hasFace).map((u) => u.id);
+    let batchMap: Record<string, boolean> = {};
+    if (unknownFaceIds.length > 0) {
       try {
-        hasFace = await faceServiceClient.checkEnrollment(user.id);
+        batchMap = await faceServiceClient.checkEnrollmentBatch(unknownFaceIds);
       } catch {
-        hasFace = false;
+        batchMap = {};
       }
-      result.push(this.toPublic(user, hasFace));
     }
+    const result: UserPublicDto[] = users.map((user) => {
+      const hasFace = Boolean(user.hasFace || batchMap[user.id]);
+      return this.toPublic(user, hasFace);
+    });
     return { users: result, total };
   }
 

@@ -156,7 +156,7 @@ router.get('/patrons/search', async (req, res) => {
     const q = typeof req.query.q === 'string' ? req.query.q : undefined;
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     const skip = typeof req.query.skip === 'string' ? parseInt(req.query.skip, 10) || 0 : 0;
-    const limit = typeof req.query.limit === 'string' ? Math.min(parseInt(req.query.limit, 10) || 20, 100) : 20;
+    const limit = typeof req.query.limit === 'string' ? Math.min(parseInt(req.query.limit, 10) || 50, 1000) : 50;
     res.json(await patronService.search(q, status, skip, limit));
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message || 'Failed to search patrons' });

@@ -1,5 +1,7 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { patronController } from '../controllers';
+import { BadRequestError } from '../errors';
 import { createAuth, requireDynamicPermission } from '../../../shared/auth';
 import { requireRole } from '../middlewares/requireRole';
 import { config } from '../config';
@@ -10,47 +12,116 @@ const auth = createAuth({
   jwtIssuer: config.jwtIssuer,
 });
 
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    // Only modern OOXML workbooks: ExcelJS cannot parse legacy BIFF (.xls)
+    const isExcel =
+      file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.originalname.toLowerCase().endsWith('.xlsx');
+    if (isExcel) {
+      cb(null, true);
+    } else {
+      cb(new BadRequestError('Chỉ hỗ trợ file Excel (.xlsx)'));
+    }
+  },
+});
+
 const router = Router();
 
 /**
  * @swagger
- * /patrons/register:
- *   post:
- *     summary: Register a new patron (self-service)
+ * /patrons/template:
+ *   get:
+ *     summary: Download patron batch import Excel template
  *     tags: [Patrons]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Excel template file
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
+router.get('/template', auth, requireDynamicPermission('patrons', 'create'), (req, res) =>
+  patronController.getTemplate(req, res),
+);
+
+/**
+ * @swagger
+ * /patrons/import/preview:
+ *   post:
+ *     summary: Preview first 100 rows of patron import Excel file
+ *     tags: [Patrons]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
  *             type: object
- *             required:
- *               - fullName
- *               - email
- *               - password
- *               - studentCode
  *             properties:
- *               fullName:
+ *               file:
  *                 type: string
- *               email:
- *                 type: string
- *                 format: email
- *               password:
- *                 type: string
- *                 format: password
- *               studentCode:
- *                 type: string
- *               className:
- *                 type: string
- *               phone:
- *                 type: string
+ *                 format: binary
  *     responses:
- *       201:
- *         description: Patron registered successfully
+ *       200:
+ *         description: Preview summary and rows
  *       400:
- *         description: Validation error
+ *         description: Invalid file format or data
  */
-router.post('/register', (req, res) => patronController.register(req, res));
+router.post(
+  '/import/preview',
+  auth,
+  requireDynamicPermission('patrons', 'create'),
+  upload.single('file'),
+  (req, res) => patronController.previewImport(req, res),
+);
+
+/**
+ * @swagger
+ * /patrons/import:
+ *   post:
+ *     summary: Execute patron batch import from Excel file
+ *     tags: [Patrons]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *               mode:
+ *                 type: string
+ *                 enum: [skip, update]
+ *                 default: skip
+ *     responses:
+ *       200:
+ *         description: Import execution report
+ *       400:
+ *         description: Invalid file format or data
+ */
+router.post(
+  '/import',
+  auth,
+  requireDynamicPermission('patrons', 'create'),
+  upload.single('file'),
+  (req, res) => patronController.executeImport(req, res),
+);
 
 /**
  * @swagger
@@ -158,48 +229,6 @@ router.get('/search', auth, (req, res) => patronController.search(req, res));
  *         description: Patron not found
  */
 router.get('/lookup', (req, res) => patronController.lookup(req, res));
-
-/**
- * @swagger
- * /patrons/check-exists:
- *   post:
- *     summary: Check if student code or email already exists
- *     tags: [Patrons]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               student_code:
- *                 type: string
- *               email:
- *                 type: string
- *     responses:
- *       200:
- *         description: Check result with exists flags
- */
-router.post('/check-exists', (req, res) => patronController.checkExists(req, res));
-
-/**
- * @swagger
- * /patrons/check-code/{code}:
- *   get:
- *     summary: Check if a student code already exists
- *     tags: [Patrons]
- *     parameters:
- *       - in: path
- *         name: code
- *         required: true
- *         schema:
- *           type: string
- *         description: Student code to check
- *     responses:
- *       200:
- *         description: Check result
- */
-router.get('/check-code/:code', (req, res) => patronController.checkStudentCode(req, res));
 
 /**
  * @swagger
