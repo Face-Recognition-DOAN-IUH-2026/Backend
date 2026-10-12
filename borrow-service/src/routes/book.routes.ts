@@ -27,8 +27,25 @@ function normalizeIsbnCell(cell: ExcelJS.Cell) {
     .replace(/\.0+$/, '');
 }
 
-function parseExcelRows(buffer: Buffer) {
-  return new Promise<Array<{ isbn: string; quantity: number; price: number | null; line: number }>>(async (resolve, reject) => {
+export interface ParsedBookRow {
+  isbn: string;
+  quantity: number;
+  price: number | null;
+  title: string | null;
+  author: string | null;
+  publisher: string | null;
+  publishedDate: string | null;
+  categories: string | null;
+  pageCount: number | null;
+  shelfLocation: string | null;
+  description: string | null;
+  coverUrl: string | null;
+  subtitle: string | null;
+  line: number;
+}
+
+function parseExcelRows(buffer: Buffer): Promise<ParsedBookRow[]> {
+  return new Promise(async (resolve, reject) => {
     try {
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(buffer as any);
@@ -37,28 +54,93 @@ function parseExcelRows(buffer: Buffer) {
       const headerRow = ws.getRow(1);
       const headers: string[] = [];
       headerRow.eachCell((cell, col) => { headers[col] = normalizeRowValue(cell.value).toUpperCase(); });
+
       const isbnCol = headers.findIndex((h) => !!h && h.includes('ISBN'));
-      const qtyCol = headers.findIndex((h) => !!h && (h.includes('QUANTITY') || h.includes('QTY') || h.includes('SO LUONG') || h.includes('SỐ LƯỢNG')));
+      const qtyCol = headers.findIndex((h) => !!h && (h.includes('QUANTITY') || h.includes('QTY') || h.includes('SO LUONG') || h.includes('SỐ LƯỢNG') || h === 'SL'));
       const priceCol = headers.findIndex((h) => !!h && (
         h.includes('PRICE') || h.includes('GIA') || h.includes('GIÁ') || h.includes('DON GIA') || h.includes('ĐƠN GIÁ') || h.includes('COST')
       ));
-      if (isbnCol < 1 || qtyCol < 1) throw new HttpError(400, "File phai co cot 'ISBN' va 'Quantity'");
-      const rows: Array<{ isbn: string; quantity: number; price: number | null; line: number }> = [];
+      const titleCol = headers.findIndex((h) => !!h && (
+        h.includes('TITLE') || h.includes('TEN SACH') || h.includes('TÊN SÁCH') || h.includes('TIEU DE') || h.includes('TIÊU ĐỀ') || h === 'NAME' || h === 'TEN' || h === 'TÊN'
+      ));
+      const authorCol = headers.findIndex((h) => !!h && (h.includes('AUTHOR') || h.includes('TAC GIA') || h.includes('TÁC GIẢ')));
+      const publisherCol = headers.findIndex((h) => !!h && (
+        h.includes('PUBLISHER') || h.includes('NXB') || h.includes('NHA XUAT BAN') || h.includes('NHÀ XUẤT BẢN')
+      ));
+      const pubDateCol = headers.findIndex((h) => !!h && (
+        h.includes('PUBLISHED') || h.includes('YEAR') || h.includes('NAM XUAT BAN') || h.includes('NĂM XUẤT BẢN') || h.includes('NAM XB') || h.includes('NĂM XB')
+      ));
+      const catCol = headers.findIndex((h) => !!h && (
+        h.includes('CATEGOR') || h.includes('THE LOAI') || h.includes('THỂ LOẠI') || h.includes('GENRE')
+      ));
+      const pageCol = headers.findIndex((h) => !!h && (
+        h.includes('PAGE') || h.includes('SO TRANG') || h.includes('SỐ TRANG')
+      ));
+      const shelfCol = headers.findIndex((h) => !!h && (
+        h.includes('SHELF') || h.includes('VI TRI') || h.includes('VỊ TRÍ') || h.includes('KE') || h.includes('KỆ')
+      ));
+      const descCol = headers.findIndex((h) => !!h && (
+        h.includes('DESC') || h.includes('MO TA') || h.includes('MÔ TẢ') || h.includes('SUMMARY')
+      ));
+      const coverCol = headers.findIndex((h) => !!h && (
+        h.includes('COVER') || h.includes('ANH BIA') || h.includes('ẢNH BÌA') || h.includes('IMAGE')
+      ));
+      const subCol = headers.findIndex((h) => !!h && (
+        h.includes('SUBTITLE') || h.includes('PHU DE') || h.includes('PHỤ ĐỀ')
+      ));
+
+      if (isbnCol < 1) throw new HttpError(400, "File phai co cot 'ISBN'");
+
+      const rows: ParsedBookRow[] = [];
       for (let line = 2; line <= ws.rowCount; line += 1) {
         const row = ws.getRow(line);
         const isbn = normalizeIsbnCell(row.getCell(isbnCol));
         if (!isbn || isbn === 'None') continue;
-        const rawQty = normalizeRowValue(row.getCell(qtyCol).value);
-        const quantity = Math.max(1, Number.isFinite(Number(rawQty)) ? Math.trunc(Number(rawQty)) : 1);
+
+        let quantity = 1;
+        if (qtyCol >= 1) {
+          const rawQty = normalizeRowValue(row.getCell(qtyCol).value);
+          quantity = Math.max(1, Number.isFinite(Number(rawQty)) ? Math.trunc(Number(rawQty)) : 1);
+        }
+
         let price: number | null = null;
         if (priceCol >= 1) {
           const rawPrice = normalizeRowValue(row.getCell(priceCol).value).replace(/[^\d.-]/g, '');
           const num = Number(rawPrice);
-          if (Number.isFinite(num) && num >= 0) {
-            price = num;
-          }
+          if (Number.isFinite(num) && num >= 0) price = num;
         }
-        rows.push({ isbn, quantity, price, line });
+
+        const title = titleCol >= 1 ? normalizeRowValue(row.getCell(titleCol).value) || null : null;
+        const author = authorCol >= 1 ? normalizeRowValue(row.getCell(authorCol).value) || null : null;
+        const publisher = publisherCol >= 1 ? normalizeRowValue(row.getCell(publisherCol).value) || null : null;
+        const publishedDate = pubDateCol >= 1 ? normalizeRowValue(row.getCell(pubDateCol).value) || null : null;
+        const categories = catCol >= 1 ? normalizeRowValue(row.getCell(catCol).value) || null : null;
+        let pageCount: number | null = null;
+        if (pageCol >= 1) {
+          const rawPage = parseInt(normalizeRowValue(row.getCell(pageCol).value), 10);
+          if (Number.isFinite(rawPage) && rawPage > 0) pageCount = rawPage;
+        }
+        const shelfLocation = shelfCol >= 1 ? normalizeRowValue(row.getCell(shelfCol).value) || null : null;
+        const description = descCol >= 1 ? normalizeRowValue(row.getCell(descCol).value) || null : null;
+        const coverUrl = coverCol >= 1 ? normalizeRowValue(row.getCell(coverCol).value) || null : null;
+        const subtitle = subCol >= 1 ? normalizeRowValue(row.getCell(subCol).value) || null : null;
+
+        rows.push({
+          isbn,
+          quantity,
+          price,
+          title,
+          author,
+          publisher,
+          publishedDate,
+          categories,
+          pageCount,
+          shelfLocation,
+          description,
+          coverUrl,
+          subtitle,
+          line,
+        });
       }
       if (!rows.length) throw new HttpError(400, 'Khong co du lieu hop le');
       resolve(rows);
@@ -80,6 +162,7 @@ const ImportFilteredRowSchema = z.object({
   page_count: z.coerce.number().int().nullable().optional(),
   categories: z.string().nullable().optional(),
   cover_url: z.string().nullable().optional(),
+  shelf_location: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   average_rating: z.coerce.number().nullable().optional(),
   language: z.string().nullable().optional(),
@@ -144,15 +227,62 @@ router.get('/books/search', async (req, res, next) => {
 });
 
 // GET /books/template
-router.get('/books/template', async (_req, res, next) => {
+router.get('/books/template', async (req, res, next) => {
   try {
+    const isFull = req.query.type === 'full' || req.query.type === 'detailed' || req.query.type === 'internal';
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Books Import');
-    ws.addRow(['ISBN', 'Quantity', 'Price']);
-    ws.addRow(['9780544003415', 2, 120000]);
-    ws.addRow(['9780439708180', 3, 150000]);
+
+    if (isFull) {
+      ws.addRow([
+        'ISBN',
+        'Tên sách (Title)',
+        'Tác giả (Author)',
+        'Nhà xuất bản (Publisher)',
+        'Năm XB (Published Date)',
+        'Số lượng (Quantity)',
+        'Đơn giá (Price)',
+        'Thể loại (Categories)',
+        'Số trang (Page Count)',
+        'Vị trí kệ (Shelf Location)',
+        'Mô tả (Description)',
+      ]);
+      ws.addRow([
+        '9780544003415',
+        'The Lord of the Rings',
+        'J.R.R. Tolkien',
+        'Houghton Mifflin',
+        '1954',
+        5,
+        250000,
+        'Văn học, Giả tưởng',
+        1178,
+        'Kệ A-01',
+        'Bộ ba tiểu thuyết sử thi giả tưởng kinh điển.',
+      ]);
+      ws.addRow([
+        '9780439708180',
+        'Harry Potter and the Sorcerer\'s Stone',
+        'J.K. Rowling',
+        'Scholastic',
+        '1998',
+        3,
+        180000,
+        'Thiếu nhi, Phép thuật',
+        309,
+        'Kệ B-02',
+        'Tập đầu tiên trong bộ truyện về cậu bé phù thủy.',
+      ]);
+      res.setHeader('Content-Disposition', 'attachment; filename=book_import_template_full.xlsx');
+    } else {
+      // Basic ISBN-only template (Legacy / Quick mode)
+      ws.addRow(['ISBN', 'Quantity', 'Price']);
+      ws.addRow(['9780544003415', 2, 120000]);
+      ws.addRow(['9780439708180', 3, 150000]);
+      res.setHeader('Content-Disposition', 'attachment; filename=book_import_template.xlsx');
+    }
+
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=book_import_template.xlsx');
     await wb.xlsx.write(res);
     res.end();
   } catch (error) {
@@ -450,31 +580,69 @@ router.post('/books/import/preview', upload.single('file'), async (req, res, nex
     const repo = new BorrowRepository();
     const existing = await repo.getBooksByIsbns(rows.map((row) => row.isbn));
     const offsets = await repo.getBarcodeOffsetsByBooks([...existing.keys()]);
+
+    const mode = (req.body?.mode || req.query?.mode || 'auto') as string;
+    const isInternalOnly = mode === 'internal' || String(req.body?.skip_google_books || '') === 'true';
+
+    // If mode is 'internal', skip Google Books completely.
+    // If mode is 'isbn' (legacy), fetch Google Books for all new ISBNs.
+    // If mode is 'auto', fetch Google Books only when title is missing in Excel.
+    const booksNeedingMeta = isInternalOnly
+      ? []
+      : mode === 'isbn'
+        ? [...new Set(rows.filter((r) => !existing.get(r.isbn)).map((r) => r.isbn))]
+        : [...new Set(rows.filter((r) => !existing.get(r.isbn) && !r.title).map((r) => r.isbn))];
+
+    const metaMap = new Map<string, any>();
+    if (booksNeedingMeta.length > 0) {
+      await Promise.all(
+        booksNeedingMeta.map(async (isbn) => {
+          try {
+            const meta = await fetchGoogleBooks(isbn);
+            if (meta) metaMap.set(isbn, meta);
+          } catch {
+            // ignore error to prevent blocking preview
+          }
+        })
+      );
+    }
+
     const preview = [];
     for (const row of rows) {
       const book = existing.get(row.isbn);
-      const meta = book ? null : await fetchGoogleBooks(row.isbn);
+      const meta = book || row.title ? null : metaMap.get(row.isbn) || null;
       const offset = offsets.get(row.isbn) || 0;
+      const finalTitle = row.title || book?.title || meta?.title || `ISBN: ${row.isbn}`;
+      const finalAuthor = row.author || book?.author || meta?.author || null;
+      const finalPublisher = row.publisher || book?.publisher || meta?.publisher || null;
+      const finalPubDate = row.publishedDate || book?.publishedDate || meta?.publishedDate || null;
+      const finalCategories = row.categories || book?.categories || meta?.categories || null;
+      const finalPageCount = row.pageCount ?? book?.pageCount ?? meta?.pageCount ?? null;
+      const finalCoverUrl = row.coverUrl || book?.coverUrl || meta?.coverUrl || null;
+      const finalDesc = row.description || book?.description || meta?.description || null;
+      const hasInfo = Boolean(book || row.title || meta);
+
       preview.push({
         isbn: row.isbn,
         quantity: row.quantity,
         price: row.price ?? (book?.price ? Number(book.price) : null),
-        title: book?.title || meta?.title || `ISBN: ${row.isbn}`,
-        subtitle: book?.subtitle || meta?.subtitle || null,
-        author: book?.author || meta?.author || null,
-        publisher: book?.publisher || meta?.publisher || null,
-        published_date: book?.publishedDate || meta?.publishedDate || null,
-        page_count: book?.pageCount || meta?.pageCount || null,
-        categories: book?.categories || meta?.categories || null,
-        cover_url: book?.coverUrl || meta?.coverUrl || null,
-        description: book?.description || meta?.description || null,
+        title: finalTitle,
+        subtitle: row.subtitle || book?.subtitle || meta?.subtitle || null,
+        author: finalAuthor,
+        publisher: finalPublisher,
+        published_date: finalPubDate,
+        page_count: finalPageCount,
+        categories: finalCategories,
+        cover_url: finalCoverUrl,
+        shelf_location: row.shelfLocation || book?.shelfLocation || null,
+        description: finalDesc,
         average_rating: book?.averageRating ?? meta?.averageRating ?? null,
         language: book?.language || meta?.language || null,
         isbn10: book?.isbn10 || meta?.isbn10 || null,
         isbn13: book?.isbn13 || meta?.isbn13 || null,
         barcodes: Array.from({ length: row.quantity }, (_, i) => `LIB-${row.isbn}-${String(offset + i + 1).padStart(3, '0')}`),
-        status: book ? 'exists' : meta ? 'new' : 'warning',
-        message: !book && !meta ? 'Khong co metadata tu Google Books' : null,
+        status: book ? 'exists' : hasInfo ? 'new' : 'warning',
+        message: !hasInfo ? 'Khong co thong tin sach trong file va khong tim thay tren Google Books' : null,
       });
     }
     res.json({ rows: preview, total_rows: preview.length, valid_rows: preview.length, invalid_rows: 0 });
@@ -491,6 +659,31 @@ router.post('/books/import', requireDynamicPermission('books', 'create'), upload
     const repo = new BorrowRepository();
     const existing = await repo.getBooksByIsbns(rows.map((row) => row.isbn));
     const offsets = await repo.getBarcodeOffsetsByBooks([...existing.keys()]);
+
+    const mode = (req.body?.mode || req.query?.mode || 'auto') as string;
+    const isInternalOnly = mode === 'internal' || String(req.body?.skip_google_books || '') === 'true';
+
+    // Only fetch Google Books for books that need it based on mode
+    const booksNeedingMeta = isInternalOnly
+      ? []
+      : mode === 'isbn'
+        ? [...new Set(rows.filter((r) => !existing.get(r.isbn)).map((r) => r.isbn))]
+        : [...new Set(rows.filter((r) => !existing.get(r.isbn) && !r.title).map((r) => r.isbn))];
+
+    const metaMap = new Map<string, any>();
+    if (booksNeedingMeta.length > 0) {
+      await Promise.all(
+        booksNeedingMeta.map(async (isbn) => {
+          try {
+            const meta = await fetchGoogleBooks(isbn);
+            if (meta) metaMap.set(isbn, meta);
+          } catch {
+            // ignore error
+          }
+        })
+      );
+    }
+
     const results = [];
     let imported = 0;
     let skipped = 0;
@@ -501,21 +694,25 @@ router.post('/books/import', requireDynamicPermission('books', 'create'), upload
         let created = false;
         let noMeta = false;
         if (!book) {
-          const meta = await fetchGoogleBooks(row.isbn);
-          noMeta = !meta;
-          const upserted = await repo.upsertBook(row.isbn, meta?.title || `ISBN: ${row.isbn}`, meta?.author, meta?.coverUrl, meta ? {
-            subtitle: meta.subtitle ?? null,
-            publisher: meta.publisher ?? null,
-            publishedDate: meta.publishedDate ?? null,
-            description: meta.description ?? null,
-            pageCount: meta.pageCount ?? null,
-            categories: meta.categories ?? null,
-            averageRating: meta.averageRating ?? null,
-            language: meta.language ?? null,
-            isbn10: meta.isbn10 ?? null,
-            isbn13: meta.isbn13 ?? null,
+          const meta = metaMap.get(row.isbn) || null;
+          noMeta = !row.title && !meta;
+          const finalTitle = row.title || meta?.title || `ISBN: ${row.isbn}`;
+          const finalAuthor = row.author || meta?.author || undefined;
+          const finalCoverUrl = row.coverUrl || meta?.coverUrl || undefined;
+          const extra = (meta || row.price != null || row.publisher || row.publishedDate || row.categories || row.pageCount || row.description || row.subtitle) ? {
+            subtitle: row.subtitle || meta?.subtitle || null,
+            publisher: row.publisher || meta?.publisher || null,
+            publishedDate: row.publishedDate || meta?.publishedDate || null,
+            description: row.description || meta?.description || null,
+            pageCount: row.pageCount ?? meta?.pageCount ?? null,
+            categories: row.categories || meta?.categories || null,
+            averageRating: meta?.averageRating ?? null,
+            language: meta?.language ?? null,
+            isbn10: meta?.isbn10 ?? null,
+            isbn13: meta?.isbn13 ?? null,
             price: row.price ?? null,
-          } : row.price != null ? { price: row.price } : undefined);
+          } : undefined;
+          const upserted = await repo.upsertBook(row.isbn, finalTitle, finalAuthor, finalCoverUrl, extra);
           book = upserted.book;
           created = upserted.created;
           existing.set(row.isbn, book);
@@ -527,10 +724,11 @@ router.post('/books/import', requireDynamicPermission('books', 'create'), upload
         const offset = offsets.get(row.isbn) || 0;
         const barcodes = Array.from({ length: row.quantity }, (_, i) => `LIB-${row.isbn}-${String(offset + i + 1).padStart(3, '0')}`);
         offsets.set(row.isbn, offset + row.quantity);
-        const copies = await repo.createCopiesBatchWithSkip(book.id, barcodes, book.shelfLocation);
+        const shelf = row.shelfLocation || book.shelfLocation;
+        const copies = await repo.createCopiesBatchWithSkip(book.id, barcodes, shelf);
         const status = created ? (noMeta ? 'warning' : 'imported') : copies.length ? 'updated' : 'skipped';
         if (status === 'skipped') skipped += 1; else imported += 1;
-        results.push({ isbn: row.isbn, title: book.title, quantity: row.quantity, barcodes, status, message: `Them ${copies.length} ban sao${noMeta ? ' (khong co metadata tu OpenLibrary)' : ''}` });
+        results.push({ isbn: row.isbn, title: book.title, quantity: row.quantity, barcodes, status, message: `Them ${copies.length} ban sao${noMeta ? ' (khong co metadata)' : ''}` });
       } catch (error) {
         errors += 1;
         results.push({ isbn: row.isbn, title: '', quantity: row.quantity, barcodes: [], status: 'error', message: error instanceof Error ? error.message : 'Loi import' });

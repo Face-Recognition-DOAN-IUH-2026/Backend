@@ -363,10 +363,11 @@ class AntiSpoofingAnalyzer:
         top_edges = [hy for hy, _, _ in horiz_lines if hy < face_cy - margin]
         bottom_edges = [hy for hy, _, _ in horiz_lines if hy > face_cy + margin]
         has_opposite_pair = bool(
-            (left_edges and right_edges) or (top_edges and bottom_edges)
+            (left_edges and right_edges and (top_edges or bottom_edges)) or
+            (top_edges and bottom_edges and (left_edges or right_edges))
         )
 
-        has_bezel = bool(has_corner or has_opposite_pair)
+        has_bezel = bool(has_corner and has_opposite_pair)
         if has_bezel:
             bezel_score = 0.10
         elif vert_lines or horiz_lines or long_line_count >= 1:
@@ -407,7 +408,7 @@ class AntiSpoofingAnalyzer:
 
     def aggregate(self, breakdown: dict, insightface_score: float | None = None) -> dict:
         veto_reasons = []
-        if breakdown.get("has_bezel", False) or breakdown.get("bezel_veto", False):
+        if (breakdown.get("has_bezel", False) or breakdown.get("bezel_veto", False)) and breakdown.get("long_lines", 0) >= 4:
             veto_reasons.append("SCREEN_BEZEL_DETECTED")
         if breakdown.get("fft_veto", False):
             veto_reasons.append("SCREEN_MOIRE_FREQUENCY_DETECTED")
@@ -455,9 +456,13 @@ class AntiSpoofingAnalyzer:
         total_score = max(0.0, min(1.0, total_score))
 
         threshold = get_liveness_threshold()
-        if veto_reasons:
+        # Single heuristic is noisy in room lighting; hard-veto only if >= 2 signals agree
+        if len(veto_reasons) >= 2:
             is_live = False
             total_score = min(total_score, 0.20)
+        elif len(veto_reasons) == 1:
+            total_score *= 0.70
+            is_live = total_score > threshold
         else:
             is_live = total_score > threshold
 

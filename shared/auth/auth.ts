@@ -10,6 +10,9 @@ function extractToken(req: AuthRequest): string | null {
   if (req.cookies?.access_token) {
     return req.cookies.access_token;
   }
+  if (req.query?.token && typeof req.query.token === 'string') {
+    return req.query.token;
+  }
   return null;
 }
 

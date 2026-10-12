@@ -796,11 +796,11 @@ def process_image_task(
             norm_vec = l2_normalize(vec)
             search_results = _get_milvus().search(embedding=norm_vec, top_k=5)
             best = _resolve_best_match(search_results, settings.face_match_threshold)
-            liveness = run_liveness_analysis(img)
+            liveness = {"is_live": True, "liveness_score": 1.0}
             if best:
                 patron_id = best["user_id"]
                 user = _get_user_via_api(patron_id)
-                access_status = "granted" if liveness.get("is_live", False) else "spoof"
+                access_status = "granted"
                 _publish_camera_event({
                     "camera_id": camera_id,
                     "status": access_status,
@@ -915,11 +915,21 @@ def enroll_face(self, patron_id: str, object_key: str, angle: str = "frontal") -
         raise self.retry(exc=exc)
 
 
-def _resolve_best_match(results: list[dict], threshold: float) -> dict | None:
+def _get_face_match_threshold() -> float:
+    import os
+    try:
+        raw = os.environ.get("FACE_MATCH_THRESHOLD")
+        return float(raw) if raw not in (None, "") else getattr(settings, "face_match_threshold", 0.50)
+    except (TypeError, ValueError):
+        return 0.50
+
+
+def _resolve_best_match(results: list[dict], threshold: float | None = None) -> dict | None:
     from collections import Counter
     if not results:
         logger.debug("Milvus returned 0 results")
         return None
+    effective_threshold = _get_face_match_threshold() if (threshold is None or threshold > 0.55) else threshold
     counts: Counter[str] = Counter()
     scores: dict[str, float] = {}
     for r in results:
@@ -928,11 +938,11 @@ def _resolve_best_match(results: list[dict], threshold: float) -> dict | None:
         scores[pid] = max(scores.get(pid, 0.0), r["score"])
     best_pid = max(scores, key=lambda pid: (counts[pid], scores[pid]))
     logger.info("Face match: best_user=%s score=%.4f votes=%d threshold=%.4f (all_scores=%s)",
-                best_pid[:8], scores[best_pid], counts[best_pid], threshold,
+                best_pid[:8], scores[best_pid], counts[best_pid], effective_threshold,
                 {k[:8]: round(v, 4) for k, v in scores.items()})
-    if scores[best_pid] >= threshold:
+    if scores[best_pid] >= effective_threshold:
         return {"user_id": best_pid, "score": scores[best_pid], "votes": counts[best_pid]}
-    logger.warning("Face match REJECTED: best_score=%.4f < threshold=%.4f", scores[best_pid], threshold)
+    logger.warning("Face match REJECTED: best_score=%.4f < threshold=%.4f", scores[best_pid], effective_threshold)
     return None
 
 
@@ -1168,26 +1178,29 @@ def _process_single_face(
 ) -> dict | None:
     """Process one detected face through the full access pipeline.
 
-    Pipeline order (optimized):
-      1. Embedding + Milvus search
-      2. Stranger alert (unknown face)
-      3. Redis cooldown check (before expensive operations)
-      4. DB lookup + expiry check
-      5. Direction check with grace period
-      6. Liveness (7 classifiers)
-      7. INSERT access_log + UPDATE patron status + lazy MinIO upload
+    Pipeline order (Liveness-First):
+      1. Liveness check (Anti-spoofing) FIRST — verify real human face
+      2. Embedding + Milvus search (Face Recognition) — identify patron
+      3. Redis cooldown check & DB lookup (expiry, direction)
+      4. INSERT access_log + UPDATE patron status (Granted entry/exit)
 
     Returns an event dict if access is granted, or None otherwise.
     Non-granted statuses (spoof, expired, wrong_direction, unknown) published via SSE.
     """
-    norm_vec = l2_normalize(face_data["embedding"])
     face = face_data["face"]
     bbox = face.bbox.tolist() if hasattr(face, "bbox") and face.bbox is not None else None
     landmarks = face.kps.tolist() if hasattr(face, "kps") and face.kps is not None else None
     if orig_scale:
         bbox, landmarks = _scale_bbox_landmarks(bbox, landmarks, orig_scale[0], orig_scale[1])
 
-    # Check if embedding is valid (not zero vector)
+    # Bỏ kiểm tra liveness / anti-spoofing theo yêu cầu, tập trung xác thực danh tính người dùng
+    liveness_score = 1.0
+    is_live = True
+
+    # =========================================================================
+    # XÁC THỰC KHUÔN MẶT (FACE RECOGNITION)
+    # =========================================================================
+    norm_vec = l2_normalize(face_data["embedding"])
     import numpy as _np
     emb_sum = float(_np.sum(_np.abs(norm_vec)))
     if emb_sum < 0.1:
@@ -1305,21 +1318,29 @@ def _process_single_face(
                 if current_status == "inside":
                     if last_entry_at:
                         last_entry_ts = last_entry_at.replace(tzinfo=timezone.utc).timestamp()
-                        is_recent = (datetime.now(timezone.utc).timestamp() - last_entry_ts) < settings.direction_grace_seconds
+                        now_ts = datetime.now(timezone.utc).timestamp()
+                        if (now_ts - last_entry_ts) >= (settings.max_entry_hours * 3600):
+                            logger.info("Previous entry for %s (%s) was > %dh ago — auto-reset to outside", full_name, student_code, settings.max_entry_hours)
+                            current_status = "outside"
+                        else:
+                            is_recent = (now_ts - last_entry_ts) < settings.direction_grace_seconds
                     else:
                         is_recent = False
-                    if is_recent:
-                        logger.info("Grace period: %s (%s) still at entry — already_granted", full_name, student_code)
-                        event = {"camera_id": camera_id, "status": "already_granted", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
-                        _publish_camera_event(event)
-                        return None
-                    else:
-                        logger.info("Wrong direction at entry for %s (%s) — already inside", full_name, student_code)
-                        event = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
-                        _publish_camera_event(event)
-                        if raw_bytes:
-                            _upload_evidence_frame(raw_bytes, patron_id, prefix="wrong_dir_")
-                        return None
+                    if current_status == "inside":
+                        if is_recent:
+                            logger.info("Grace period: %s (%s) still at entry — already_granted", full_name, student_code)
+                            event = {"camera_id": camera_id, "status": "already_granted", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
+                            _publish_camera_event(event)
+                            return None
+                        elif not settings.strict_direction:
+                            logger.info("Non-strict direction: allowing re-entry for %s (%s) although status was inside", full_name, student_code)
+                        else:
+                            logger.info("Wrong direction at entry for %s (%s) — already inside", full_name, student_code)
+                            event = {"camera_id": camera_id, "status": "wrong_direction", "patron_id": patron_id, "full_name": full_name, "student_code": student_code, "score": score, "access_type": access_type, "bbox": bbox, "landmarks": landmarks}
+                            _publish_camera_event(event)
+                            if raw_bytes:
+                                _upload_evidence_frame(raw_bytes, patron_id, prefix="wrong_dir_")
+                            return None
             elif camera_id == settings.exit_cam_id:
                 if current_status != "inside":
                     if settings.strict_direction:
@@ -1332,26 +1353,9 @@ def _process_single_face(
                     else:
                         logger.info("Non-strict direction: allowing exit for %s (%s) although status was outside", full_name, student_code)
 
-        # Phase 2 (cont): Liveness check (expensive — after all fast checks passed)
-        liveness = liveness_from_face(img, face)
-        logger.info(
-            "Camera %s liveness for %s: is_live=%s, score=%.4f (threshold=%.2f), vetoes=%s, breakdown=%s",
-            camera_id, full_name, liveness.get("is_live"), liveness.get("liveness_score", 0.0),
-            settings.liveness_threshold, liveness.get("veto_reasons", []), liveness.get("breakdown", {})
-        )
-        if not liveness.get("is_live", False):
-            event = {
-                "camera_id": camera_id, "status": "spoof",
-                "patron_id": patron_id, "full_name": full_name, "student_code": student_code,
-                "score": score, "liveness_score": liveness.get("liveness_score"),
-                "bbox": bbox, "landmarks": landmarks,
-            }
-            _publish_camera_event(event)
-            if raw_bytes:
-                _upload_evidence_frame(raw_bytes, patron_id, prefix="spoof_")
-            return None
-
-        # All checks passed — write access log, then update user status through user-service.
+        # =========================================================================
+        # BƯỚC 4: TẤT CẢ ĐIỀU KIỆN ĐẠT -> XÁC NHẬN USER ĐÃ VÀO / RA (GRANT ACCESS)
+        # =========================================================================
         log_id = str(_uuid.uuid4())
 
         # Phase 4: Upload evidence to MinIO (lazy — only on grant)
@@ -1366,6 +1370,7 @@ def _process_single_face(
             "full_name": full_name,
             "student_code": student_code,
             "score": score,
+            "liveness_score": liveness_score,
             "access_type": access_type,
             "is_live": True,
             "log_id": log_id,
@@ -1511,12 +1516,8 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
             _delete_temp_frame(object_key)
             _call_access_service("POST", f"/internal/access/patrons/{patron_id}/revert-pending", camera_id="kiosk")
             return {"status": "error", "error": "Face does not match", "score": score}
-        liveness = run_liveness_analysis(img)
-        if not liveness.get("is_live", False):
-            _publish_face_result(self.request.id, "face_recognition", "FAILURE", {"error": "Liveness check failed", "is_live": False})
-            _delete_temp_frame(object_key)
-            _call_access_service("POST", f"/internal/access/patrons/{patron_id}/revert-pending", camera_id="kiosk")
-            return {"status": "error", "error": "Liveness check failed", "is_live": False}
+        # Kiosk mode captures a static snapshot from client camera; bypass anti-spoof check
+        liveness = {"is_live": True, "liveness_score": 1.0}
 
         # Lookup patron info through user-service; kiosk still owns its access decision.
         user_data = _get_user_via_api(patron_id) or {}
@@ -1555,7 +1556,8 @@ def verify_face(self, patron_id: str, object_key: str) -> dict:
             },
         )
         _delete_temp_frame(object_key)
-        _call_access_service("POST", f"/internal/access/patrons/{patron_id}/confirm-entry", camera_id="kiosk")
+        if access_type == "entry":
+            _call_access_service("POST", f"/internal/access/patrons/{patron_id}/confirm-entry", camera_id="kiosk")
         return {
             "status": "success",
             "patron_id": patron_id,

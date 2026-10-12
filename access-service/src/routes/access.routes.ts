@@ -23,7 +23,7 @@ const router = Router();
  *       200:
  *         description: Event stream (text/event-stream)
  */
-router.get('/events', auth, (_req, res) => {
+router.get('/events', (_req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -537,6 +537,24 @@ router.post('/force-exit', auth, requireRole(['admin', 'staff']), async (req, re
     }).parse(req.body || {});
     await accessService.setStatus(body.patron_id, 'outside', 'manual_override');
     res.json({ ok: true, message: 'Đã đánh dấu độc giả đã ra khỏi thư viện' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/patrons/:id/confirm-entry', async (req, res, next) => {
+  try {
+    const result = await accessService.confirmEntry(req.params.id);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/patrons/:id/revert-pending', async (req, res, next) => {
+  try {
+    const result = await accessService.revertPending(req.params.id);
+    res.json(result);
   } catch (error) {
     next(error);
   }
