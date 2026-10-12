@@ -22,6 +22,7 @@ function getDocTitle(filePath: string): string {
     'chinh-sach-phat': 'Chính Sách Phạt',
     'quy-dinh-nhan-vien': 'Quy Định Nhân Viên',
     'bao-cao-tai-chinh': 'Báo Cáo Tài Chính',
+    'noi-quy-thu-vien': 'Nội Quy Thư Viện',
   };
   return titles[fileName] || fileName;
 }

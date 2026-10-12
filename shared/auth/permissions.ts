@@ -145,7 +145,7 @@ export const DEFAULT_ROLE_CONFIGS: Record<string, RolePermissionConfig> = {
     role: 'patron',
     label: 'Bạn đọc (Sinh viên/Giảng viên)',
     description: 'Chỉ xem sách, mượn sách trực tuyến và dùng trợ lý AI',
-    allowedPages: ['/dashboard', '/books', '/borrow', '/ai-assistant'],
+    allowedPages: ['/dashboard', '/books', '/borrow'],
     crud: {
       books: { create: false, read: true, update: false, delete: false, approve: false, print: false },
       patrons: fullCrud(false),
