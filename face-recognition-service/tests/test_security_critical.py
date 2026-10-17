@@ -776,35 +776,31 @@ class TestScaleBboxLandmarks:
 
 class TestCheckRedisCooldown:
 
-    @patch("redis.Redis")
-    def test_not_in_cooldown(self, mock_redis_mod):
+    def test_not_in_cooldown(self):
         from worker.tasks import _check_redis_cooldown
 
-        redis_inst = MagicMock()
-        redis_inst.get.return_value = None
-        mock_redis_mod.from_url.return_value = redis_inst
-
-        result = _check_redis_cooldown("patron-1", "entry")
+        with patch("infra.redis_cache.redis_client") as mock_rc:
+            mock_rc.get.return_value = None
+            result = _check_redis_cooldown("patron-1", "entry")
         assert result is False
-        redis_inst.setex.assert_called_once()
+        mock_rc.setex.assert_called_once()
 
-    @patch("redis.Redis")
-    def test_in_cooldown(self, mock_redis_mod):
+    def test_in_cooldown(self):
         from worker.tasks import _check_redis_cooldown
 
-        redis_inst = MagicMock()
-        redis_inst.get.return_value = b"1"
-        mock_redis_mod.from_url.return_value = redis_inst
-
-        result = _check_redis_cooldown("patron-1", "entry")
+        with patch("infra.redis_cache.redis_client") as mock_rc:
+            mock_rc.get.return_value = b"1"
+            result = _check_redis_cooldown("patron-1", "entry")
         assert result is True
+        mock_rc.setex.assert_not_called()
 
-    @patch("redis.Redis")
-    def test_redis_unavailable_returns_false(self, mock_redis_mod):
+    def test_redis_unavailable_fails_closed(self):
         from worker.tasks import _check_redis_cooldown
-        mock_redis_mod.from_url.side_effect = Exception("Redis down")
-        result = _check_redis_cooldown("patron-1", "entry")
-        assert result is False
+
+        with patch("infra.redis_cache.redis_client") as mock_rc:
+            mock_rc.get.side_effect = Exception("Redis down")
+            result = _check_redis_cooldown("patron-1", "entry")
+        assert result is True
 
 
 class TestPublishCameraEvent:

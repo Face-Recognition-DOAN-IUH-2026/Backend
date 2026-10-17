@@ -17,6 +17,7 @@ from core.schemas import (
     ProcessResult,
     VerificationResult,
 )
+from core.uploads import validate_image_upload
 from infra.cooldown import CooldownService
 from infra.redis_cache import redis_client
 from worker.tasks import (
@@ -76,6 +77,8 @@ async def enroll_batch(
     raw_right = await right.read()
     raw_left = await left.read()
     raw_down = await down.read()
+    for raw in (raw_frontal, raw_right, raw_left, raw_down):
+        validate_image_upload(raw)
     try:
         keys = await asyncio.gather(
             _store_temp_frame(raw_frontal),
@@ -106,6 +109,7 @@ async def verify(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
         )
     raw = await file.read()
+    validate_image_upload(raw)
     object_key = await _store_temp_frame(raw)
     task = verify_task.delay(user_id=target_user_id, object_key=object_key)
     return VerificationResult(job_id=task.id)
@@ -126,6 +130,7 @@ async def identify(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
         )
     raw = await file.read()
+    validate_image_upload(raw)
     object_key = await _store_temp_frame(raw)
     task = identify_task.delay(object_key=object_key)
     return IdentificationResult(job_id=task.id)
@@ -146,6 +151,7 @@ async def liveness(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
         )
     raw = await file.read()
+    validate_image_upload(raw)
     object_key = await _store_temp_frame(raw)
     task = liveness_task.delay(object_key=object_key)
     return LivenessResult(job_id=task.id)
@@ -179,11 +185,7 @@ async def process_image(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Cooldown active"
         )
     raw = await file.read()
-    if len(raw) > 5 * 1024 * 1024:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Image too large (max 5MB)",
-        )
+    validate_image_upload(raw)
     object_key = await _store_temp_frame(raw)
     task = process_image_task.delay(
         object_key=object_key,

@@ -25,6 +25,11 @@ export class UserController {
         res.status(400).json({ error: 'Invalid user ID' });
         return;
       }
+      const callerId = req.user?.userId || req.user?.id;
+      if (req.user?.role !== 'admin' && callerId !== id) {
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+      }
       const user = await userService.getUserById(id);
       res.json(user);
     } catch (error: any) {

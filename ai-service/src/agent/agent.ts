@@ -136,12 +136,14 @@ export function formatScheduleJson(text: string): string {
         replaced = replaced.replace(/```(?:json)?\s*\n?\s*```/g, '').trim();
         return replaced;
       }
-    } catch {}
+    } catch (error) {
+      console.warn('[Agent] schedule JSON parse failed, returning raw text:', (error as Error).message);
+    }
   }
   return text;
 }
 
-function parseToolCalls(assistantMessage: string): Array<{ name: string; args: Record<string, any> }> {
+export function parseToolCalls(assistantMessage: string): Array<{ name: string; args: Record<string, any> }> {
   const toolCalls: Array<{ name: string; args: Record<string, any> }> = [];
 
   const jsonRegex = /\{"tool"\s*:\s*"(\w+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\}/g;
@@ -151,7 +153,9 @@ function parseToolCalls(assistantMessage: string): Array<{ name: string; args: R
     try {
       const args = JSON.parse(match[2]);
       toolCalls.push({ name: match[1], args });
-    } catch {}
+    } catch (error) {
+      console.warn('[Agent] tool-call JSON parse failed:', (error as Error).message);
+    }
   }
 
   if (toolCalls.length > 0) return toolCalls;
@@ -161,7 +165,9 @@ function parseToolCalls(assistantMessage: string): Array<{ name: string; args: R
     try {
       const args = JSON.parse(match[2]);
       toolCalls.push({ name: match[1], args });
-    } catch {}
+    } catch (error) {
+      console.warn('[Agent] NIM tool-call JSON parse failed:', (error as Error).message);
+    }
   }
 
   if (toolCalls.length > 0) return toolCalls;
@@ -198,7 +204,9 @@ function parseToolCalls(assistantMessage: string): Array<{ name: string; args: R
           toolCalls.push({ name: 'search_books', args: { query: parsed.query } });
         }
       }
-    } catch {}
+    } catch (error) {
+      console.warn('[Agent] bare tool JSON parse failed:', (error as Error).message);
+    }
   }
 
   return toolCalls;
@@ -455,7 +463,9 @@ export async function* processCompanionMessage(
           try {
             const bookCard = JSON.parse(bookCardMatch[1]);
             yield { type: 'book_card', data: bookCard };
-          } catch {}
+          } catch (error) {
+            console.warn('[Agent] book_card JSON parse failed:', (error as Error).message);
+          }
         }
       }
 

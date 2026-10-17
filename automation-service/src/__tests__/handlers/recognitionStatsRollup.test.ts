@@ -38,12 +38,9 @@ describe('recognitionStatsRollup handler', () => {
     expect(result.success).toBe(true);
   });
 
-  it('catches downstream access-service failure and returns recorded failure without throwing', async () => {
+  it('throws on downstream access-service failure so the run is recorded as failed', async () => {
     (accessClient.rollupRecognition as jest.Mock).mockRejectedValue(new Error('Connection refused'));
 
-    const result = await recognitionStatsRollup({});
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('Connection refused');
+    await expect(recognitionStatsRollup({})).rejects.toThrow('Connection refused');
   });
 });

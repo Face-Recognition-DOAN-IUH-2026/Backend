@@ -1,10 +1,11 @@
 import { accessClient } from '../clients/serviceClients';
+import { toUtcDateStr } from '../../../shared/utils/date';
 
 export async function recognitionStatsRollup(config: Record<string, any>): Promise<any> {
   let targetDate = config?.target_date;
   if (!targetDate) {
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    targetDate = yesterday.toISOString().split('T')[0];
+    targetDate = toUtcDateStr(yesterday);
   }
 
   try {
@@ -16,10 +17,6 @@ export async function recognitionStatsRollup(config: Record<string, any>): Promi
     };
   } catch (error: any) {
     console.error(`[recognitionStatsRollup] Failed to rollup recognition for ${targetDate}:`, error.message);
-    return {
-      success: false,
-      date: targetDate,
-      error: error.message || 'Unknown error',
-    };
+    throw error;
   }
 }

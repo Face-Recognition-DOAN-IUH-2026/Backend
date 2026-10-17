@@ -3,7 +3,7 @@ import request from 'supertest';
 import borrowRoutes from '../../routes/borrow.routes';
 import bookRoutes from '../../routes/book.routes';
 import staffRoutes from '../../routes/staff.routes';
-import { HttpError, errorHandler } from '../../middlewares/errorHandler';
+import { HttpError, errorHandler } from '../../../../shared/error-handler';
 import * as AccessServiceClient from '../../clients/AccessServiceClient';
 import * as UserServiceClient from '../../clients/UserServiceClient';
 import {
@@ -39,7 +39,7 @@ jest.mock('../../middlewares/auth', () => {
         req.user = { id: PATRON_UUID, email: 'patron@test.com', role };
       }
       if (!roles.includes(req.user.role)) {
-        res.status(403).json({ detail });
+        res.status(403).json({ error: 'Forbidden' });
         return;
       }
       next();

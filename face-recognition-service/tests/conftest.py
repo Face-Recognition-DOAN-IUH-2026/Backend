@@ -15,6 +15,13 @@ from httpx import ASGITransport, AsyncClient
 from PIL import Image
 
 
+@pytest.fixture(autouse=True)
+def _internal_api_key_setting(monkeypatch):
+    from infra.config import settings
+
+    monkeypatch.setattr(settings, "internal_api_key", "test-internal-key")
+
+
 @pytest.fixture(scope="session")
 def event_loop() -> Generator:
     loop = asyncio.get_event_loop_policy().new_event_loop()
@@ -196,7 +203,8 @@ async def test_client(mock_celery_task, mock_milvus_client, mock_redis, mock_min
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
-        base_url="http://test"
+        base_url="http://test",
+        headers={"X-Internal-Key": "test-internal-key"},
     ) as client:
         yield client
 

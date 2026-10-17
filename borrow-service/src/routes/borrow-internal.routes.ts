@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { AppDataSource } from '../data-source';
 import { config } from '../config';
 import { Book } from '../entities/Book';
@@ -13,7 +14,7 @@ import { finalizeReturnFees } from '../services/returnFinalizer';
 import { publishFineIncurred } from '../utils/fineEvents';
 import { configService } from '../services/ConfigService';
 import { lookupPatronByStudentCode, lookupPatronById, PatronSummary } from '../clients/UserServiceClient';
-import { DEFAULT_CONDITION, markCopyAsBorrowed } from '../constants/copy';
+import { DEFAULT_CONDITION, assessCopyBorrowability, markCopyAsBorrowed } from '../constants/copy';
 
 const internalAuth = createInternalAuth({
   serviceName: 'borrow-service',
@@ -787,14 +788,20 @@ router.post('/batch-return', async (req: Request, res: Response) => {
  *       200:
  *         description: Book created
  */
+const quantitySchema = z.object({
+  quantity: z.coerce.number().int().min(1).max(1000),
+});
+
 router.post('/books', async (req: Request, res: Response) => {
   try {
-    const { isbn, title, author, quantity, shelf_location, categories, description, cover_url } = req.body;
+    const { isbn, title, author, shelf_location, categories, description, cover_url } = req.body;
 
     if (!isbn || !title) {
       res.status(400).json({ success: false, detail: 'isbn and title are required' });
       return;
     }
+
+    const { quantity } = quantitySchema.parse({ quantity: req.body.quantity ?? 1 });
 
     const repo = new BorrowRepository();
     const existing = await books().findOne({ where: { isbn } });
@@ -814,8 +821,7 @@ router.post('/books', async (req: Request, res: Response) => {
     });
 
     const book = upserted.book;
-    const qty = Math.max(quantity || 1, 1);
-    const barcodes = Array.from({ length: qty }, (_, i) => `LIB-${isbn}-${String(i + 1).padStart(3, '0')}`);
+    const barcodes = Array.from({ length: quantity }, (_, i) => `LIB-${isbn}-${String(i + 1).padStart(3, '0')}`);
 
     if (shelf_location) {
       book.shelfLocation = shelf_location;
@@ -837,7 +843,11 @@ router.post('/books', async (req: Request, res: Response) => {
         barcodes,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.name === 'ZodError') {
+      res.status(400).json({ success: false, detail: error.issues?.[0]?.message || 'Validation error' });
+      return;
+    }
     console.error('Error creating book:', error);
     res.status(500).json({ success: false, detail: 'Internal server error' });
   }
@@ -872,12 +882,7 @@ router.post('/books', async (req: Request, res: Response) => {
 router.put('/books/:book_id/quantity', async (req: Request, res: Response) => {
   try {
     const { book_id } = req.params;
-    const { quantity } = req.body;
-
-    if (quantity === undefined || typeof quantity !== 'number' || quantity < 1) {
-      res.status(400).json({ success: false, detail: 'quantity must be a positive number' });
-      return;
-    }
+    const { quantity } = quantitySchema.parse(req.body);
 
     const book = await books().findOne({ where: { id: book_id } });
     if (!book) {
@@ -923,7 +928,11 @@ router.put('/books/:book_id/quantity', async (req: Request, res: Response) => {
         borrowed,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.name === 'ZodError') {
+      res.status(400).json({ success: false, detail: error.issues?.[0]?.message || 'Validation error' });
+      return;
+    }
     console.error('Error updating book quantity:', error);
     res.status(500).json({ success: false, detail: 'Internal server error' });
   }
@@ -1034,6 +1043,12 @@ router.post('/create', async (req: Request, res: Response) => {
       }
       if (!copy.isAvailable) {
         res.status(409).json({ success: false, detail: `Book copy ${copyId} is already borrowed` });
+        return;
+      }
+
+      const borrowability = assessCopyBorrowability(copy);
+      if (borrowability.blocked) {
+        res.status(409).json({ success: false, detail: borrowability.reason || `Book copy ${copyId} cannot be borrowed` });
         return;
       }
 

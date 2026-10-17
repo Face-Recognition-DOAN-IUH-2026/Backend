@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import { createAuth } from '../../../shared/auth';
-import { requireRole } from '../middlewares/requireRole';
+import { requireRole } from '../../../shared/auth';
 import { config } from '../config';
 import { permissionService } from '../services/PermissionService';
 import {
@@ -46,7 +46,7 @@ router.get('/me', auth, async (req: AuthRequest, res: Response) => {
  * GET /permissions/matrix
  * Returns all role configs and metadata (Admin only)
  */
-router.get('/matrix', requireRole('admin'), async (_req: AuthRequest, res: Response) => {
+router.get('/matrix', auth, requireRole('admin'), async (_req: AuthRequest, res: Response) => {
   try {
     const roles = await permissionService.getAllRoleConfigs();
     return res.json({
@@ -70,7 +70,7 @@ router.get('/matrix', requireRole('admin'), async (_req: AuthRequest, res: Respo
  * GET /permissions/roles/:role
  * Returns configuration for a specific role (Admin only)
  */
-router.get('/roles/:role', requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.get('/roles/:role', auth, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
     const { role } = req.params;
     const config = await permissionService.getRoleConfig(role);
@@ -84,7 +84,7 @@ router.get('/roles/:role', requireRole('admin'), async (req: AuthRequest, res: R
  * PUT /permissions/roles/:role
  * Updates configuration for a role (Admin only)
  */
-router.put('/roles/:role', requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.put('/roles/:role', auth, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
     const { role } = req.params;
     const updated = await permissionService.updateRoleConfig(role, req.body);
@@ -99,7 +99,7 @@ router.put('/roles/:role', requireRole('admin'), async (req: AuthRequest, res: R
  * GET /permissions/users/:userId
  * Returns custom overrides for a user (Admin only)
  */
-router.get('/users/:userId', requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.get('/users/:userId', auth, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
     const override = await permissionService.getUserOverride(userId);
@@ -113,7 +113,7 @@ router.get('/users/:userId', requireRole('admin'), async (req: AuthRequest, res:
  * PUT /permissions/users/:userId
  * Updates custom overrides for a specific user (Admin only)
  */
-router.put('/users/:userId', requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.put('/users/:userId', auth, requireRole('admin'), async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
     const updated = await permissionService.updateUserOverride(userId, req.body);

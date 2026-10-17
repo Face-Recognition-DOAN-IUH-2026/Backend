@@ -83,8 +83,12 @@ export class NotificationHub {
     const sseClients = this.sseClients.get(userId);
     if (sseClients) {
       for (const client of sseClients) {
-        client.write(`event: notification\n`);
-        client.write(`data: ${payload}\n\n`);
+        try {
+          client.write(`event: notification\n`);
+          client.write(`data: ${payload}\n\n`);
+        } catch (err) {
+          console.error('[NotificationHub] SSE write failed:', err);
+        }
       }
     }
 
@@ -92,7 +96,11 @@ export class NotificationHub {
     if (wsClients) {
       for (const client of wsClients) {
         if (client.readyState === WebSocket.OPEN) {
-          client.send(payload);
+          try {
+            client.send(payload);
+          } catch (err) {
+            console.error('[NotificationHub] WS send failed:', err);
+          }
         }
       }
     }
@@ -101,7 +109,9 @@ export class NotificationHub {
       title: notification.title,
       body: notification.body,
       data: notification.data || undefined,
-    }).catch(() => {});
+    }).catch((err) => {
+      console.error('[NotificationHub] Push notification failed:', err);
+    });
   }
 
   async publish(userId: string, notification: Notification) {
@@ -130,7 +140,9 @@ export class NotificationHub {
         if (ws.readyState === WebSocket.OPEN) {
           try {
             ws.send(payload);
-          } catch {}
+          } catch (err) {
+            console.error('[NotificationHub] broadcastHazard WS send failed:', err);
+          }
         }
       }
     }
@@ -141,7 +153,9 @@ export class NotificationHub {
         try {
           client.write(`event: hazard_alert\n`);
           client.write(`data: ${payload}\n\n`);
-        } catch {}
+        } catch (err) {
+          console.error('[NotificationHub] broadcastHazard SSE write failed:', err);
+        }
       }
     }
 

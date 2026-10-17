@@ -1,7 +1,7 @@
 import express, { Express } from 'express';
 import request from 'supertest';
 import staffRoutes from '../../routes/staff.routes';
-import { HttpError } from '../../middlewares/errorHandler';
+import { HttpError } from '../../../../shared/error-handler';
 import { createMockBook, createMockCopy, createMockRecord, createMockBorrowRepository, MockBorrowRepository } from '../helpers/mock-repo';
 import { PATRON_UUID, STAFF_UUID } from '../helpers/auth';
 import * as eventPublisher from '../../utils/eventPublisher';
@@ -26,7 +26,7 @@ jest.mock('../../middlewares/auth', () => ({
       req.user = { id: role === 'patron' ? PATRON_UUID : STAFF_UUID, email: `${role}@test.com`, role };
     }
     if (!roles.includes(req.user.role)) {
-      res.status(403).json({ detail });
+      res.status(403).json({ error: 'Forbidden' });
       return;
     }
     next();

@@ -1,4 +1,4 @@
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared/error-handler';
 
 export const CONDITION_CODES = ['new', 'good', 'minor_damage', 'major_damage', 'lost'] as const;
 export type CopyCondition = (typeof CONDITION_CODES)[number];

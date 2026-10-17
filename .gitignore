@@ -70,6 +70,13 @@ SkillAgent/
 CLAUDE.md
 AGENTS.md
 
+# === Junk / scratch files ===
+be.txt
+ecosystem.png
+patron_test_*.xlsx
+*.xlsx
+borrow-service/shared/
+
 # === Build artifacts ===
 *dist-local/
 ai-service/dist/

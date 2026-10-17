@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import { getCollection, resetCollection } from '../clients/chromadb';
 import { chunkText } from './embedder';
-import { v4 as uuidv4 } from 'uuid';
 
 interface DocMetadata {
   source: string;
@@ -96,7 +96,7 @@ export async function indexDocuments(): Promise<void> {
 
     for (const role of roles) {
       const collection = await getCollection(role);
-      const ids = chunks.map(() => uuidv4());
+      const ids = chunks.map(() => randomUUID());
       const metadatas: DocMetadata[] = chunks.map(() => ({
         source: file,
         doc_title: docTitle,

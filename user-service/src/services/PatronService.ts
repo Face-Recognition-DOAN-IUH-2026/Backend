@@ -14,6 +14,7 @@ import { ConflictError, NotFoundError, BadRequestError } from '../errors';
 import { checkActiveBorrows } from '../clients/BorrowServiceClient';
 import { faceServiceClient } from '../clients/FaceServiceClient';
 import { accessServiceClient } from '../clients/AccessServiceClient';
+import { toUtcDateStr } from '../../../shared/utils/date';
 
 export class PatronService {
   constructor(
@@ -110,7 +111,7 @@ export class PatronService {
       permanentAddress: dto.permanentAddress ?? null,
       cardNumber: `THV-${dto.studentCode}`,
       membershipExpiry: dto.membershipExpiry,
-      issueDate: dto.issueDate ?? new Date().toISOString().split('T')[0],
+      issueDate: dto.issueDate ?? toUtcDateStr(),
       identityNumber: dto.identityNumber ?? null,
       phone: dto.phone ?? null,
       status: 'active',
@@ -193,11 +194,11 @@ export class PatronService {
     const membershipExpiry = patron.membershipExpiry ? new Date(patron.membershipExpiry) : null;
 
     if (membershipExpiry && membershipExpiry >= new Date()) {
-      newExpiry = membershipExpiry.toISOString().split('T')[0];
+      newExpiry = toUtcDateStr(membershipExpiry);
     } else {
       const oneYearFromNow = new Date();
       oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
-      newExpiry = oneYearFromNow.toISOString().split('T')[0];
+      newExpiry = toUtcDateStr(oneYearFromNow);
     }
 
     await this.patronRepo.update(id, {

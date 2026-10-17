@@ -8,8 +8,9 @@ export async function stalePatronCleanup(config: Record<string, any>): Promise<a
   let activePatrons;
   try {
     activePatrons = await accessClient.getActivePatrons();
-  } catch {
-    return { checked: 0, cleaned: 0, message: 'Failed to fetch active patrons' };
+  } catch (error) {
+    console.error('[stalePatronCleanup] Failed to fetch active patrons:', error);
+    throw error;
   }
 
   const patronList = Array.isArray(activePatrons) ? activePatrons : (activePatrons as any)?.items || [];

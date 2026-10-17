@@ -1,23 +1,61 @@
 import { Request, Response } from 'express';
+import { z } from 'zod';
 import { authService } from '../services';
 import { setAuthCookie, clearAuthCookie } from '../../../shared/auth';
 
+const registerSchema = z.object({
+  email: z.string().trim().min(1, 'Email is required').email('Invalid email format'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  full_name: z.string().optional(),
+  role: z.enum(['user', 'admin', 'staff', 'patron']).optional(),
+  student_code: z.string().optional(),
+  skip_verification: z.boolean().optional(),
+});
+
+const loginSchema = z
+  .object({
+    email: z.string().trim().email('Invalid email format').optional(),
+    student_code: z.string().optional(),
+    password: z.string().min(1, 'Password is required'),
+  })
+  .refine((d) => Boolean(d.email || d.student_code), {
+    message: 'Email or student_code is required',
+  });
+
+const forgotPasswordSchema = z.object({
+  email: z.string().trim().email('Invalid email format'),
+});
+
+const resetPasswordSchema = z.object({
+  email: z.string().trim().email('Invalid email format'),
+  code: z.union([z.string().min(1), z.number()]),
+  new_password: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+function validationError(res: Response, issues: z.ZodIssue[]) {
+  res.status(400).json({ error: 'Validation Error', detail: issues });
+}
+
 export class AuthController {
   async register(req: Request, res: Response) {
+    const parsed = registerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      validationError(res, parsed.error.issues);
+      return;
+    }
     try {
-      const { email, password, full_name, role, student_code, skip_verification } = req.body;
-      if (!email || !password) {
-        res.status(400).json({ error: 'Email and password are required' });
-        return;
-      }
-      const result = await authService.register({
-        email,
-        password,
-        fullName: full_name,
-        role: role || 'user',
-        studentCode: student_code,
-        skipVerification: skip_verification,
-      });
+      const { email, password, full_name, role, student_code, skip_verification } = parsed.data;
+      const result = await authService.register(
+        {
+          email,
+          password,
+          fullName: full_name,
+          role: role || 'user',
+          studentCode: student_code,
+          skipVerification: skip_verification,
+        },
+        (req as any).user?.role,
+      );
       if (result.access_token) setAuthCookie(res, result.access_token, result.refresh_token);
       res.status(201).json(result);
     } catch (error: any) {
@@ -26,12 +64,13 @@ export class AuthController {
   }
 
   async login(req: Request, res: Response) {
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      validationError(res, parsed.error.issues);
+      return;
+    }
     try {
-      const { email, student_code, password } = req.body;
-      if (!password || (!email && !student_code)) {
-        res.status(400).json({ error: 'Email/student_code and password are required' });
-        return;
-      }
+      const { email, student_code, password } = parsed.data;
       const result = await authService.login({
         email,
         studentCode: student_code,
@@ -81,13 +120,13 @@ export class AuthController {
   }
 
   async forgotPassword(req: Request, res: Response) {
+    const parsed = forgotPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      validationError(res, parsed.error.issues);
+      return;
+    }
     try {
-      const { email } = req.body;
-      if (!email) {
-        res.status(400).json({ error: 'Email la bat buoc' });
-        return;
-      }
-      await authService.forgotPassword(email);
+      await authService.forgotPassword(parsed.data.email);
       res.json({ message: 'Da gui ma reset qua email' });
     } catch (error: any) {
       res.status(error.statusCode || 400).json({ error: error.message });
@@ -113,17 +152,14 @@ export class AuthController {
   }
 
   async resetPassword(req: Request, res: Response) {
+    const parsed = resetPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      validationError(res, parsed.error.issues);
+      return;
+    }
     try {
-      const { email, code, new_password } = req.body;
-      if (!email || !code || !new_password) {
-        res.status(400).json({ error: 'Email, mã khôi phục, và mật khẩu mới là bắt buộc' });
-        return;
-      }
-      if (new_password.length < 6) {
-        res.status(400).json({ error: 'Mật khẩu mới phải ít nhất 6 ký tự' });
-        return;
-      }
-      await authService.resetPassword(email, code, new_password);
+      const { email, code, new_password } = parsed.data;
+      await authService.resetPassword(email, code as string, new_password);
       res.json({ message: 'Đặt lại mật khẩu thành công' });
     } catch (error: any) {
       res.status(error.statusCode || 400).json({ error: error.message });

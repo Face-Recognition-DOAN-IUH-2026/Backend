@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.dependencies import require_internal_key_or_staff
 from api.routers import auth, camera, diagnostics, face, kiosk, ocr, patrons, tasks, users
 from infra.config import settings
+
+logger = logging.getLogger(__name__)
 
 CORS_ORIGINS = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
 
@@ -110,14 +114,6 @@ async def lifespan(app: FastAPI):
         import logging
         logging.getLogger("uvicorn").warning("AMQP User event listener not started: %s", e)
 
-    _rabbitmq_stop = None
-    try:
-        from infra.rabbitmq_consumer import start_rabbitmq_consumer
-        _rabbitmq_thread, _rabbitmq_stop = start_rabbitmq_consumer()
-    except Exception as e:
-        import logging
-        logging.getLogger("uvicorn").warning("RabbitMQ consumer not started: %s", e)
-
     yield
 
     try:
@@ -136,11 +132,6 @@ async def lifespan(app: FastAPI):
             _user_stop()
         except Exception as e:
             logging.getLogger("uvicorn").error("User event listener stop error: %s", e)
-    if _rabbitmq_stop:
-        try:
-            _rabbitmq_stop()
-        except Exception as e:
-            logging.getLogger("uvicorn").error("RabbitMQ consumer stop error: %s", e)
     await engine.dispose()
     cooldown = CooldownService()
     await cooldown.close()
@@ -172,7 +163,10 @@ def create_app() -> FastAPI:
     app.include_router(diagnostics.router)
 
     @app.get("/internal/face/{user_id}/status")
-    async def check_face_enrollment(user_id: str):
+    async def check_face_enrollment(
+        user_id: str,
+        _auth: None = Depends(require_internal_key_or_staff),
+    ):
         from infra.milvus_client import get_milvus_client
         mc = get_milvus_client()
         try:
@@ -183,7 +177,8 @@ def create_app() -> FastAPI:
                 limit=1,
             )
             enrolled = len(results) > 0
-        except Exception:
+        except Exception as exc:
+            logger.error("Milvus enrollment lookup failed for %s: %s", user_id, exc)
             enrolled = False
         return {"enrolled": enrolled}
 

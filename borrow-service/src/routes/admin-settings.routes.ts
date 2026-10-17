@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { auth, requireRole, AuthRequest } from '../middlewares/auth';
 import { ConfigService } from '../services/ConfigService';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared/error-handler';
 
 const router = Router();
 const configService = new ConfigService();
@@ -27,7 +27,7 @@ const testEmailSchema = z.object({
 
 router.use(auth);
 
-router.get('/settings', requireRole(['admin'], 'Chỉ admin mới có thể xem cấu hình'), async (_req, res, next) => {
+router.get('/settings', requireRole(['admin']), async (_req, res, next) => {
   try {
     const settings = await configService.getAll();
     res.json(settings);
@@ -36,7 +36,7 @@ router.get('/settings', requireRole(['admin'], 'Chỉ admin mới có thể xem 
   }
 });
 
-router.get('/settings/:category', requireRole(['admin'], 'Chỉ admin mới có thể xem cấu hình'), async (req, res, next) => {
+router.get('/settings/:category', requireRole(['admin']), async (req, res, next) => {
   try {
     if (!VALID_CATEGORIES.includes(req.params.category)) {
       throw new HttpError(400, `Danh mục không hợp lệ. Hỗ trợ: ${VALID_CATEGORIES.join(', ')}`);
@@ -48,7 +48,7 @@ router.get('/settings/:category', requireRole(['admin'], 'Chỉ admin mới có 
   }
 });
 
-router.put('/settings/:category', requireRole(['admin'], 'Chỉ admin mới có thể cập nhật cấu hình'), async (req, res, next) => {
+router.put('/settings/:category', requireRole(['admin']), async (req, res, next) => {
   try {
     if (!VALID_CATEGORIES.includes(req.params.category)) {
       throw new HttpError(400, `Danh mục không hợp lệ. Hỗ trợ: ${VALID_CATEGORIES.join(', ')}`);
@@ -61,7 +61,7 @@ router.put('/settings/:category', requireRole(['admin'], 'Chỉ admin mới có 
   }
 });
 
-router.post('/settings/test-email', requireRole(['admin'], 'Chỉ admin mới có thể test email'), async (req, res, next) => {
+router.post('/settings/test-email', requireRole(['admin']), async (req, res, next) => {
   try {
     const validated = testEmailSchema.parse(req.body);
     const result = await configService.testEmail(validated);

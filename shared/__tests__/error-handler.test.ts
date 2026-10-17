@@ -76,6 +76,50 @@ describe('errorHandler', () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
   });
+
+  it('should return generic message on 5xx without leaking infrastructure details', () => {
+    const infraError = new Error('connect ECONNREFUSED 10.0.0.5:5432 on query SELECT * FROM users');
+    const req = { method: 'GET', path: '/users', body: {} } as any;
+
+    errorHandler(infraError, req, res as any, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
+    expect(res.json).not.toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.stringContaining('ECONNREFUSED') })
+    );
+  });
+
+  it('should keep 4xx error messages in the response body', () => {
+    const notFound = { statusCode: 404, message: 'Not found' };
+    const req = { method: 'GET', path: '/books/42', body: {} } as any;
+
+    errorHandler(notFound, req, res as any, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Not found', detail: undefined });
+  });
+
+  it('should redact "pass" field from Jira request body payload', () => {
+    const { createJiraBug } = require('../jira-client');
+    (createJiraBug as jest.Mock).mockClear();
+
+    const err = new Error('SMTP auth failed');
+    (err as any).statusCode = 500;
+    const req = {
+      method: 'PUT',
+      path: '/borrow/admin/settings/smtp',
+      body: { pass: 'super-secret-smtp-pass', host: 'smtp.gmail.com' },
+    } as any;
+
+    errorHandler(err, req, res as any, jest.fn());
+
+    expect(createJiraBug).toHaveBeenCalledTimes(1);
+    const params = (createJiraBug as jest.Mock).mock.calls[0][0];
+    expect(params.requestBody).toContain('***REDACTED***');
+    expect(params.requestBody).not.toContain('super-secret-smtp-pass');
+    expect(params.requestBody).toContain('smtp.gmail.com');
+  });
 });
 
 describe('setupProcessErrorHandlers', () => {

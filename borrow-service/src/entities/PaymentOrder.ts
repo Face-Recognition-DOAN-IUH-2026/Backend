@@ -40,6 +40,12 @@ export class PaymentOrder {
   @Column({ name: 'webhook_payload', type: 'jsonb', nullable: true })
   webhookPayload: Record<string, any> | null;
 
+  @Column({ name: 'vietqr_order_id', type: 'varchar', length: 13, nullable: true, unique: true })
+  vietqrOrderId: string | null;
+
+  @Column({ name: 'vietqr_qr_link', type: 'text', nullable: true })
+  vietqrQrLink: string | null;
+
   @Column({ name: 'expires_at', type: 'timestamp' })
   expiresAt: Date;
 

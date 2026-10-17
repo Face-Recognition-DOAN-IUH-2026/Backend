@@ -19,6 +19,7 @@ const runRepo = () => AppDataSource.getRepository(AutomationRun);
 
 const router = Router();
 router.use(auth);
+router.use(requireRole(['admin', 'staff']));
 
 /**
  * @swagger

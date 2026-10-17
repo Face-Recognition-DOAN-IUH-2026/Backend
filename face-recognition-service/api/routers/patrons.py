@@ -10,9 +10,10 @@ from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, 
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import get_current_user, get_db_session, require_role
+from api.dependencies import get_current_user, get_db_session, require_internal_key_or_staff, require_role
 from core.schemas import PatronCreate, PatronPublic, PatronUpdate, PatronLoginRequest, PatronAuthResponse
 from core.service_token import get_auth_headers
+from core.uploads import validate_image_upload
 from infra.config import settings
 from infra.milvus_client import get_milvus_client
 from infra.patron_repository import PatronRepository
@@ -90,18 +91,18 @@ async def _patron_to_public(user_data: dict, db: AsyncSession) -> PatronPublic:
         raise HTTPException(status_code=502, detail=f"Invalid user ID format: {user_data.get('id')}")
     face = await repo.get_active_face(user_id)
     return PatronPublic(
-        id=user_data["id"],
-        full_name=user_data.get("fullName") or user_data.get("full_name", ""),
-        student_code=user_data.get("studentCode") or user_data.get("student_code", ""),
+        id=str(user_data["id"]),
+        full_name=user_data.get("fullName") or user_data.get("full_name") or "",
+        student_code=user_data.get("studentCode") or user_data.get("student_code") or "",
         class_name=user_data.get("className") or user_data.get("class_name"),
         identity_number=user_data.get("identityNumber") or user_data.get("identity_number"),
         email=user_data.get("email"),
         phone=user_data.get("phone"),
-        card_number=user_data.get("cardNumber") or user_data.get("card_number", ""),
+        card_number=user_data.get("cardNumber") or user_data.get("card_number") or "",
         issue_date=user_data.get("issueDate") or user_data.get("issue_date"),
         membership_expiry=_required_date(user_data.get("membershipExpiry") or user_data.get("membership_expiry")),
-        status=user_data.get("status", "active"),
-        current_status=user_data.get("currentStatus") or user_data.get("current_status", "outside"),
+        status=user_data.get("status") or "active",
+        current_status=user_data.get("currentStatus") or user_data.get("current_status") or "outside",
         created_at=user_data.get("createdAt") or user_data.get("created_at"),
         updated_at=user_data.get("updatedAt") or user_data.get("updated_at"),
         has_face=face is not None,
@@ -149,6 +150,7 @@ async def lookup_patron(
     student_code: Optional[str] = Query(None),
     card_number: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db_session),
+    _auth: None = Depends(require_internal_key_or_staff),
 ):
     repo = PatronRepository(db)
     params = {}
@@ -263,6 +265,8 @@ async def enroll_patron_face_batch(
     raw_right = await right.read()
     raw_left = await left.read()
     raw_down = await down.read()
+    for raw in (raw_frontal, raw_right, raw_left, raw_down):
+        validate_image_upload(raw)
 
     try:
         keys = await asyncio.gather(

@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     user_service_url: str = "http://user-service:3001"
     access_service_url: str = "http://access-service:3003"
     service_jwt_secret: str = ""
+    internal_api_key: str = ""
 
     @model_validator(mode="after")
     def resolve_celery_result_backend(self) -> "Settings":
@@ -94,6 +95,9 @@ class Settings(BaseSettings):
             normalized = value.strip()
             if len(normalized) < 32 or normalized.upper().startswith("REPLACE_WITH"):
                 raise ValueError(f"{name} must be an externally supplied production secret")
+
+        if not self.internal_api_key.strip():
+            raise ValueError("INTERNAL_API_KEY must be set in production")
 
         minio_access_key = self.minio_access_key.strip()
         if (

@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import { PaymentService, generateVietQrData, verifyHmacSignature } from '../../services/PaymentService';
+import { generateVietqrOrderId } from '../../services/VietqrClient';
+import { issuePartnerToken, verifyPartnerToken, checkPartnerBasicAuth } from '../../services/VietqrCallbackAuth';
 import { AppDataSource } from '../../data-source';
 import * as eventPublisher from '../../utils/eventPublisher';
 import * as userServiceClient from '../../clients/UserServiceClient';
@@ -28,6 +30,7 @@ describe('PaymentService', () => {
       create: jest.fn((data) => ({ id: 'order-uuid-1', ...data })),
       save: jest.fn(async (order) => ({ ...order, id: order.id || 'order-uuid-1' })),
       findOne: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
     };
 
     (AppDataSource.getRepository as jest.Mock) = jest.fn().mockReturnValue(mockOrderRepo);
@@ -278,6 +281,253 @@ describe('PaymentService', () => {
       await expect(
         paymentService.processWebhook(payload, signature),
       ).rejects.toThrow('Không tìm thấy đơn hàng tương ứng');
+    });
+  });
+
+  describe('confirmManualReceipt (staff reconciliation)', () => {
+    it('confirms a pending order and settles debt like a webhook', async () => {
+      const order = {
+        id: 'order-1',
+        orderCode: 'TXN-MANUAL-1',
+        patronId: 'patron-1',
+        amount: 50000,
+        status: 'pending',
+        paymentMethod: 'vietqr',
+        recordIds: ['rec-1'],
+      };
+      mockOrderRepo.findOne.mockResolvedValue(order);
+      mockRepo.findFineRecordsByIds.mockResolvedValue([
+        { id: 'rec-1', patronId: 'patron-1', fineAmount: 50000, damageFee: 0, finePaid: false },
+      ]);
+      mockRepo.hasUnpaidFinesForPatron.mockResolvedValue(false);
+
+      const result = await paymentService.confirmManualReceipt('TXN-MANUAL-1', 'staff-1', 'Đã thấy trên sao kê MB');
+
+      expect(result.success).toBe(true);
+      expect(result.alreadyCompleted).toBe(false);
+      expect(result.activatedPatrons).toContain('patron-1');
+      expect(mockOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        status: 'completed',
+        gatewayTransId: 'MANUAL:staff-1',
+      }));
+      expect(userServiceClient.activateCardAutoFine).toHaveBeenCalledWith('patron-1');
+      expect(eventPublisher.publishEvent).toHaveBeenCalledWith('payment.completed', expect.objectContaining({
+        orderCode: 'TXN-MANUAL-1',
+      }));
+    });
+
+    it('accepts expired orders because transfers often arrive late', async () => {
+      const order = {
+        id: 'order-2',
+        orderCode: 'TXN-MANUAL-2',
+        patronId: 'patron-1',
+        amount: 30000,
+        status: 'expired',
+        paymentMethod: 'vietqr',
+        recordIds: ['rec-2'],
+      };
+      mockOrderRepo.findOne.mockResolvedValue(order);
+      mockRepo.findFineRecordsByIds.mockResolvedValue([
+        { id: 'rec-2', patronId: 'patron-1', fineAmount: 30000, damageFee: 0, finePaid: false },
+      ]);
+      mockRepo.hasUnpaidFinesForPatron.mockResolvedValue(true);
+
+      const result = await paymentService.confirmManualReceipt('TXN-MANUAL-2', 'staff-1');
+
+      expect(result.success).toBe(true);
+      expect(mockOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' }));
+    });
+
+    it('is idempotent when order is already completed', async () => {
+      mockOrderRepo.findOne.mockResolvedValue({
+        id: 'order-3',
+        orderCode: 'TXN-DONE',
+        status: 'completed',
+      });
+
+      const result = await paymentService.confirmManualReceipt('TXN-DONE', 'staff-1');
+      expect(result.alreadyCompleted).toBe(true);
+      expect(mockRepo.saveBorrowRecords).not.toHaveBeenCalled();
+    });
+
+    it('throws 404 if order does not exist', async () => {
+      mockOrderRepo.findOne.mockResolvedValue(null);
+      await expect(
+        paymentService.confirmManualReceipt('TXN-MISSING', 'staff-1'),
+      ).rejects.toThrow('Không tìm thấy đơn hàng tương ứng');
+    });
+  });
+
+  describe('listReconcilableOrders', () => {
+    it('returns pending + expired orders and transitions overdue pending to expired', async () => {
+      const overdue = {
+        orderCode: 'TXN-OLD',
+        patronId: 'patron-1',
+        amount: 50000,
+        status: 'pending',
+        paymentMethod: 'vietqr',
+        recordIds: ['rec-1'],
+        expiresAt: new Date(Date.now() - 1000),
+        createdAt: new Date(),
+      };
+      mockOrderRepo.find = jest.fn().mockResolvedValue([overdue]);
+
+      const rows = await paymentService.listReconcilableOrders(50);
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].status).toBe('expired');
+      expect(mockOrderRepo.save).toHaveBeenCalledWith([expect.objectContaining({ status: 'expired' })]);
+    });
+  });
+
+  describe('processVietqrCallback (automatic VietQR reconciliation)', () => {
+    beforeEach(() => {
+      delete process.env.VIETQR_ACCOUNT_NUMBER;
+    });
+
+    const baseInput = {
+      transactionid: 'BANK-TXN-1',
+      referencenumber: 'REF-1',
+      bankaccount: '0395324779',
+      amount: 50000,
+      transType: 'C',
+      content: 'VQRABC123456',
+      orderId: 'VQRABC123456',
+    };
+
+    it('matches VietQR orderId and settles debt', async () => {
+      const order = {
+        id: 'order-1',
+        orderCode: 'TXN-VQR-1',
+        patronId: 'patron-1',
+        amount: 50000,
+        status: 'pending',
+        paymentMethod: 'vietqr',
+        recordIds: ['rec-1'],
+        vietqrOrderId: 'VQRABC123456',
+      };
+      mockOrderRepo.findOne
+        .mockResolvedValueOnce(null) // no duplicate callback row
+        .mockResolvedValueOnce(order); // order lookup by vietqrOrderId
+      mockRepo.findFineRecordsByIds.mockResolvedValue([
+        { id: 'rec-1', patronId: 'patron-1', fineAmount: 50000, damageFee: 0, finePaid: false },
+      ]);
+      mockRepo.hasUnpaidFinesForPatron.mockResolvedValue(false);
+
+      const result = await paymentService.processVietqrCallback(baseInput);
+
+      expect(result).toEqual({ orderCode: 'TXN-VQR-1', duplicate: false });
+      expect(mockOrderRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+        status: 'completed',
+        gatewayTransId: 'REF-1',
+      }));
+      expect(userServiceClient.activateCardAutoFine).toHaveBeenCalledWith('patron-1');
+    });
+
+    it('returns duplicate when transactionid was already processed', async () => {
+      mockOrderRepo.findOne.mockResolvedValueOnce({ transactionId: 'BANK-TXN-1', orderCode: 'TXN-VQR-1' });
+
+      const result = await paymentService.processVietqrCallback(baseInput);
+
+      expect(result.duplicate).toBe(true);
+      expect(mockRepo.saveBorrowRecords).not.toHaveBeenCalled();
+    });
+
+    it('rejects debit (D) transactions without settling', async () => {
+      mockOrderRepo.findOne.mockResolvedValueOnce(null);
+
+      await expect(
+        paymentService.processVietqrCallback({ ...baseInput, transType: 'D' }),
+      ).rejects.toThrow('không phải khoản thu');
+      expect(mockRepo.saveBorrowRecords).not.toHaveBeenCalled();
+    });
+
+    it('rejects amount below the order amount', async () => {
+      const order = {
+        id: 'order-1',
+        orderCode: 'TXN-VQR-1',
+        patronId: 'patron-1',
+        amount: 50000,
+        status: 'pending',
+        paymentMethod: 'vietqr',
+        recordIds: ['rec-1'],
+        vietqrOrderId: 'VQRABC123456',
+      };
+      mockOrderRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(order);
+
+      await expect(
+        paymentService.processVietqrCallback({ ...baseInput, amount: 10000 }),
+      ).rejects.toThrow('không đủ cho đơn');
+    });
+
+    it('falls back to content containing the internal orderCode (static QR)', async () => {
+      const order = {
+        id: 'order-9',
+        orderCode: 'TXN-20261013-ABCDEF12',
+        patronId: 'patron-9',
+        amount: 50000,
+        status: 'pending',
+        paymentMethod: 'vietqr',
+        recordIds: ['rec-9'],
+        vietqrOrderId: null,
+      };
+      mockOrderRepo.findOne
+        .mockResolvedValueOnce(null) // no duplicate
+        .mockResolvedValueOnce(null) // no vietqrOrderId match
+        .mockResolvedValueOnce(null); // no exact content match
+      mockOrderRepo.find.mockResolvedValue([order]);
+      mockRepo.findFineRecordsByIds.mockResolvedValue([
+        { id: 'rec-9', patronId: 'patron-9', fineAmount: 50000, damageFee: 0, finePaid: false },
+      ]);
+      mockRepo.hasUnpaidFinesForPatron.mockResolvedValue(true);
+
+      const result = await paymentService.processVietqrCallback({
+        ...baseInput,
+        orderId: 'UNKNOWN',
+        content: 'THU VIEN TXN-20261013-ABCDEF12 CAM ON',
+      });
+
+      expect(result).toEqual({ orderCode: 'TXN-20261013-ABCDEF12', duplicate: false });
+    });
+
+    it('throws 404 when nothing matches', async () => {
+      mockOrderRepo.findOne.mockResolvedValue(null);
+      mockOrderRepo.find.mockResolvedValue([]);
+
+      await expect(
+        paymentService.processVietqrCallback({ ...baseInput, orderId: 'NOPE', content: 'NOPE' }),
+      ).rejects.toThrow('Không tìm thấy đơn hàng cho callback VietQR');
+    });
+  });
+
+  describe('generateVietqrOrderId', () => {
+    it('produces short uppercase alphanumeric ids valid for VietQR (<=13 chars)', () => {
+      for (let i = 0; i < 50; i++) {
+        expect(generateVietqrOrderId()).toMatch(/^[A-Z0-9]{1,13}$/);
+      }
+    });
+  });
+
+  describe('VietqrCallbackAuth', () => {
+    beforeEach(() => {
+      process.env.VIETQR_CALLBACK_SECRET = 'test-256-bit-secret-0123456789abcdef';
+      process.env.VIETQR_CALLBACK_USERNAME = 'vietqr';
+      process.env.VIETQR_CALLBACK_PASSWORD = 's3cret';
+    });
+
+    it('issues tokens that verify correctly', () => {
+      const token = issuePartnerToken('vietqr');
+      expect(verifyPartnerToken(token)).toEqual({ username: 'vietqr' });
+    });
+
+    it('accepts correct Basic credentials and rejects wrong ones', () => {
+      const good = `Basic ${Buffer.from('vietqr:s3cret').toString('base64')}`;
+      const bad = `Basic ${Buffer.from('vietqr:wrong').toString('base64')}`;
+      expect(checkPartnerBasicAuth(good)).toBe('vietqr');
+      expect(() => checkPartnerBasicAuth(bad)).toThrow('INVALID_CREDENTIALS');
+      expect(() => checkPartnerBasicAuth(undefined)).toThrow('INVALID_AUTH_HEADER');
     });
   });
 });

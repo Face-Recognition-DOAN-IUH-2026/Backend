@@ -6,8 +6,9 @@ from typing import List
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user, require_internal_key_or_staff
 from core.schemas import CameraStatusResponse
+from core.uploads import validate_image_upload
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +19,11 @@ router = APIRouter(prefix="/camera", tags=["camera"])
 async def submit_camera_frame(
     camera_id: str,
     file: UploadFile = File(...),
+    _auth: None = Depends(require_internal_key_or_staff),
 ):
     """Receive a live video frame from browser webcam (e.g. laptop camera at gate)."""
     raw = await file.read()
-    if not raw:
-        raise HTTPException(status_code=400, detail="Empty frame")
+    validate_image_upload(raw)
 
     import uuid as _uuid
     from infra.redis_cache import redis_client as _redis_client

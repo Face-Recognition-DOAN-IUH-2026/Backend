@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 
+from core.uploads import validate_image_upload
 from worker.tasks import _sync_face_login
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -11,6 +12,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/face-login")
 async def face_login(file: UploadFile = File(...)):
     raw = await file.read()
+    validate_image_upload(raw)
     result = await run_in_threadpool(_sync_face_login, raw)
     if result.get("status") != "success":
         detail = result.get("error", "Face login failed")

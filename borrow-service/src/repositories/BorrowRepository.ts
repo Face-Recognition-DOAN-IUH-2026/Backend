@@ -1,5 +1,5 @@
 import { Brackets, EntityManager, In, IsNull, Not } from 'typeorm';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared/error-handler';
 import { AppDataSource } from '../data-source';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';

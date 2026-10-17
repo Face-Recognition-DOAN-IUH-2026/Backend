@@ -49,7 +49,8 @@ export async function bookAvailabilityNotify(
     }
 
     return { notified: waitlist.length, patronCount: waitlist.length, bookId };
-  } catch {
-    return { notified: 0, message: 'Waitlist feature not available' };
+  } catch (error) {
+    console.error('[bookAvailabilityNotify] Failed to process waitlist:', error);
+    throw error;
   }
 }

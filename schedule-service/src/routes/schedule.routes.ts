@@ -21,6 +21,16 @@ const asyncHandler = (
 };
 
 const idParam = z.object({ id: z.string().uuid() });
+const preferenceSchema = z.object({
+  staffId: z.string().uuid().optional(),
+  shiftId: z.string().uuid(),
+  zoneId: z.string().uuid(),
+  priority: z.number().int().min(1).max(10).optional(),
+});
+const latLngSchema = z.object({
+  lat: z.number().finite().min(-90).max(90),
+  lng: z.number().finite().min(-180).max(180),
+}).partial();
 const zoneSchema = z.object({
   floor: z.number().int(),
   zoneName: z.string().min(1),
@@ -494,11 +504,12 @@ router.get('/preferences', requireDynamicPermission('schedules', 'read'), asyncH
  */
 router.post('/preferences', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
   const isAdmin = req.user!.role === 'admin';
+  const parsed = preferenceSchema.parse(req.body);
   const body = {
-    staffId: isAdmin ? (req.body.staffId || req.user!.userId) : req.user!.userId,
-    shiftId: req.body.shiftId,
-    zoneId: req.body.zoneId,
-    priority: req.body.priority,
+    staffId: isAdmin ? (parsed.staffId || req.user!.userId) : req.user!.userId,
+    shiftId: parsed.shiftId,
+    zoneId: parsed.zoneId,
+    priority: parsed.priority,
   };
   res.status(201).json(await scheduleService.createPreference(req.user!.userId, body));
 }));
@@ -523,6 +534,18 @@ router.post('/preferences', requireRole('admin', 'staff'), asyncHandler(async (r
  */
 router.delete('/preferences/:id', requireRole('admin', 'staff'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
+  const isAdmin = req.user!.role === 'admin';
+  if (!isAdmin) {
+    const pref = await scheduleService.getPreferenceById(id);
+    if (!pref) {
+      res.status(404).json({ error: 'Preference not found' });
+      return;
+    }
+    if (pref.staffId !== req.user!.userId) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+  }
   res.json(await scheduleService.deletePreference(req.user!.userId, id));
 }));
 /**
@@ -884,9 +907,11 @@ router.post('/assignments/:id/confirm', auth, asyncHandler(async (req, res) => {
  */
 router.post('/assignments/:id/check-in', auth, asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
-  const lat = req.body?.lat != null ? Number(req.body.lat) : undefined;
-  const lng = req.body?.lng != null ? Number(req.body.lng) : undefined;
-  const wifiSsid: string | undefined = req.body?.wifiSsid;
+  const { lat, lng, wifiSsid } = latLngSchema.extend({ wifiSsid: z.string().optional() }).parse({
+    lat: req.body?.lat,
+    lng: req.body?.lng,
+    wifiSsid: req.body?.wifiSsid,
+  });
   res.json(await scheduleService.checkIn(req.user!.userId, id, req.body?.method || 'web', lat, lng, wifiSsid));
 }));
 /**

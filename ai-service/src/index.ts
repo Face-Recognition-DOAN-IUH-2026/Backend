@@ -10,13 +10,13 @@ import staffChatRouter from './routes/chat.staff';
 import adminChatRouter from './routes/chat.admin';
 import companionRouter from './routes/companion';
 import legacyChatRouter from './routes/chat.legacy';
+import sessionRouter from './routes/session.routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 import { createAuth, requireRole } from '../../shared/auth';
 import { getCollection } from './clients/chromadb';
 import { indexDocuments } from './rag/indexer';
-import { sessionStore } from './sessions';
 
 const auth = createAuth({
   jwtSecret: config.jwtSecret,
@@ -82,20 +82,8 @@ app.use('/ai', cardParserRouter);
 // AI Command Center routes (admin/staff only) - /ai/command-center/*, /ai/insights/*, /ai/recommendations/*
 app.use('/ai', auth, aiRoutes);
 
-// Session retrieval - /ai/sessions/:sessionId
-app.get('/ai/sessions/:sessionId', auth, (req, res) => {
-  const session = sessionStore.get(req.params.sessionId);
-  if (!session) {
-    res.status(404).json({ error: 'Session not found' });
-    return;
-  }
-  res.json({
-    sessionId: session.id,
-    patronId: session.patronId,
-    messages: session.messages,
-    pendingConfirmation: session.pendingConfirmation,
-  });
-});
+// Session retrieval - /ai/sessions/:sessionId (ownership enforced via getOwned)
+app.use('/ai', auth, sessionRouter);
 
 if (config.nodeEnv !== 'production') {
   app.get('/api-docs/swagger.json', (_req, res) => {

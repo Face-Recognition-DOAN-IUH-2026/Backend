@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { config } from '../config';
+import { extractJson } from '../utils/extractJson';
 
 const router = Router();
 
@@ -16,17 +17,7 @@ interface ParsedCardData {
   permanent_address: string | null;
   faculty: string | null;
 }
-
-function extractJson(text: string): unknown {
-  const cleaned = text
-    .trim()
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/```$/i, '')
-    .trim();
-  return JSON.parse(cleaned);
-}
-
+
 const VIETNAMESE_SURNAME_MAP: Record<string, string> = {
   nguyen: 'Nguyễn',
   tran: 'Trần',

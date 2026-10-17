@@ -1,7 +1,23 @@
 import { Request, Response, NextFunction } from 'express';
 import { createJiraBug, JiraIssueParams } from './jira-client';
 
-const SENSITIVE_FIELDS = ['password', 'code', 'token', 'secret', 'authorization', 'otp', 'otpCode', 'resetCode', 'verificationCode'];
+// multer is a soft dependency: only services that do file uploads have it
+// installed. Lazy-require so importing this handler never crashes a service
+// that lacks multer (MulterError handling simply no-ops there).
+let multerModule: any;
+function getMulter(): any {
+  if (multerModule === undefined) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      multerModule = require('multer');
+    } catch {
+      multerModule = null;
+    }
+  }
+  return multerModule;
+}
+
+const SENSITIVE_FIELDS = ['password', 'pass', 'code', 'token', 'secret', 'authorization', 'otp', 'otpCode', 'resetCode', 'verificationCode'];
 
 function stripSensitiveFields(body: Record<string, any>): Record<string, any> {
   if (!body || typeof body !== 'object') return body;
@@ -19,7 +35,7 @@ function stripSensitiveFields(body: Record<string, any>): Record<string, any> {
 }
 
 export class HttpError extends Error {
-  constructor(public statusCode: number, message: string) {
+  constructor(public statusCode: number, message: string, public code?: string) {
     super(message);
     this.name = 'HttpError';
   }
@@ -47,6 +63,17 @@ export function errorHandler(err: any, req: Request, res: Response, _next: NextF
       error: 'Validation Error',
       detail: err.issues || err.errors || [{ message: err.message }],
     });
+    return;
+  }
+
+  // Multer file upload errors → 400
+  const multer = getMulter();
+  if (multer && err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      res.status(400).json({ error: 'File too large' });
+      return;
+    }
+    res.status(400).json({ error: 'File upload error' });
     return;
   }
 
@@ -81,15 +108,16 @@ export function errorHandler(err: any, req: Request, res: Response, _next: NextF
     });
   }
 
-  // Send response
+  // Send response — 5xx bodies stay generic; details live in logs/Jira only
   if (statusCode >= 500) {
     res.status(statusCode).json({
-      error: message,
+      error: 'Internal server error',
     });
   } else {
     res.status(statusCode).json({
       error: message,
       detail: err.detail || undefined,
+      code: err.code || undefined,
     });
   }
 }

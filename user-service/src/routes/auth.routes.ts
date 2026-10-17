@@ -1,9 +1,15 @@
 import { Router } from 'express';
 import { authController } from '../controllers';
-import { requireRole } from '../middlewares/requireRole';
-import { createAuth } from '../../../shared/auth';
+import { createAuth, requireRole } from '../../../shared/auth';
+import { config } from '../config';
 
 const router = Router();
+
+const auth = createAuth({
+  jwtSecret: config.jwtSecret,
+  jwtAudience: config.jwtAudience,
+  jwtIssuer: config.jwtIssuer,
+});
 
 /**
  * @swagger
@@ -50,7 +56,7 @@ const router = Router();
  *       403:
  *         description: Forbidden
  */
-router.post('/register', requireRole('admin', 'staff'), (req, res) => authController.register(req, res));
+router.post('/register', auth, requireRole('admin', 'staff'), (req, res) => authController.register(req, res));
 
 /**
  * @swagger
