@@ -83,7 +83,14 @@ router.post('/stream', async (req: AuthRequest, res: Response) => {
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
 
-    let finalText = '';
+    // Text accumulation split so that streamed deltas and the authoritative final answer
+    // never stack on top of each other:
+    //   prefixText   — non-final `text` chunks (e.g. the `[Voice]` transcript)
+    //   streamedText — the single authoritative `final: true` answer (deltas are NOT
+    //                  accumulated here: the final chunk repeats them in full)
+    let prefixText = '';
+    let streamedText = '';
+
     for await (const chunk of processCompanionMessage({
       message: message || undefined,
       audioBase64: audioBase64 || undefined,
@@ -93,14 +100,19 @@ router.post('/stream', async (req: AuthRequest, res: Response) => {
       sessionHistory,
     })) {
       if (chunk.type === 'text' && chunk.data?.content) {
-        finalText += chunk.data.content;
+        if (chunk.data.final) {
+          streamedText = chunk.data.content;
+        } else {
+          prefixText += chunk.data.content;
+        }
       }
       // Persist final assistant message on companion_done
       if (chunk.type === 'companion_done') {
-        if (finalText) {
+        const persistedText = prefixText + streamedText;
+        if (persistedText) {
           sessionStore.addMessage(session.id, {
             role: 'assistant',
-            content: finalText,
+            content: persistedText,
             timestamp: Date.now(),
           });
         }

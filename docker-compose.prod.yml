@@ -1,0 +1,84 @@
+# =============================================================================
+# Production override — dùng cùng docker-compose.yml (KHÔNG thay thế):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Yêu cầu biến trong Backend/.env:
+#   API_DOMAIN       (bắt buộc)  Ví dụ: iuhlib-api.duckdns.org
+#   ACME_EMAIL                    Email nhận cảnh báo Let's Encrypt
+#   CORS_ORIGINS       (bắt buộc) Origin FE, ví dụ: https://iuhlib.vercel.app
+#   GATEWAY_HOST_IP=127.0.0.1     Gateway chỉ bind localhost (Caddy public ra ngoài)
+#   GATEWAY_PORT=8080             Caddy reverse-proxy tới gateway:80 (in-network)
+#
+# Chạy profile "selfhost-fe" nếu deploy FE trên cùng server (tùy chọn, xem runbook):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile selfhost-fe up -d
+# =============================================================================
+
+services:
+  # Caddy: HTTPS free (Let's Encrypt) + reverse proxy -> gateway
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN in Backend/.env}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+      FE_DOMAIN: ${FE_DOMAIN:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      gateway:
+        condition: service_started
+    networks:
+      - face-network
+
+  gateway:
+    environment:
+      # Đảm bảo CORS origin FE được nạp tường minh khi chạy production
+      CORS_ORIGINS: ${CORS_ORIGINS:?Set CORS_ORIGINS (FE origin) in Backend/.env}
+      NODE_ENV: production
+
+  # FE tự-host (tùy chọn A2/B) — chỉ chạy khi bật profile "selfhost-fe"
+  frontend:
+    profiles: ["selfhost-fe"]
+    build:
+      context: ../Frontend_Web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?Set API_DOMAIN in Backend/.env}
+    container_name: frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
+      # src/proxy.ts (middleware Next16) TỪ CHỐI mọi request khi thiếu secret này
+      # → phải trùng giá trị với Backend/.env (cùng signer JWT HS256)
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in Backend/.env}
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-}
+      JWT_ISSUER: ${JWT_ISSUER:-}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-}
+    expose:
+      - "3000"
+    depends_on:
+      gateway:
+        condition: service_started
+    networks:
+      - face-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  caddydata:
+  caddyconfig:

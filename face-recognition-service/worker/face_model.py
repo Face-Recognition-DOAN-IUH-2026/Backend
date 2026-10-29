@@ -63,7 +63,7 @@ class FaceModel:
             })
         return results
 
-    def estimate_blur(self, img: cv2.Mat, threshold: float = 25.0) -> dict:
+    def estimate_blur(self, img: cv2.Mat, threshold: float = 40.0) -> dict:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
         is_blurry = lap_var < threshold

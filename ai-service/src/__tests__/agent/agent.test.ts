@@ -37,10 +37,26 @@ jest.mock('../../clients/nvidia', () => ({
 }));
 
 import { buildSystemPrompt, processMessage, type UserContext } from '../../agent/agent';
+import type { ToolDef } from '../../tools/registry';
 
-const MOCK_TOOLS = [
-  { name: 'search_books', description: 'Tim kiem sach', func: jest.fn().mockResolvedValue({ success: true, data: [] }) },
-  { name: 'get_library_hours', description: 'Xem gio mo cua', func: jest.fn().mockResolvedValue({ success: true, data: {} }) },
+const MOCK_TOOLS: ToolDef[] = [
+  {
+    name: 'search_books',
+    description: 'Tim kiem sach',
+    func: jest.fn().mockResolvedValue({ success: true, data: [] }),
+    parameters: {
+      type: 'object',
+      properties: { query: { type: 'string' } },
+      required: ['query'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_library_hours',
+    description: 'Xem gio mo cua',
+    func: jest.fn().mockResolvedValue({ success: true, data: {} }),
+    parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+  },
 ];
 
 describe('buildSystemPrompt', () => {

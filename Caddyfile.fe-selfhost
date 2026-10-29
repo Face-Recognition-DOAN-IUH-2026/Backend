@@ -1,0 +1,24 @@
+# Caddy biến thể FE tự-host trên cùng server (tùy chọn B trong runbook).
+# Dùng file này thay thế Backend/Caddyfile và chạy compose với profile "selfhost-fe":
+#   cp Caddyfile.fe-selfhost Caddyfile
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile selfhost-fe up -d
+# Yêu cầu thêm biến FE_DOMAIN trong Backend/.env (ví dụ: iuhlib.duckdns.org).
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+	encode gzip
+
+	reverse_proxy gateway:80 {
+		flush_interval -1
+	}
+}
+
+{$FE_DOMAIN} {
+	encode gzip
+
+	reverse_proxy frontend:3000 {
+		flush_interval -1
+	}
+}
