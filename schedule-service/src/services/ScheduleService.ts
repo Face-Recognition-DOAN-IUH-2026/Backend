@@ -16,8 +16,21 @@ import {
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../errors';
 import { UserServiceClient } from '../clients/UserServiceClient';
 import { publishEvent } from '../utils/eventPublisher';
-import { haversineDistanceMeters } from '../utils/geofence';
+import { evaluateGeofence, isValidCoordinate, GPS_TOLERANCE_METERS } from '../utils/geofence';
 import { toUtcDateStr } from '../../../shared/utils/date';
+
+/**
+ * Kết quả đối chiếu vị trí thiết bị với geofence của khu vực được phân công.
+ * `verified` = true chỉ khi toạ độ GPS nằm trong tâm + bán kính cho phép.
+ */
+interface CheckInLocationVerification {
+  verified: boolean;
+  method: string;
+  distanceMeters: number | null;
+  radiusMeters: number | null;
+  zoneId: string | null;
+  reason: string;
+}
 
 function localDate(value: Date) {
   const year = value.getFullYear();
@@ -941,7 +954,41 @@ export class ScheduleService {
     return { deleted: true, zoneId };
   }
 
-  async checkIn(staffId: string, id: string, method = 'web', lat?: number, lng?: number, wifiSsid?: string) {
+  /**
+   * Trả về geofence của khu vực được phân công để client vẽ bản đồ và tự đánh giá
+   * vị trí trước khi gọi check-in. Chỉ nhân viên sở hữu phân công mới đọc được.
+   *
+   * Lưu ý: đây chỉ là dữ liệu hiển thị. Việc quyết định cho check-in vẫn do
+   * `verifyCheckInGeofence` tính lại trên server.
+   */
+  async getAssignmentGeofence(staffId: string, assignmentId: string) {
+    const schedule = await this.requireOwnedSchedule(staffId, assignmentId);
+    const zoneId = schedule.zoneId ?? null;
+    const unconfigured = {
+      zoneId,
+      configured: false as const,
+      latitude: null,
+      longitude: null,
+      radiusMeters: null,
+      toleranceMeters: GPS_TOLERANCE_METERS,
+    };
+
+    if (!zoneId) return unconfigured;
+
+    const geofence = await this.geofence.findOneBy({ zoneId, isActive: true });
+    if (!geofence) return unconfigured;
+
+    return {
+      zoneId,
+      configured: true as const,
+      latitude: geofence.latitude,
+      longitude: geofence.longitude,
+      radiusMeters: geofence.radiusMeters,
+      toleranceMeters: GPS_TOLERANCE_METERS,
+    };
+  }
+
+  async checkIn(staffId: string, id: string, method = 'web', lat?: number, lng?: number) {
     const schedule = await this.requireOwnedSchedule(staffId, id);
     if (schedule.status === 'cancelled' || schedule.status === 'completed') {
       throw new ConflictError('Assignment is not active');
@@ -962,44 +1009,93 @@ export class ScheduleService {
       throw new ConflictError(`Chưa đến giờ check-in (shift starts at ${shift.startTime}, check-in opens 45 min before)`);
     }
 
-    let checkedViaWifi = false;
-    if (lat != null && lng != null && schedule.zoneId) {
-      const gf = await this.geofence.findOneBy({ zoneId: schedule.zoneId, isActive: true });
-      if (gf) {
-        const gpsTolerance = 15;
-        const effectiveRadius = gf.radiusMeters + gpsTolerance;
-        const distance = haversineDistanceMeters(lat, lng, gf.latitude, gf.longitude);
-        if (distance > effectiveRadius) {
-          if (wifiSsid && gf.allowedWifiSsids?.length && gf.allowedWifiSsids.includes(wifiSsid)) {
-            checkedViaWifi = true;
-          } else {
-            await this.log('attendance.check_in_failed_geofence', 'staff_schedule', id, staffId, {
-              latitude: lat,
-              longitude: lng,
-              distance: Math.round(distance),
-              allowedRadius: gf.radiusMeters,
-              wifiSsid: wifiSsid ?? null,
-            });
-            const suggestion = wifiSsid
-              ? `Bạn đang ở ngoài khu vực làm việc (${Math.round(distance)}m > ${gf.radiusMeters}m cho phép). WiFi không khớp. Bạn có thể yêu cầu check-in thủ công.`
-              : `Bạn đang ở ngoài khu vực làm việc (${Math.round(distance)}m > ${gf.radiusMeters}m cho phép). Kết nối WiFi thư viện hoặc yêu cầu check-in thủ công.`;
-            throw new BadRequestError(suggestion);
-          }
-        }
-      }
-    }
+    // Geofence là điều kiện quyết định duy nhất: vị trí thiết bị phải nằm trong tâm + bán kính cho phép.
+    const location = await this.verifyCheckInGeofence(schedule, staffId, { lat, lng, method });
 
     if (existing?.checkInAt) throw new ConflictError('Already checked in');
     const status = now > new Date(`${schedule.workDate}T${shift.startTime}`) ? 'late' : 'on_time';
     const item = existing ?? this.attendance.create({ scheduleId: id, staffId, status, method });
     item.checkInAt = now;
     item.status = status;
-    item.method = checkedViaWifi ? 'wifi' : method;
+    item.method = location.method;
     await this.attendance.save(item);
     schedule.status = 'in_progress';
     await this.schedules.save(schedule);
-    await this.log('attendance.checked_in', 'staff_attendance', item.id, staffId, { scheduleId: id, status, method: item.method });
-    return { schedule, attendance: item };
+    await this.log('attendance.checked_in', 'staff_attendance', item.id, staffId, {
+      scheduleId: id,
+      status,
+      method: item.method,
+      locationVerified: location.verified,
+      distanceMeters: location.distanceMeters,
+      radiusMeters: location.radiusMeters,
+    });
+    return {
+      schedule,
+      attendance: item,
+      location: {
+        verified: location.verified,
+        method: location.method,
+        distanceMeters: location.distanceMeters,
+        radiusMeters: location.radiusMeters,
+        zoneId: location.zoneId,
+        reason: location.reason,
+      },
+    };
+  }
+
+  /**
+   * So khớp toạ độ GPS của thiết bị với geofence của zone được phân công.
+   *
+   * - Zone đã cấu hình geofence: bắt buộc có toạ độ hợp lệ và phải nằm trong bán kính
+   *   (+ sai số GPS). Thiếu toạ độ => từ chối check-in.
+   * - Zone chưa cấu hình geofence: vẫn cho check-in nhưng ghi audit để rà soát.
+   * - Không có phương án dự phòng: SSID WiFi do client gửi lên không thể kiểm chứng nên
+   *   không được dùng để bỏ qua geofence.
+   */
+  private async verifyCheckInGeofence(
+    schedule: StaffSchedule,
+    staffId: string,
+    input: { lat?: number; lng?: number; method: string }
+  ): Promise<CheckInLocationVerification> {
+    const { lat, lng, method } = input;
+    const zoneId = schedule.zoneId ?? null;
+
+    if (!zoneId) {
+      return { verified: false, method, distanceMeters: null, radiusMeters: null, zoneId, reason: 'Phân công chưa gắn khu vực' };
+    }
+
+    const geofence = await this.geofence.findOneBy({ zoneId, isActive: true });
+    if (!geofence) {
+      await this.log('attendance.check_in_unconfigured_geofence', 'staff_schedule', schedule.id, staffId, { zoneId });
+      return { verified: false, method, distanceMeters: null, radiusMeters: null, zoneId, reason: 'Khu vực chưa cấu hình geofence' };
+    }
+
+    const radiusMeters = geofence.radiusMeters;
+
+    if (!isValidCoordinate(lat, lng)) {
+      await this.log('attendance.check_in_missing_location', 'staff_schedule', schedule.id, staffId, { zoneId, method });
+      throw new BadRequestError(
+        'Không xác định được vị trí GPS của thiết bị. Vui lòng bật định vị và thử lại để điểm danh.'
+      );
+    }
+
+    const evaluation = evaluateGeofence(lat as number, lng as number, geofence);
+    const distanceMeters = Math.round(evaluation.distanceMeters);
+
+    if (evaluation.allowed) {
+      return { verified: true, method, distanceMeters, radiusMeters, zoneId, reason: evaluation.reason };
+    }
+
+    await this.log('attendance.check_in_failed_geofence', 'staff_schedule', schedule.id, staffId, {
+      latitude: lat,
+      longitude: lng,
+      distance: distanceMeters,
+      allowedRadius: radiusMeters,
+    });
+
+    throw new BadRequestError(
+      `Bạn đang ở ngoài khu vực làm việc: cách ${distanceMeters}m, vượt ${evaluation.overflowMeters}m ngoài bán kính ${radiusMeters}m cho phép. Vui lòng di chuyển vào trong khu vực làm việc rồi thử lại.`
+    );
   }
 
   async requestManualCheckIn(assignmentId: string, staffId: string, note: string) {

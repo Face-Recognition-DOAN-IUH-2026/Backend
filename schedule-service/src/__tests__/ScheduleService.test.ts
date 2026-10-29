@@ -1072,11 +1072,11 @@ describe('ScheduleService', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // SCHED-UX1: WiFi SSID fallback in check-in
+  // SCHED-UX1: Geofence-only check-in (không còn WiFi / thủ công)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  describe('checkIn with WiFi SSID fallback', () => {
-    it('should allow check-in via WiFi when GPS fails but wifiSsid matches', async () => {
+  describe('checkIn geofence enforcement', () => {
+    function mockGeofenceRepos(radiusMeters = 100) {
       const scheduleRepo = createMockRepo();
       const attendanceRepo = createMockRepo();
       const shiftRepo = createMockRepo();
@@ -1088,7 +1088,7 @@ describe('ScheduleService', () => {
       attendanceRepo.findOneBy.mockResolvedValue(null);
       shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '00:01', endTime: '12:00' });
       geofenceRepo.findOneBy.mockResolvedValue({
-        zoneId: 'z1', latitude: 10.0, longitude: 106.0, radiusMeters: 100, isActive: true,
+        zoneId: 'z1', latitude: 10.0, longitude: 106.0, radiusMeters, isActive: true,
         allowedWifiSsids: ['Library-WiFi', 'Staff-5G'],
       });
 
@@ -1103,77 +1103,33 @@ describe('ScheduleService', () => {
       });
 
       service = new ScheduleService();
-      // GPS far away, but WiFi matches
-      const result = await service.checkIn('staff-1', 'a1', 'geofence', 20.0, 110.0, 'Library-WiFi');
+    }
+
+    it('should allow check-in when the device is inside the geofence', async () => {
+      mockGeofenceRepos();
+
+      const result = await service.checkIn('staff-1', 'a1', 'mobile', 10.0005, 106.0005);
 
       expect(result.schedule.status).toBe('in_progress');
-      expect(result.attendance.method).toBe('wifi');
+      expect(result.attendance.method).toBe('mobile');
+      expect(result.location.verified).toBe(true);
+      expect(result.location.radiusMeters).toBe(100);
     });
 
-    it('should throw BadRequestError when GPS fails and wifiSsid does not match', async () => {
-      const scheduleRepo = createMockRepo();
-      const attendanceRepo = createMockRepo();
-      const shiftRepo = createMockRepo();
-      const geofenceRepo = createMockRepo();
+    it('should reject check-in when the device is outside the geofence, even with a campus WiFi SSID configured', async () => {
+      mockGeofenceRepos();
 
-      scheduleRepo.findOneBy.mockResolvedValue({
-        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: today(), status: 'scheduled',
-      });
-      attendanceRepo.findOneBy.mockResolvedValue(null);
-      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '00:01', endTime: '12:00' });
-      geofenceRepo.findOneBy.mockResolvedValue({
-        zoneId: 'z1', latitude: 10.0, longitude: 106.0, radiusMeters: 100, isActive: true,
-        allowedWifiSsids: ['Library-WiFi', 'Staff-5G'],
-      });
-
-      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
-        const name = entity?.name || String(entity);
-        if (name === 'StaffSchedule') return scheduleRepo;
-        if (name === 'StaffAttendance') return attendanceRepo;
-        if (name === 'StaffShift') return shiftRepo;
-        if (name === 'GeofenceConfig') return geofenceRepo;
-        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
-        return mockRepos[name];
-      });
-
-      service = new ScheduleService();
-      // GPS far away AND wrong WiFi
       await expect(
-        service.checkIn('staff-1', 'a1', 'geofence', 20.0, 110.0, 'Random-Cafe-WiFi')
+        service.checkIn('staff-1', 'a1', 'mobile', 20.0, 110.0)
       ).rejects.toThrow(BadRequestError);
     });
 
-    it('should throw BadRequestError with manual-checkin suggestion when GPS+WiFi both fail and no wifiSsid provided', async () => {
-      const scheduleRepo = createMockRepo();
-      const attendanceRepo = createMockRepo();
-      const shiftRepo = createMockRepo();
-      const geofenceRepo = createMockRepo();
+    it('should reject check-in when GPS coordinates are missing', async () => {
+      mockGeofenceRepos();
 
-      scheduleRepo.findOneBy.mockResolvedValue({
-        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: today(), status: 'scheduled',
-      });
-      attendanceRepo.findOneBy.mockResolvedValue(null);
-      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '00:01', endTime: '12:00' });
-      geofenceRepo.findOneBy.mockResolvedValue({
-        zoneId: 'z1', latitude: 10.0, longitude: 106.0, radiusMeters: 100, isActive: true,
-        allowedWifiSsids: ['Library-WiFi'],
-      });
-
-      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
-        const name = entity?.name || String(entity);
-        if (name === 'StaffSchedule') return scheduleRepo;
-        if (name === 'StaffAttendance') return attendanceRepo;
-        if (name === 'StaffShift') return shiftRepo;
-        if (name === 'GeofenceConfig') return geofenceRepo;
-        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
-        return mockRepos[name];
-      });
-
-      service = new ScheduleService();
-      // GPS far away, no wifiSsid provided — error message should suggest manual check-in
       await expect(
-        service.checkIn('staff-1', 'a1', 'geofence', 20.0, 110.0)
-      ).rejects.toThrow('thủ công');
+        service.checkIn('staff-1', 'a1', 'web')
+      ).rejects.toThrow('Không xác định được vị trí GPS');
     });
   });
 

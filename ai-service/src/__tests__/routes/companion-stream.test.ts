@@ -29,10 +29,11 @@ jest.mock('../../rag/retriever', () => ({
   retrieve: (...args: any[]) => mockRetrieve(...args),
 }));
 
-const mockCreateChatCompletion = jest.fn();
+const mockStreamChatCompletion = jest.fn();
 jest.mock('../../clients/nvidia', () => ({
   nvidiaClient: {
-    createChatCompletion: (...args: any[]) => mockCreateChatCompletion(...args),
+    createChatCompletion: jest.fn().mockResolvedValue('non-stream fallback'),
+    streamChatCompletion: (...args: any[]) => mockStreamChatCompletion(...args),
   },
 }));
 
@@ -57,26 +58,48 @@ jest.mock('../../clients/TTSClient', () => ({
 }));
 
 const mockSearchBooks = jest.fn().mockResolvedValue({ success: true, data: [{ title: 'Lập trình TypeScript' }] });
-jest.mock('../../tools/registry', () => ({
-  patronToolDefs: [
-    { name: 'search_books', description: 'Tìm kiếm sách', func: mockSearchBooks },
-  ],
-  getToolDefsForRole: jest.fn().mockReturnValue([
-    { name: 'search_books', description: 'Tìm kiếm sách', func: mockSearchBooks },
-  ]),
-}));
+jest.mock('../../tools/registry', () => {
+  const actual = jest.requireActual('../../tools/registry');
+  const searchTool = {
+    name: 'search_books',
+    description: 'Tìm kiếm sách',
+    func: mockSearchBooks,
+    parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+  };
+  return {
+    patronToolDefs: [searchTool],
+    // Real schema helpers so the streaming contract is exercised as production does.
+    toOpenAITools: actual.toOpenAITools,
+    bindToolArgs: actual.bindToolArgs,
+    getToolDefsForRole: jest.fn().mockReturnValue([searchTool]),
+  };
+});
 
 import { processCompanionMessage } from '../../agent/agent';
+
+async function* gen(events: any[]): AsyncGenerator<any> {
+  for (const e of events) yield e;
+}
+
+/** Make the LLM boundary answer with a single non-streamed completion (degraded contract). */
+function answer(content: string, toolCalls: any[] = []) {
+  mockStreamChatCompletion.mockImplementation(() => gen([{ type: 'done', content, toolCalls }]));
+}
 
 describe('processCompanionMessage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRetrieve.mockResolvedValue([]);
     mockGetMemoriesForPatron.mockResolvedValue({});
+    mockSynthesizeSpeech.mockResolvedValue({
+      audioBase64: 'mock-audio-base64',
+      visemes: [{ time: 0, value: 0 }],
+      durationMs: 1000,
+    });
   });
 
   it('should yield text chunks via SSE', async () => {
-    mockCreateChatCompletion.mockResolvedValue('Xin chào!');
+    answer('Xin chào!');
 
     const chunks: any[] = [];
     for await (const chunk of processCompanionMessage({
@@ -94,7 +117,7 @@ describe('processCompanionMessage', () => {
 
   it('should include memories in system prompt', async () => {
     mockGetMemoriesForPatron.mockResolvedValue({ favorite_genre: 'sci-fi' });
-    mockCreateChatCompletion.mockResolvedValue('Hello!');
+    answer('Hello!');
 
     const chunks: any[] = [];
     for await (const chunk of processCompanionMessage({
@@ -110,7 +133,7 @@ describe('processCompanionMessage', () => {
   });
 
   it('should call TTS for text chunks', async () => {
-    mockCreateChatCompletion.mockResolvedValue('Xin chào bạn!');
+    answer('Xin chào bạn!');
 
     const chunks: any[] = [];
     for await (const chunk of processCompanionMessage({
@@ -126,10 +149,11 @@ describe('processCompanionMessage', () => {
   });
 
   it('should handle tool calls mid-stream', async () => {
-    mockCreateChatCompletion
-      .mockResolvedValueOnce('Để tôi tìm sách cho bạn...')
-      .mockResolvedValueOnce('{"tool": "search_books", "arguments": {"query": "lập trình"}}')
-      .mockResolvedValueOnce('Tôi đã tìm thấy sách về lập trình.');
+    mockStreamChatCompletion
+      .mockReturnValueOnce(gen([{ type: 'done', content: '', toolCalls: [
+        { id: 'c1', name: 'search_books', args: { query: 'lập trình' } },
+      ] }]))
+      .mockReturnValueOnce(gen([{ type: 'done', content: 'Tôi đã tìm thấy sách về lập trình.', toolCalls: [] }]));
 
     const chunks: any[] = [];
     for await (const chunk of processCompanionMessage({
@@ -142,10 +166,11 @@ describe('processCompanionMessage', () => {
     }
 
     expect(chunks.some(c => c.type === 'tool_result' || c.type === 'text')).toBe(true);
+    expect(mockSearchBooks).toHaveBeenCalledWith('lập trình');
   });
 
   it('should emit companion_done at the end', async () => {
-    mockCreateChatCompletion.mockResolvedValue('Kết thúc!');
+    answer('Kết thúc!');
 
     const chunks: any[] = [];
     for await (const chunk of processCompanionMessage({
@@ -161,7 +186,7 @@ describe('processCompanionMessage', () => {
   });
 
   it('should consolidate memories after response', async () => {
-    mockCreateChatCompletion.mockResolvedValue('Cảm ơn bạn!');
+    answer('Cảm ơn bạn!');
 
     const chunks: any[] = [];
     for await (const chunk of processCompanionMessage({

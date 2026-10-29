@@ -1,5 +1,6 @@
 import { nvidiaClient } from '../clients/nvidia';
-import { ToolDef, patronToolDefs, getToolDefsForRole } from '../tools/registry';
+import type { NativeToolCall } from '../clients/nvidia';
+import { ToolDef, patronToolDefs, getToolDefsForRole, toOpenAITools, bindToolArgs } from '../tools/registry';
 import { retrieve, RetrievedDocument } from '../rag/retriever';
 import { MemoryService } from '../services/MemoryService';
 import { TTSClient } from '../clients/TTSClient';
@@ -346,6 +347,37 @@ export async function processMessage(
   };
 }
 
+/** Human-readable summary used when the model produced no usable final answer. */
+function summariseToolResults(toolResults: Array<{ name: string; result: any }>): string | null {
+  const summary = toolResults
+    .filter(t => t.result?.success && t.result?.data)
+    .map(t => {
+      const data = t.result.data;
+      if (Array.isArray(data)) {
+        return data.length === 0
+          ? `Khong tim thay ket qua tu ${t.name}.`
+          : `Tu ${t.name}: ${data.length} ket qua.`;
+      }
+      return `Ket qua tu ${t.name}.`;
+    })
+    .join('\n');
+
+  return summary || 'Da truy van xong.';
+}
+
+/** Parse the `:::book_card {…}` block a tool answer may embed, if present. */
+function parseBookCard(finalResponse: string): Record<string, any> | null {
+  if (!finalResponse.includes(':::book_card')) return null;
+  const match = finalResponse.match(/:::book_card\s*(\{.*?\})/s);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch (error) {
+    console.warn('[Agent] book_card JSON parse failed:', (error as Error).message);
+    return null;
+  }
+}
+
 export interface CompanionMessageInput {
   message?: string;
   audioBase64?: string;
@@ -356,8 +388,15 @@ export interface CompanionMessageInput {
 }
 
 export interface CompanionChunk {
-  type: 'text' | 'audio' | 'viseme' | 'tool_result' | 'book_card' | 'companion_done';
+  type: 'text_delta' | 'text' | 'audio' | 'viseme' | 'tool_result' | 'book_card' | 'companion_done';
   data: any;
+}
+
+interface CompanionToolCall {
+  name: string;
+  args: Record<string, any>;
+  /** true = native function call (bind by schema); false = regex-detected tool JSON */
+  native: boolean;
 }
 
 export async function* processCompanionMessage(
@@ -421,52 +460,63 @@ export async function* processCompanionMessage(
   while (maxIterations > 0) {
     maxIterations--;
 
-    const response = await nvidiaClient.createChatCompletion(messages, {
+    // ---- Native function calling with graceful degradation ------------------
+    // The client yields tokens as they arrive. A tool-call answer produces no visible
+    // text (native `tool_calls` live in a separate field, and the degraded path buffers
+    // server-side), so tool-call JSON can never reach the UI as a `text_delta`.
+    let fullText = '';
+    let nativeToolCalls: NativeToolCall[] = [];
+    let streamedSoFar = '';
+    let suppressDeltas = false;
+
+    for await (const event of nvidiaClient.streamChatCompletion(messages, {
       temperature: 0.7,
       maxTokens: 2048,
-    });
-
-    messages.push({ role: 'assistant', content: response });
-
-    const toolCalls = parseToolCalls(response || '');
-
-    if (!response || toolCalls.length === 0) {
-      let finalResponse = (response || '').trim();
-      if (!finalResponse && toolResults.length > 0) {
-        const toolSummary = toolResults
-          .filter(t => t.result?.success && t.result?.data)
-          .map(t => {
-            const data = t.result.data;
-            if (Array.isArray(data)) {
-              if (data.length === 0) return `Khong tim thay ket qua tu ${t.name}.`;
-              return `Tu ${t.name}: ${data.length} ket qua.`;
-            }
-            return `Ket qua tu ${t.name}.`;
-          })
-          .join('\n');
-        finalResponse = toolSummary || 'Da truy van xong.';
+      tools: toOpenAITools(availableTools),
+    })) {
+      if (event.type === 'text_delta') {
+        streamedSoFar += event.content;
+        if (suppressDeltas) continue;
+        if (streamedSoFar.includes('{"tool"') || streamedSoFar.includes('functions.')) {
+          suppressDeltas = true;
+          continue;
+        }
+        yield { type: 'text_delta', data: { content: event.content } };
+      } else {
+        fullText = event.content;
+        nativeToolCalls = event.toolCalls;
       }
-      if (!finalResponse) {
-        finalResponse = 'Xin loi, toi da gap su co khi xu ly cau hoi cua ban. Vui long thu lai.';
-      }
-      finalResponse = formatScheduleJson(finalResponse);
+    }
+
+    if (fullText.trim()) messages.push({ role: 'assistant', content: fullText });
+
+    // Native calls bind arguments by declared schema order; regex-detected calls keep
+    // the legacy `Object.values()` contract.
+    const toolCalls: CompanionToolCall[] =
+      nativeToolCalls.length > 0
+        ? nativeToolCalls.map(tc => ({ name: tc.name, args: tc.args, native: true }))
+        : parseToolCalls(fullText || '').map(tc => ({ name: tc.name, args: tc.args, native: false }));
+
+    // A native tool call may legitimately arrive with EMPTY content — so the branch on
+    // tool calls only, never on whether text was produced.
+    if (toolCalls.length === 0) {
+      const finalResponse = formatScheduleJson(
+        (fullText || '').trim() ||
+          summariseToolResults(toolResults) ||
+          'Xin loi, toi da gap su co khi xu ly cau hoi cua ban. Vui long thu lai.',
+      );
 
       const ttsResult = await ttsClient.synthesizeSpeech(finalResponse);
 
-      yield { type: 'text', data: { content: finalResponse } };
+      // `final: true` marks this chunk as the authoritative full answer so clients can
+      // replace whatever they streamed token-by-token instead of appending to it.
+      yield { type: 'text', data: { content: finalResponse, final: true } };
       yield { type: 'audio', data: { audioBase64: ttsResult.audioBase64, durationMs: ttsResult.durationMs } };
       yield { type: 'viseme', data: { visemes: ttsResult.visemes } };
 
-      if (finalResponse.includes(':::book_card')) {
-        const bookCardMatch = finalResponse.match(/:::book_card\s*(\{.*?\})/s);
-        if (bookCardMatch) {
-          try {
-            const bookCard = JSON.parse(bookCardMatch[1]);
-            yield { type: 'book_card', data: bookCard };
-          } catch (error) {
-            console.warn('[Agent] book_card JSON parse failed:', (error as Error).message);
-          }
-        }
+      const bookCard = parseBookCard(finalResponse);
+      if (bookCard) {
+        yield { type: 'book_card', data: bookCard };
       }
 
       memoryService.consolidateNewMemories(input.patronId, [
@@ -500,10 +550,14 @@ export async function* processCompanionMessage(
 
         let result: any;
         if (tool.injectUserId) {
+          // Server-side identity always wins — never trust a model-supplied id.
           result = await fn(input.patronId);
+        } else if (call.native) {
+          // Native function call: bind by declared schema order and validate required args.
+          result = await fn(...bindToolArgs(tool, call.args));
         } else {
-          const argValues = Object.values(call.args);
-          result = await fn(...argValues);
+          // Legacy regex-detected tool JSON.
+          result = await fn(...Object.values(call.args));
         }
 
         toolResults.push({ name: call.name, result });
@@ -521,7 +575,10 @@ export async function* processCompanionMessage(
         });
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-        toolResults.push({ name: call.name, result: { error: errorMsg } });
+        const errorResult = { error: errorMsg };
+        toolResults.push({ name: call.name, result: errorResult });
+        // Surface a structured error to the client instead of failing the whole turn.
+        yield { type: 'tool_result', data: { name: call.name, result: errorResult } };
         messages.push({
           role: 'user',
           content: `[He thong] Loi khi goi tool "${call.name}": ${errorMsg}`,
@@ -530,7 +587,7 @@ export async function* processCompanionMessage(
     }
   }
 
-  yield { type: 'text', data: { content: 'Da dat den gioi han so buoc xu ly. Vui long thu lai voi cau hoi ngan hon.' } };
+  yield { type: 'text', data: { content: 'Da dat den gioi han so buoc xu ly. Vui long thu lai voi cau hoi ngan hon.', final: true } };
   yield { type: 'companion_done', data: { sessionId: input.sessionId } };
 }
 

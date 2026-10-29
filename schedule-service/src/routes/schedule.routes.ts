@@ -874,6 +874,31 @@ router.post('/assignments/:id/confirm', auth, asyncHandler(async (req, res) => {
 }));
 /**
  * @swagger
+ * /schedules/assignments/{id}/geofence:
+ *   get:
+ *     summary: Geofence của khu vực được phân công (dùng để vẽ bản đồ check-in)
+ *     tags: [Schedule]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: >-
+ *           { zoneId, configured, latitude, longitude, radiusMeters, toleranceMeters }.
+ *           `configured = false` khi khu vực chưa có geofence (check-in vẫn được nhưng không xác thực vị trí).
+ */
+router.get('/assignments/:id/geofence', auth, asyncHandler(async (req, res) => {
+  const { id } = idParam.parse(req.params);
+  res.json(await scheduleService.getAssignmentGeofence(req.user!.userId, id));
+}));
+/**
+ * @swagger
  * /schedules/assignments/{id}/check-in:
  *   post:
  *     summary: Check in to an assignment
@@ -899,20 +924,21 @@ router.post('/assignments/:id/confirm', auth, asyncHandler(async (req, res) => {
  *                 type: number
  *               lng:
  *                 type: number
- *               wifiSsid:
- *                 type: string
  *     responses:
  *       200:
  *         description: Checked in
+ *       400:
+ *         description: >-
+ *           Vị trí thiết bị không hợp lệ: thiếu toạ độ GPS hoặc nằm ngoài geofence
+ *           (tâm + bán kính) của khu vực được phân công.
  */
 router.post('/assignments/:id/check-in', auth, asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
-  const { lat, lng, wifiSsid } = latLngSchema.extend({ wifiSsid: z.string().optional() }).parse({
+  const { lat, lng } = latLngSchema.parse({
     lat: req.body?.lat,
     lng: req.body?.lng,
-    wifiSsid: req.body?.wifiSsid,
   });
-  res.json(await scheduleService.checkIn(req.user!.userId, id, req.body?.method || 'web', lat, lng, wifiSsid));
+  res.json(await scheduleService.checkIn(req.user!.userId, id, req.body?.method || 'web', lat, lng));
 }));
 /**
  * @swagger

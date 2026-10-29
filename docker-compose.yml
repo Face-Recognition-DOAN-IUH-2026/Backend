@@ -440,7 +440,9 @@ services:
       dockerfile: api-gateway/Dockerfile
     container_name: api-gateway
     ports:
-      - "80:80"
+      # Dev (mặc định): publish 0.0.0.0:80 như cũ.
+      # Prod: set GATEWAY_HOST_IP=127.0.0.1 và GATEWAY_PORT=8080 để chỉ Caddy public ra ngoài (xem docker-compose.prod.yml).
+      - "${GATEWAY_HOST_IP:-0.0.0.0}:${GATEWAY_PORT:-80}:80"
     env_file:
       - ./.env
     environment:

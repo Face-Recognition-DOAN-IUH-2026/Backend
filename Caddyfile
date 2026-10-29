@@ -1,0 +1,14 @@
+# Caddy — mặc định: chỉ expose API (FE deploy trên Vercel)
+# Biến số lấy từ environment của container caddy (xem docker-compose.prod.yml).
+# `flush_interval -1` = không buffer → SSE (EventSource /api/access/events) chạy real-time.
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+	encode gzip
+
+	reverse_proxy gateway:80 {
+		flush_interval -1
+	}
+}
