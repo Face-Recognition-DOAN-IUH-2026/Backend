@@ -52,7 +52,9 @@ async function start() {
         socket.destroy();
         return;
       }
-      const token = url.searchParams.get('token') || request.headers.authorization?.replace(/^Bearer\s+/i, '');
+      const authHeader = request.headers.authorization?.replace(/^Bearer\s+/i, '');
+      const cookieToken = request.headers.cookie?.match(/(?:^|;\s*)access_token=([^;]+)/)?.[1];
+      const token = authHeader || cookieToken || url.searchParams.get('token');
       if (!token) {
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();

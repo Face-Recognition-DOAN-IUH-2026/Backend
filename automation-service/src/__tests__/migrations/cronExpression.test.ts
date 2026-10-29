@@ -1,4 +1,4 @@
-import { CreateAutomationTables1719400000000 } from '../../migrations/1719400000000-CreateAutomationTables';
+import { CreateAutomationTables1719400000000 } from '../../../migrations/1719400000000-CreateAutomationTables';
 
 describe('CreateAutomationTables migration', () => {
   describe('Gap 11: Overdue Cron Daily', () => {

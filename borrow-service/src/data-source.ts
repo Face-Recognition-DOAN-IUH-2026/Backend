@@ -9,6 +9,7 @@ import { BorrowSlip } from './entities/BorrowSlip';
 import { Waitlist } from './entities/Waitlist';
 import { SystemConfig } from './entities/SystemConfig';
 import { PaymentOrder } from './entities/PaymentOrder';
+import { VietqrCallback } from './entities/VietqrCallback';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -26,6 +27,7 @@ export const AppDataSource = new DataSource({
     Waitlist,
     SystemConfig,
     PaymentOrder,
+    VietqrCallback,
   ],
   synchronize: process.env.NODE_ENV === 'development',
   logging: process.env.TYPEORM_LOGGING === 'true',

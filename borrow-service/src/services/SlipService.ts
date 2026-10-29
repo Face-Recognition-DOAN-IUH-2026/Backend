@@ -1,6 +1,6 @@
 import { In } from 'typeorm';
 import { BorrowRepository } from '../repositories/BorrowRepository';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared/error-handler';
 import { serializeBookWithStats, serializeBorrowRecord, serializeBorrowSlip, serializeCopy } from './serializers';
 import { publishEvent } from '../utils/eventPublisher';
 import { getPatronAccessStatus, getPatronRawAccessStatus } from '../clients/AccessServiceClient';
@@ -11,24 +11,8 @@ import { configService } from './ConfigService';
 import { assessCopyBorrowability, markCopyAsBorrowed } from '../constants/copy';
 import { findCopyByBarcode, nearestCopyBarcodes, sanitizeBarcode } from '../utils/barcode';
 import { convertIsbnFormat } from '../utils/isbn';
-
-function patronSummary(patron: any) {
-  const id = patron.id;
-  const studentCode = patron.student_code || patron.studentCode;
-  if (!id || !studentCode) throw new HttpError(502, 'Dữ liệu độc giả không hợp lệ');
-  if (!/^[0-9a-f]{32}$/i.test(id.replace(/-/g, ''))) {
-    throw new HttpError(502, 'ID độc giả không hợp lệ');
-  }
-  return {
-    id,
-    full_name: patron.full_name || patron.fullName || null,
-    student_code: studentCode,
-    email: patron.email || null,
-    card_number: patron.card_number || patron.cardNumber || null,
-    current_status: patron.current_status || patron.currentStatus || null,
-  };
-}
-
+import { patronSummary } from '../utils/patron';
+
 // Label printers may pad the copy sequence differently than the DB (e.g. LIB-<isbn>-0001 vs LIB-<isbn>-001).
 // findCopyByBarcode (utils/barcode) retries with the canonical 3-digit sequence.
 

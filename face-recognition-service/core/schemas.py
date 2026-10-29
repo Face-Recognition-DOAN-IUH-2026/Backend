@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class LoginRequest(BaseModel):
@@ -124,22 +124,34 @@ class PatronPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    full_name: str
-    student_code: str
+    full_name: str = ""
+    student_code: str = ""
     class_name: Optional[str] = None
     identity_number: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
-    card_number: str
+    card_number: str = ""
     issue_date: Optional[date] = None
-    membership_expiry: date
-    status: str
+    membership_expiry: Optional[date] = None
+    status: str = "active"
     current_status: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     has_face: bool = False
     course: Optional[str] = None
     permanent_address: Optional[str] = None
+
+    @field_validator("full_name", "student_code", "card_number", mode="before")
+    @classmethod
+    def coerce_none_to_str(cls, v: object) -> str:
+        return "" if v is None else str(v)
+
+    @field_validator("membership_expiry", mode="before")
+    @classmethod
+    def coerce_expiry(cls, v: object) -> object:
+        if not v:
+            return "2099-12-31"
+        return v
 
 
 class PatronLookupResult(BaseModel):

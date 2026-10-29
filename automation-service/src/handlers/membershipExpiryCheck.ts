@@ -30,7 +30,8 @@ export async function membershipExpiryCheck(taskConfig: Record<string, any>): Pr
     await notificationClient.createBulkNotifications(notifications);
 
     return { checked: users.length, notified: notifications.length };
-  } catch {
-    return { checked: 0, notified: 0, message: 'Error checking membership expiry' };
+  } catch (error) {
+    console.error('[membershipExpiryCheck] Failed to fetch expiring memberships:', error);
+    throw error;
   }
 }

@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { Router } from 'express';
 import { z } from 'zod';
-import { createInternalAuth } from '../../shared/auth';
+import { createInternalAuth } from '../../../shared/auth';
 import { config } from '../config';
 import { FaceResultEventSchema } from '../contracts';
 import { storeFrame, getFrame, deleteFrame, getRedisClient } from '../redis';

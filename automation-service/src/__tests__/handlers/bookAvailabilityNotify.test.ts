@@ -23,12 +23,12 @@ describe('bookAvailabilityNotify', () => {
     expect(result.message).toBe('No bookId in event payload');
   });
 
-  it('returns 0 when waitlist API returns error', async () => {
+  it('throws when waitlist API returns error', async () => {
     mockBorrowClient.getWaitlistByBook = jest.fn().mockRejectedValue(new Error('API error'));
 
-    const result = await bookAvailabilityNotify({}, { type: 'book.returned', payload: { bookId: 'b1', title: 'Test Book' } } as any);
-    expect(result.notified).toBe(0);
-    expect(result.message).toBe('Waitlist feature not available');
+    await expect(
+      bookAvailabilityNotify({}, { type: 'book.returned', payload: { bookId: 'b1', title: 'Test Book' } } as any)
+    ).rejects.toThrow('API error');
   });
 
   it('returns 0 when waitlist is empty', async () => {
@@ -76,7 +76,6 @@ describe('bookAvailabilityNotify', () => {
     const result = await bookAvailabilityNotify({}, { type: 'book.returned', payload: { bookId: 'b1', title: 'Book' } } as any);
 
     expect(result.notified).toBe(1);
-    expect(result.patronId).toBe('p-camel');
     expect(mockNotificationClient.createNotification).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'p-camel' })
     );

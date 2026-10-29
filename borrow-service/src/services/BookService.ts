@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { BorrowRepository } from '../repositories/BorrowRepository';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared/error-handler';
 import { serializeBookWithStats, serializeCopy } from './serializers';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 

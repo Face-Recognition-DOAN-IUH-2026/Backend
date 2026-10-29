@@ -17,6 +17,7 @@ import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '.
 import { UserServiceClient } from '../clients/UserServiceClient';
 import { publishEvent } from '../utils/eventPublisher';
 import { haversineDistanceMeters } from '../utils/geofence';
+import { toUtcDateStr } from '../../../shared/utils/date';
 
 function localDate(value: Date) {
   const year = value.getFullYear();
@@ -213,6 +214,10 @@ export class ScheduleService {
     return this.preferences.find({ where: { staffId, isActive: true }, order: { priority: 'ASC' } });
   }
 
+  async getPreferenceById(id: string) {
+    return this.preferences.findOneBy({ id });
+  }
+
   async generateFromTemplate(actorId: string, from: string, to: string) {
     const templates = await this.templates.findBy({ isActive: true });
     const created: StaffSchedule[] = [];
@@ -401,7 +406,7 @@ export class ScheduleService {
   }
 
   async deleteWeekAssignments(actorId: string, from: string, to: string, notify: boolean) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = toUtcDateStr();
 
     // Only cancel future/today assignments (not past)
     const effectiveFrom = from < today ? today : from;

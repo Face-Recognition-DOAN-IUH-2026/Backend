@@ -1,7 +1,8 @@
 import { accessClient, borrowClient, scheduleClient, notificationClient, userClient } from '../clients/serviceClients';
+import { toUtcDateStr } from '../../../shared/utils/date';
 
 export async function dailyStatsReport(config: Record<string, any>): Promise<any> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = toUtcDateStr();
 
   // Collect data in parallel
   const [accessStats, activePatrons, activeBorrowers, scheduleAssignments, books] = await Promise.allSettled([

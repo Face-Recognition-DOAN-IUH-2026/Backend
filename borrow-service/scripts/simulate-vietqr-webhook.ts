@@ -39,7 +39,7 @@ async function main() {
       orderCode,
       amount,
       description: orderCode,
-      accountNumber: '1133669988',
+      accountNumber: '0395324779',
       reference: `SANDBOX-FT-${Date.now()}`,
       transactionDateTime: new Date().toISOString(),
       currency: 'VND',

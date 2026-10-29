@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z, ZodError } from 'zod';
 import { accessService } from '../services/AccessService';
-import { createAuth, requireRole } from '../../shared/auth';
+import { createAuth, requireRole } from '../../../shared/auth';
 import { config } from '../config';
 
 const auth = createAuth({
@@ -10,6 +10,26 @@ const auth = createAuth({
   jwtIssuer: config.jwtIssuer,
 });
 import { realtimeHub } from '../realtime/RealtimeHub';
+import type { AuthRequest } from '../../../shared/auth/types';
+import type { Response, NextFunction } from 'express';
+
+if (process.env.NODE_ENV === 'production' && !process.env.INTERNAL_API_KEY) {
+  throw new Error('INTERNAL_API_KEY must be set in production');
+}
+
+const staffRoleCheck = requireRole(['admin', 'staff']);
+
+// Device/service-facing guard: X-Internal-Key OR admin/staff JWT (cookie or header).
+function requireInternalKeyOrStaff(req: AuthRequest, res: Response, next: NextFunction) {
+  const expected = process.env.INTERNAL_API_KEY;
+  const provided = req.headers['x-internal-key'];
+  if (expected && typeof provided === 'string' && provided === expected) {
+    return next();
+  }
+  auth(req, res, () => {
+    staffRoleCheck(req, res, next);
+  });
+}
 
 const router = Router();
 
@@ -23,7 +43,7 @@ const router = Router();
  *       200:
  *         description: Event stream (text/event-stream)
  */
-router.get('/events', (_req, res) => {
+router.get('/events', requireInternalKeyOrStaff, (_req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -47,7 +67,7 @@ router.get('/events', (_req, res) => {
  *       200:
  *         description: List of recent access events
  */
-router.get('/recent', async (req, res, next) => {
+router.get('/recent', requireInternalKeyOrStaff, async (req, res, next) => {
   try {
     res.json(await accessService.getRecent(Number(req.query.limit || 20)));
   } catch (error) {
@@ -318,20 +338,7 @@ router.post('/kiosk/presence', auth, requireRole(['admin', 'staff']), async (req
       return;
     }
     console.error('[kiosk/presence] Error:', error);
-    const message = error instanceof Error ? error.message : 'Lỗi ghi nhận hiện diện';
-    const raw = (req.body || {}) as Record<string, string>;
-    res.status(200).json({
-      patron_id: raw.patron_id || '',
-      current_status: 'unknown',
-      currentStatus: 'unknown',
-      last_entry_at: null,
-      lastEntryAt: null,
-      last_entry_camera: null,
-      lastEntryCamera: null,
-      message: `Không thể ghi nhận hiện diện: ${message}`,
-      skipped: true,
-      error: true,
-    });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -542,7 +549,7 @@ router.post('/force-exit', auth, requireRole(['admin', 'staff']), async (req, re
   }
 });
 
-router.post('/patrons/:id/confirm-entry', async (req, res, next) => {
+router.post('/patrons/:id/confirm-entry', requireInternalKeyOrStaff, async (req, res, next) => {
   try {
     const result = await accessService.confirmEntry(req.params.id);
     res.json(result);
@@ -551,7 +558,7 @@ router.post('/patrons/:id/confirm-entry', async (req, res, next) => {
   }
 });
 
-router.post('/patrons/:id/revert-pending', async (req, res, next) => {
+router.post('/patrons/:id/revert-pending', requireInternalKeyOrStaff, async (req, res, next) => {
   try {
     const result = await accessService.revertPending(req.params.id);
     res.json(result);

@@ -21,6 +21,7 @@ import { realtimeHub } from '../realtime/RealtimeHub';
 import { getAccessCounters, incrementAccessCounter } from '../redis';
 import { HttpError } from '../../../shared/error-handler';
 import { config } from '../config';
+import { toUtcDateStr } from '../../../shared/utils/date';
 
 const logRepo = () => AppDataSource.getRepository(AccessLog);
 const stateRepo = () => AppDataSource.getRepository(PatronAccessState);
@@ -643,7 +644,7 @@ export class AccessService {
   async getHourlyStats(dateStr?: string): Promise<Array<{ hour: number; entries: number; exits: number; total: number }>> {
     let targetDate = dateStr?.trim();
     if (!targetDate) {
-      targetDate = new Date().toISOString().split('T')[0];
+      targetDate = toUtcDateStr();
     }
 
     const startOfDay = new Date(`${targetDate}T00:00:00.000Z`);
@@ -696,11 +697,11 @@ export class AccessService {
   }>> {
     const clampedDays = Math.min(Math.max(Number(days) || 30, 1), 90);
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = toUtcDateStr(now);
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - (clampedDays - 1));
-    const startDateStr = startDate.toISOString().split('T')[0];
+    const startDateStr = toUtcDateStr(startDate);
 
     // Fetch rolled-up records for past days
     let pastEntities: AccessRecognitionDaily[] = [];
@@ -713,7 +714,7 @@ export class AccessService {
     const rolledMap = new Map<string, { granted: number; spoof: number; no_match: number; other: number; confSum: number; confCount: number }>();
     for (const row of pastEntities) {
       const rawDate = row.statDate as unknown;
-      const dStr = rawDate instanceof Date ? rawDate.toISOString().split('T')[0] : String(rawDate || '').slice(0, 10);
+      const dStr = rawDate instanceof Date ? toUtcDateStr(rawDate) : String(rawDate || '').slice(0, 10);
       if (dStr >= todayStr) continue;
 
       const existing = rolledMap.get(dStr) || { granted: 0, spoof: 0, no_match: 0, other: 0, confSum: 0, confCount: 0 };
@@ -779,7 +780,7 @@ export class AccessService {
     for (let i = clampedDays - 1; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      const dKey = d.toISOString().split('T')[0];
+      const dKey = toUtcDateStr(d);
 
       let itemData: {
         granted: number;

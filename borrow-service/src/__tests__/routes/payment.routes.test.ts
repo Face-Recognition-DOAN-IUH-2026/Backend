@@ -1,7 +1,7 @@
 import express, { Express } from 'express';
 import request from 'supertest';
 import { createPaymentRouter } from '../../routes/payment.routes';
-import { errorHandler } from '../../middlewares/errorHandler';
+import { errorHandler } from '../../../../shared/error-handler';
 
 jest.mock('../../middlewares/auth', () => ({
   auth: (req: any, res: any, next: any) => {
@@ -13,6 +13,7 @@ jest.mock('../../middlewares/auth', () => ({
     req.user = { id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', email: 'patron@test.com', role: 'patron' };
     next();
   },
+  requireDynamicPermission: (_resource: string, _action: string) => (req: any, res: any, next: any) => next(),
 }));
 
 describe('Payment Routes (/borrow/payments)', () => {

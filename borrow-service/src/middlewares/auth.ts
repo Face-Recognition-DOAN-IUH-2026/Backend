@@ -1,8 +1,8 @@
-import { createAuth, requireDynamicPermission } from '../../shared/auth';
+import { createAuth, requireDynamicPermission, requireRole } from '../../shared/auth';
 import type { AuthRequest } from '../../shared/auth/types';
 import { config } from '../config';
 
-export { AuthRequest, requireDynamicPermission };
+export { AuthRequest, requireDynamicPermission, requireRole };
 
 export const auth = createAuth({
   jwtSecret: config.jwtSecret,
@@ -12,13 +12,3 @@ export const auth = createAuth({
   noTokenMessage: 'Invalid or expired token',
   invalidTokenMessage: 'Invalid or expired token',
 });
-
-export function requireRole(roles: string[], detail: string) {
-  return (req: AuthRequest, res: any, next: any) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-      res.status(403).json({ detail });
-      return;
-    }
-    next();
-  };
-}

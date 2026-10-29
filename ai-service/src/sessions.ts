@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -25,7 +25,7 @@ class SessionStore {
 
   create(patronId?: string): ChatSession {
     const session: ChatSession = {
-      id: uuidv4(),
+      id: randomUUID(),
       messages: [],
       patronId,
     };
@@ -44,22 +44,6 @@ class SessionStore {
     return session;
   }
 
-  findByPatronId(patronId: string): ChatSession | undefined {
-    for (const session of this.sessions.values()) {
-      if (session.patronId === patronId) return session;
-    }
-    return undefined;
-  }
-
-  update(id: string, updates: Partial<ChatSession>): ChatSession | undefined {
-    const session = this.sessions.get(id);
-    if (!session) return undefined;
-
-    const updated = { ...session, ...updates };
-    this.sessions.set(id, updated);
-    return updated;
-  }
-
   addMessage(id: string, message: ChatMessage): ChatSession | undefined {
     const session = this.sessions.get(id);
     if (!session) return undefined;
@@ -74,11 +58,6 @@ class SessionStore {
 
     session.pendingConfirmation = confirmation;
     return session;
-  }
-
-  hasPendingConfirmation(id: string): boolean {
-    const session = this.sessions.get(id);
-    return !!session?.pendingConfirmation;
   }
 
   delete(id: string): boolean {

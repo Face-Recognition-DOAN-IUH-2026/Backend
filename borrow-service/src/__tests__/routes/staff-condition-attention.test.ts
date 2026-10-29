@@ -12,7 +12,7 @@ jest.mock('../../middlewares/auth', () => ({
     const role = req.headers['x-test-role'] || 'staff';
     req.user = req.user || { id: STAFF_UUID, email: `${role}@test.com`, role };
     if (!roles.includes(req.user.role)) {
-      res.status(403).json({ detail });
+      res.status(403).json({ error: 'Forbidden' });
       return;
     }
     next();

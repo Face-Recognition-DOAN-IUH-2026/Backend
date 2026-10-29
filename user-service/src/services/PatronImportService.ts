@@ -4,6 +4,7 @@ import { In, Repository } from 'typeorm';
 import { User, UserRole } from '../entities/User.entity';
 import { PatronRepository } from '../repositories/PatronRepository';
 import { BadRequestError } from '../errors';
+import { toUtcDateStr } from '../../../shared/utils/date';
 
 export interface ParsedPatronRow {
   row: number;
@@ -230,7 +231,7 @@ export class PatronImportService {
       if (!colIdx) return '';
       const cell = row.getCell(colIdx);
       if (cell.value instanceof Date) {
-        return cell.value.toISOString().split('T')[0];
+        return toUtcDateStr(cell.value);
       }
       return normalizeString(cell.text || cell.value);
     };
@@ -493,7 +494,7 @@ export class PatronImportService {
     const errors: ImportErrorItem[] = [];
 
     const defaultPasswordHash = await bcrypt.hash('11111111', 10);
-    const today = new Date().toISOString().split('T')[0];
+    const today = toUtcDateStr();
 
     for (const r of rows) {
       if (r.errors.length > 0) {

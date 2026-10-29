@@ -1,4 +1,4 @@
-import { HttpError } from '../../middlewares/errorHandler';
+import { HttpError } from '../../../../shared/error-handler';
 import {
   CONDITION_CODES,
   CONDITION_LABELS,

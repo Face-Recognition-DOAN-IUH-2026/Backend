@@ -17,10 +17,7 @@ import { fineNotification } from '../handlers/fineNotification';
 import { shiftReminderNotify } from '../handlers/shiftReminderNotify';
 import { stalePatronCleanup } from '../handlers/stalePatronCleanup';
 import { staffScheduleAutoCheckout } from '../handlers/staffScheduleAutoCheckout';
-import { expireWaitlistNotifications } from '../handlers/expireWaitlistNotifications';
 import { cleanupExpiredPending } from '../handlers/cleanupExpiredPending';
-import { staffScheduleExpireStaleBids } from '../handlers/staffScheduleExpireStaleBids';
-import { staffScheduleExpireStaleSwaps } from '../handlers/staffScheduleExpireStaleSwaps';
 import { recognitionStatsRollup } from '../handlers/recognitionStatsRollup';
 
 const taskRepo = () => AppDataSource.getRepository(AutomationTask);
@@ -41,10 +38,7 @@ const handlers: Record<string, HandlerFn> = {
   shift_reminder_notify: shiftReminderNotify,
   stale_patron_cleanup: stalePatronCleanup,
   staff_schedule_auto_checkout: staffScheduleAutoCheckout,
-  waitlist_expiry_check: expireWaitlistNotifications,
   cleanup_expired_pending: cleanupExpiredPending,
-  staff_schedule_expire_stale_bids: staffScheduleExpireStaleBids,
-  staff_schedule_expire_stale_swaps: staffScheduleExpireStaleSwaps,
   recognition_stats_rollup: recognitionStatsRollup,
 };
 

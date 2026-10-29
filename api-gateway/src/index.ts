@@ -670,43 +670,6 @@ if (config.nodeEnv !== 'production') {
   });
 }
 
-// Frontend - proxy all other requests to Next.js dev server
-app.all('/*', (req, res) => {
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ error: 'Not found', message: `API route ${req.path} not configured in gateway` });
-  }
-
-  const targetUrl = new URL(req.originalUrl, config.frontendUrl);
-  const options: http.RequestOptions = {
-    hostname: targetUrl.hostname,
-    port: parseInt(targetUrl.port) || 80,
-    path: targetUrl.pathname + targetUrl.search,
-    method: req.method,
-    headers: {} as any,
-  };
-
-  const skipHeaders = ['host', 'connection'];
-  for (const [key, value] of Object.entries(req.headers)) {
-    if (!skipHeaders.includes(key.toLowerCase())) {
-      (options.headers as any)[key] = value;
-    }
-  }
-
-  const proxyReq = http.request({ ...options, timeout: 0 }, (proxyRes) => {
-    res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
-    proxyRes.pipe(res, { end: true });
-  });
-
-  proxyReq.on('error', (err) => {
-    console.error(`  Frontend proxy error: ${err.message}`);
-    if (!res.headersSent) {
-      res.status(502).json({ error: 'Bad gateway', message: err.message });
-    }
-  });
-
-  req.pipe(proxyReq, { end: true });
-});
-
 // ---- POST /errors/report — frontend/mobile error reporting endpoint ----
 /**
  * @swagger
@@ -804,7 +767,7 @@ app.post('/errors/report', errorReportLimiter, verifyToken, express.json({ limit
  *       404:
  *         description: Issue not found
  */
-app.get('/api/jira/issue/:key', async (req, res) => {
+app.get('/api/jira/issue/:key', verifyToken, async (req, res) => {
   try {
     const issue = await getJiraIssue(req.params.key);
     if (issue) {
@@ -845,7 +808,7 @@ app.get('/api/jira/issue/:key', async (req, res) => {
  *       400:
  *         description: Missing jql parameter
  */
-app.get('/api/jira/search', async (req, res) => {
+app.get('/api/jira/search', verifyToken, async (req, res) => {
   try {
     const { jql, maxResults } = req.query;
     if (!jql) {
@@ -879,7 +842,7 @@ app.get('/api/jira/search', async (req, res) => {
  *       200:
  *         description: List of available transitions
  */
-app.get('/api/jira/issue/:key/transitions', async (req, res) => {
+app.get('/api/jira/issue/:key/transitions', verifyToken, async (req, res) => {
   try {
     const transitions = await getIssueTransitions(req.params.key);
     res.json({ transitions });
@@ -921,7 +884,7 @@ app.get('/api/jira/issue/:key/transitions', async (req, res) => {
  *       400:
  *         description: Missing transitionId
  */
-app.post('/api/jira/issue/:key/transition', express.json(), async (req, res) => {
+app.post('/api/jira/issue/:key/transition', verifyToken, express.json(), async (req, res) => {
   try {
     const { transitionId } = req.body;
     if (!transitionId) {
@@ -972,7 +935,7 @@ app.post('/api/jira/issue/:key/transition', express.json(), async (req, res) => 
  *       400:
  *         description: Missing body
  */
-app.post('/api/jira/issue/:key/comment', express.json(), async (req, res) => {
+app.post('/api/jira/issue/:key/comment', verifyToken, express.json(), async (req, res) => {
   try {
     const { body } = req.body;
     if (!body) {
@@ -989,6 +952,63 @@ app.post('/api/jira/issue/:key/comment', express.json(), async (req, res) => {
     console.error('[API-Gateway] Jira comment failed:', err.message);
     res.status(500).json({ error: 'Failed to add comment' });
   }
+});
+
+// Resolve the frontend proxy target. Refuses anything that would leave the
+// configured frontend origin: protocol-relative (`//host/x`) and
+// backslash-normalized paths resolve off-origin under `new URL`.
+function resolveFrontendTarget(originalUrl: string, frontendUrl: string): URL | null {
+  if (!originalUrl || !originalUrl.startsWith('/') || originalUrl.startsWith('//')) return null;
+  try {
+    const base = new URL(frontendUrl);
+    const target = new URL(originalUrl, base);
+    return target.origin === base.origin ? target : null;
+  } catch {
+    return null;
+  }
+}
+
+// Frontend - proxy all other requests to Next.js dev server.
+// Registered AFTER all explicit routes (/errors/report, /api/jira/*) so the
+// catch-all cannot shadow them.
+app.all('/*', (req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Not found', message: `API route ${req.path} not configured in gateway` });
+  }
+
+  const targetUrl = resolveFrontendTarget(req.originalUrl, config.frontendUrl);
+  if (!targetUrl) {
+    return res.status(400).json({ error: 'Invalid target path' });
+  }
+
+  const options: http.RequestOptions = {
+    hostname: targetUrl.hostname,
+    port: parseInt(targetUrl.port) || 80,
+    path: targetUrl.pathname + targetUrl.search,
+    method: req.method,
+    headers: {} as any,
+  };
+
+  const skipHeaders = ['host', 'connection'];
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (!skipHeaders.includes(key.toLowerCase())) {
+      (options.headers as any)[key] = value;
+    }
+  }
+
+  const proxyReq = http.request({ ...options, timeout: 0 }, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+    proxyRes.pipe(res, { end: true });
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error(`  Frontend proxy error: ${err.message}`);
+    if (!res.headersSent) {
+      res.status(502).json({ error: 'Bad gateway', message: err.message });
+    }
+  });
+
+  req.pipe(proxyReq, { end: true });
 });
 
 // ---- 404 handler ----

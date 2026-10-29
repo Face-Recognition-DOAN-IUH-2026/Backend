@@ -1,11 +1,13 @@
 import { scheduleClient, notificationClient, userClient } from '../clients/serviceClients';
+import { toUtcDateStr } from '../../../shared/utils/date';
 
 export async function checkStaffAbsence(config: Record<string, any>): Promise<any> {
   let assignments;
   try {
     assignments = await scheduleClient.getTodayAssignments();
-  } catch {
-    return { checked: 0, alerted: 0, message: 'Failed to fetch schedule' };
+  } catch (error) {
+    console.error('[checkStaffAbsence] Failed to fetch schedule:', error);
+    throw error;
   }
 
   const assignmentList = Array.isArray(assignments) ? assignments : (assignments as any)?.items || [];
@@ -62,7 +64,7 @@ export async function checkStaffAbsence(config: Record<string, any>): Promise<an
       type: 'anomaly_alert',
       title: `Cảnh báo: ${absentStaff.length} nhân viên vắng mặt`,
       body: `Nhân viên không check-in sau 15 phút:\n${absentList}`,
-      data: { absentStaff, date: new Date().toISOString().split('T')[0] },
+      data: { absentStaff, date: toUtcDateStr() },
     }));
 
     await notificationClient.createBulkNotifications(notifications);

@@ -1,11 +1,12 @@
 import { config } from '../config';
 import { getServiceToken } from '../../../shared/auth';
 import { LibraryOperationsSnapshot } from './types';
+import { toUtcDateStr } from '../../../shared/utils/date';
 
 type FetchResult = { ok: true; data: any } | { ok: false; error: string };
 
 function todayStr() {
-  return new Date().toISOString().split('T')[0];
+  return toUtcDateStr();
 }
 
 function internalHeaders() {

@@ -74,12 +74,9 @@ describe('membershipExpiryCheck', () => {
     expect(result.notified).toBe(1);
   });
 
-  it('should return error when fetch fails', async () => {
+  it('should throw when fetch fails', async () => {
     mockUserClient.getExpiringMemberships = jest.fn().mockRejectedValue(new Error('Failed to fetch expiring memberships'));
 
-    const result = await membershipExpiryCheck({ days_before: 7 });
-
-    expect(result.checked).toBe(0);
-    expect(result.message).toContain('Error checking membership expiry');
+    await expect(membershipExpiryCheck({ days_before: 7 })).rejects.toThrow('Failed to fetch expiring memberships');
   });
 });

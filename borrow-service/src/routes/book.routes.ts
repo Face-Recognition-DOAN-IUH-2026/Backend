@@ -3,7 +3,7 @@ import multer from 'multer';
 import ExcelJS from 'exceljs';
 import { z } from 'zod';
 import { auth, AuthRequest, requireRole, requireDynamicPermission } from '../middlewares/auth';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared/error-handler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { serializeBook, serializeBookWithStats, serializeCopy } from '../services/serializers';

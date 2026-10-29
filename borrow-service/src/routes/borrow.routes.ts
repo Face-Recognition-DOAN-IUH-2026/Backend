@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { AppDataSource } from '../data-source';
 import { auth, AuthRequest, requireRole, requireDynamicPermission } from '../middlewares/auth';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared/error-handler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { isPatronInside, getPatronAccessStatus } from '../clients/AccessServiceClient';
 import { lookupPatronById, lookupPatronsByIds, PatronSummary } from '../clients/UserServiceClient';
@@ -17,6 +17,7 @@ import { BookCopy } from '../entities/BookCopy';
 import { BorrowRecord } from '../entities/BorrowRecord';
 import { configService } from '../services/ConfigService';
 import { assessCopyBorrowability, markCopyAsBorrowed } from '../constants/copy';
+import { patronIdFrom, patronSummary } from '../utils/patron';
 
 const router = Router();
 
@@ -44,12 +45,7 @@ router.get('/config', async (_req, res, next) => {
 });
 
 router.use(auth);
-
-function patronIdFrom(user: AuthRequest['user']) {
-  if (!user?.id) throw new HttpError(401, 'Invalid or expired token');
-  return user.id;
-}
-
+
 // GET /fines — unpaid fine ledger (staff/admin)
 router.get('/fines', requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
   try {
@@ -125,25 +121,8 @@ router.post('/fines/pay', requireDynamicPermission('borrows', 'update'), async (
     next(error);
   }
 });
-
-function patronSummary(patron: PatronSummary) {
-  const id = patron.id;
-  const studentCode = patron.student_code || patron.studentCode;
-  if (!id || !studentCode) throw new HttpError(502, 'Dữ liệu độc giả không hợp lệ');
-  if (!/^[0-9a-f]{32}$/i.test(id.replace(/-/g, ''))) {
-    throw new HttpError(502, 'ID độc giả không hợp lệ');
-  }
-  return {
-    id,
-    full_name: patron.full_name || patron.fullName || null,
-    student_code: studentCode,
-    email: patron.email || null,
-    card_number: patron.card_number || patron.cardNumber || null,
-    current_status: patron.current_status || patron.currentStatus || null,
-  };
-}
-
-const patronStatusMiddleware = requireRole(['patron', 'admin', 'staff'], 'Chi xem trang thai trong thu vien');
+
+const patronStatusMiddleware = requireRole(['patron', 'admin', 'staff']);
 
 // GET /patron/inside-status — Get patron inside library status
 router.get('/patron/inside-status', patronStatusMiddleware, async (req: AuthRequest, res, next) => {
@@ -168,7 +147,7 @@ router.get('/patron/inside-status', patronStatusMiddleware, async (req: AuthRequ
 });
 
 // POST / — Single borrow by barcode scan
-router.post('/', requireRole(['patron', 'admin', 'staff'], 'Chi nguoi dung hop le moi co the muon sach'), async (req: AuthRequest, res, next) => {
+router.post('/', requireRole(['patron', 'admin', 'staff']), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ barcode: z.string().min(1), isbn: z.string().optional() }).parse(req.body);
     const userId = patronIdFrom(req.user);

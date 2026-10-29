@@ -7,8 +7,7 @@ import { AppDataSource } from './data-source';
 import { authRoutes, userRoutes, patronRoutes, internalRoutes, permissionRoutes } from './routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
-import { errorHandler } from './middlewares/errorHandler';
-import { setupProcessErrorHandlers } from '../../shared/error-handler';
+import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 
 const app = express();
 

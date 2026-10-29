@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared/error-handler';
 import { getServiceToken } from '../../../shared/auth';
 import { CircuitBreaker } from '../../../shared/utils/circuitBreaker';
 

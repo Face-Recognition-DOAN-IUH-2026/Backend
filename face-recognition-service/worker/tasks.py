@@ -639,8 +639,12 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
                 r.close()
                 return {"status": "error", "error": f"Đăng nhập khuôn mặt tạm thời bị khóa ({ttl}s). Vui lòng dùng mật khẩu."}
             r.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("Face-login lockout check failed for %s: %s", user_id, exc)
+            return {
+                "status": "error",
+                "error": "Đăng nhập khuôn mặt tạm thời không khả dụng. Vui lòng dùng mật khẩu.",
+            }
 
         liveness = run_liveness_analysis(img)
         is_live = liveness.get("is_live", False)
@@ -1142,7 +1146,10 @@ def _upload_evidence_frame(raw_bytes: bytes, log_id: str, prefix: str = "") -> N
 
 
 def _check_redis_cooldown(patron_id: str, access_type: str) -> bool:
-    """Check Redis cooldown — returns True if still in cooldown (skip)."""
+    """Check Redis cooldown — returns True if still in cooldown (skip).
+
+    Fail-closed: Redis errors are logged and treated as cooldown (skip).
+    """
     try:
         from infra.redis_cache import redis_client
         key = f"cooldown:{access_type}:{patron_id}"
@@ -1150,8 +1157,14 @@ def _check_redis_cooldown(patron_id: str, access_type: str) -> bool:
             return True
         redis_client.setex(key, settings.access_cooldown_seconds, "1")
         return False
-    except Exception:
-        return False
+    except Exception as exc:
+        logger.error(
+            "Cooldown check failed (failing closed) for %s/%s: %s",
+            patron_id,
+            access_type,
+            exc,
+        )
+        return True
 
 
 def _scale_bbox_landmarks(

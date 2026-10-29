@@ -2,17 +2,13 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { auth, AuthRequest, requireRole } from '../middlewares/auth';
 import { WaitlistService } from '../services/WaitlistService';
+import { patronIdFrom } from '../utils/patron';
 
 const router = Router();
 router.use(auth);
 const waitlistService = new WaitlistService();
-
-function patronIdFrom(user: AuthRequest['user']) {
-  if (!user?.id) throw Object.assign(new Error('Invalid or expired token'), { statusCode: 401 });
-  return user.id;
-}
-
-router.post('/', requireRole(['patron', 'admin', 'staff'], 'Chỉ độc giả, admin, nhân viên mới vào danh sách chờ'), async (req: AuthRequest, res, next) => {
+
+router.post('/', requireRole(['patron', 'admin', 'staff']), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({ book_id: z.string().uuid() }).parse(req.body);
     const userId = patronIdFrom(req.user);
@@ -31,7 +27,7 @@ router.post('/', requireRole(['patron', 'admin', 'staff'], 'Chỉ độc giả, 
   }
 });
 
-router.delete('/:id', requireRole(['patron', 'admin', 'staff'], 'Chỉ độc giả, admin, nhân viên mới hủy danh sách chờ'), async (req: AuthRequest, res, next) => {
+router.delete('/:id', requireRole(['patron', 'admin', 'staff']), async (req: AuthRequest, res, next) => {
   try {
     const userId = patronIdFrom(req.user);
     await waitlistService.cancelWaitlist(req.params.id, userId);

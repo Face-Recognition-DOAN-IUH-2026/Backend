@@ -192,26 +192,6 @@ export const scheduleClient = {
       timeout,
     });
   },
-
-  async getStaleBids(warnHours: number, expireHours: number) {
-    return request(`${config.services.scheduleService}/schedules/internal/stale-bids?warn_hours=${warnHours}&expire_hours=${expireHours}`);
-  },
-
-  async expireBid(bidId: string) {
-    return request(`${config.services.scheduleService}/schedules/internal/bids/${bidId}/expire`, {
-      method: 'POST',
-    });
-  },
-
-  async getStaleSwaps(warnHours: number, expireHours: number) {
-    return request(`${config.services.scheduleService}/schedules/internal/stale-swaps?warn_hours=${warnHours}&expire_hours=${expireHours}`);
-  },
-
-  async expireSwap(swapId: string) {
-    return request(`${config.services.scheduleService}/schedules/internal/swaps/${swapId}/expire`, {
-      method: 'POST',
-    });
-  },
 };
 
 export const accessClient = {

@@ -188,7 +188,7 @@ export function resolveEffectivePermissions(
       role: normalizedRole,
       isCustom: false,
       allowedPages: [...baseConfig.allowedPages],
-      crud: JSON.parse(JSON.stringify(baseConfig.crud)),
+      crud: structuredClone(baseConfig.crud),
     };
   }
 
@@ -198,9 +198,7 @@ export function resolveEffectivePermissions(
   (override.revokedPages || []).forEach((p) => pageSet.delete(p));
 
   // Calculate CRUD Matrix
-  const effectiveCrud: Record<SystemResource, ResourceCrudPermission> = JSON.parse(
-    JSON.stringify(baseConfig.crud)
-  );
+  const effectiveCrud: Record<SystemResource, ResourceCrudPermission> = structuredClone(baseConfig.crud);
 
   ALL_RESOURCES.forEach((res) => {
     ALL_ACTIONS.forEach((action) => {
@@ -236,7 +234,9 @@ function getSharedRedis() {
       retryStrategy: () => null,
       enableOfflineQueue: false,
     });
-    sharedRedisClient.on('error', () => {});
+    sharedRedisClient.on('error', (err: Error) => {
+      console.warn('[PermissionsRedis] client error:', err.message);
+    });
     return sharedRedisClient;
   } catch {
     return null;
@@ -246,17 +246,13 @@ function getSharedRedis() {
 async function resolvePermissionsFromRedis(userId: string, role: string): Promise<EffectivePermissions | null> {
   const client = getSharedRedis();
   if (!client) return null;
-  try {
-    const [rawRole, rawUser] = await Promise.all([
-      client.get(`rbac:role:${role}`),
-      client.get(`rbac:user:${userId}`),
-    ]);
-    const roleConfig = rawRole ? JSON.parse(rawRole) : null;
-    const userOverride = rawUser ? JSON.parse(rawUser) : null;
-    return resolveEffectivePermissions(role, roleConfig, userOverride);
-  } catch {
-    return null;
-  }
+  const [rawRole, rawUser] = await Promise.all([
+    client.get(`rbac:role:${role}`),
+    client.get(`rbac:user:${userId}`),
+  ]);
+  const roleConfig = rawRole ? JSON.parse(rawRole) : null;
+  const userOverride = rawUser ? JSON.parse(rawUser) : null;
+  return resolveEffectivePermissions(role, roleConfig, userOverride);
 }
 
 /**
@@ -279,7 +275,12 @@ export function requireDynamicPermission(
       try {
         perms = await options.getEffectivePerms(req);
       } catch (err: any) {
-        console.warn('[PermissionMiddleware] Failed to resolve effective perms from options:', err.message);
+        console.warn('[PermissionMiddleware] Failed to resolve effective perms from options, denying (fail-closed):', err.message);
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'Không thể xác minh quyền truy cập, vui lòng thử lại',
+          required: `${resource}:${action}`,
+        });
       }
     }
 
@@ -289,13 +290,29 @@ export function requireDynamicPermission(
         try {
           perms = await resolvePermissionsFromRedis(userId, role);
         } catch (err: any) {
-          console.warn('[PermissionMiddleware] Failed to resolve from Redis:', err.message);
+          console.warn('[PermissionMiddleware] Failed to resolve from Redis, denying (fail-closed):', err.message);
+          return res.status(403).json({
+            error: 'Forbidden',
+            message: 'Không thể xác minh quyền truy cập, vui lòng thử lại',
+            required: `${resource}:${action}`,
+          });
         }
       }
     }
 
     if (!perms) {
-      perms = resolveEffectivePermissions(role);
+      // Fail-closed: no resolvable permission source — deny instead of silently
+      // re-granting the role baseline (overrides may have revoked it).
+      console.warn('[PermissionMiddleware] No effective permissions resolved, denying (fail-closed)', {
+        userId: req.user?.id || req.user?.userId,
+        role,
+        required: `${resource}:${action}`,
+      });
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'Không thể xác minh quyền truy cập, vui lòng thử lại',
+        required: `${resource}:${action}`,
+      });
     }
 
     const hasAccess = perms?.crud?.[resource]?.[action];

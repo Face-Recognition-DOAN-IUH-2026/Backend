@@ -1,11 +1,13 @@
 import crypto from 'crypto';
 import { AppDataSource } from '../data-source';
 import { PaymentOrder, PaymentOrderStatus, PaymentMethodType } from '../entities/PaymentOrder';
+import { VietqrCallback } from '../entities/VietqrCallback';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { activateCardAutoFine } from '../clients/UserServiceClient';
 import { publishEvent } from '../utils/eventPublisher';
 import { generatePaymentRef } from '../utils/fineCalculator';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared/error-handler';
+import { VietqrClient, generateVietqrOrderId } from './VietqrClient';
 
 export interface CreatePaymentOrderResult {
   id: string;
@@ -23,8 +25,8 @@ export interface CreatePaymentOrderResult {
 export function generateVietQrData(
   orderCode: string,
   amount: number,
-  bankCode = process.env.VIETQR_BANK_CODE || 'ICB',
-  accountNumber = process.env.VIETQR_ACCOUNT_NUMBER || '1133669988',
+  bankCode = process.env.VIETQR_BANK_CODE || 'MB',
+  accountNumber = process.env.VIETQR_ACCOUNT_NUMBER || '0395324779',
   accountName = process.env.VIETQR_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM',
 ): { qrUrl: string; qrData: string } {
   const qrUrl = `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${amount}&addInfo=${encodeURIComponent(orderCode)}&accountName=${encodeURIComponent(accountName)}`;
@@ -69,6 +71,10 @@ export class PaymentService {
     return AppDataSource.getRepository(PaymentOrder);
   }
 
+  private get callbackRepo() {
+    return AppDataSource.getRepository(VietqrCallback);
+  }
+
   async createPaymentOrder(
     patronId: string,
     recordIds: string[],
@@ -108,7 +114,38 @@ export class PaymentService {
 
     const orderCode = generatePaymentRef();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins timeout
-    const { qrUrl, qrData } = generateVietQrData(orderCode, totalAmount);
+
+    // Prefer VietQR dynamic QR (carries a ≤13-char orderId so the automatic
+    // transaction-sync callback can match the order exactly). Fall back to the
+    // static img.vietqr.io QR when the VietQR API is not configured/fails.
+    let qrUrl: string | null = null;
+    let qrData: string | null = null;
+    let vietqrOrderId: string | null = null;
+    let vietqrQrLink: string | null = null;
+    const vietqr = new VietqrClient();
+    if (vietqr.isEnabled()) {
+      try {
+        vietqrOrderId = generateVietqrOrderId();
+        const dynamic = await vietqr.generateDynamicQr({
+          orderId: vietqrOrderId,
+          content: vietqrOrderId,
+          amount: totalAmount,
+        });
+        // qrLink is a VietQR landing page (not an embeddable image), so the
+        // frontend renders the EMV string itself via QRCodeSVG.
+        qrUrl = null;
+        qrData = dynamic.qrCode;
+        vietqrQrLink = dynamic.qrLink || null;
+      } catch (err: any) {
+        console.warn('[createPaymentOrder] VietQR dynamic QR failed, fallback to static QR:', err?.message);
+        vietqrOrderId = null;
+      }
+    }
+    if (vietqrOrderId === null) {
+      const staticQr = generateVietQrData(orderCode, totalAmount);
+      qrUrl = staticQr.qrUrl;
+      qrData = staticQr.qrData;
+    }
 
     const order = this.orderRepo.create({
       orderCode,
@@ -120,6 +157,8 @@ export class PaymentService {
       qrData,
       recordIds,
       expiresAt,
+      vietqrOrderId,
+      vietqrQrLink,
     });
 
     const saved = await this.orderRepo.save(order);
@@ -205,11 +244,179 @@ export class PaymentService {
       throw new HttpError(400, `Số tiền thanh toán (${paidAmount}) không đủ cho đơn (${order.amount})`);
     }
 
+    const gatewayTransId = payload?.data?.reference || payload?.gatewayTransId || payload?.data?.paymentLinkId || null;
+    return this.settleCompletedOrder(order, gatewayTransId, payload);
+  }
+
+  /**
+   * Staff manual reconciliation: confirm that money for an order has actually
+   * arrived in the bank account (checked against the bank statement), then
+   * settle the debt exactly like a webhook would.
+   * Accepts `pending` AND `expired` orders because transfers often arrive
+   * after the 15-minute QR window.
+   */
+  async confirmManualReceipt(
+    orderCode: string,
+    confirmedBy: string,
+    note?: string,
+  ): Promise<{ success: boolean; orderCode: string; alreadyCompleted: boolean; activatedPatrons: string[] }> {
+    const order = await this.orderRepo.findOne({ where: { orderCode } });
+    if (!order) {
+      throw new HttpError(404, `Không tìm thấy đơn hàng tương ứng với orderCode: ${orderCode}`);
+    }
+
+    if (order.status === 'completed') {
+      return { success: true, orderCode: order.orderCode, alreadyCompleted: true, activatedPatrons: [] };
+    }
+
+    if (order.status !== 'pending' && order.status !== 'expired') {
+      throw new HttpError(400, `Đơn ${orderCode} ở trạng thái ${order.status}, không thể xác nhận thu tiền`);
+    }
+
+    return this.settleCompletedOrder(order, `MANUAL:${confirmedBy}`, {
+      manualConfirm: { by: confirmedBy, at: new Date().toISOString(), note: note || null },
+    });
+  }
+
+  /**
+   * List orders awaiting reconciliation (pending + expired), newest first.
+   * Pending orders past their expiry are transitioned to expired on read.
+   */
+  async listReconcilableOrders(limit = 50): Promise<Array<{
+    orderCode: string;
+    patronId: string;
+    amount: number;
+    status: PaymentOrderStatus;
+    paymentMethod: PaymentMethodType;
+    recordIds: string[];
+    expiresAt: Date;
+    createdAt: Date;
+  }>> {
+    const orders = await this.orderRepo.find({
+      where: [{ status: 'pending' }, { status: 'expired' }],
+      order: { createdAt: 'DESC' },
+      take: Math.min(Math.max(limit, 1), 100),
+    });
+
+    const now = new Date();
+    const touched: PaymentOrder[] = [];
+    for (const order of orders) {
+      if (order.status === 'pending' && now > order.expiresAt) {
+        order.status = 'expired';
+        touched.push(order);
+      }
+    }
+    if (touched.length > 0) {
+      await this.orderRepo.save(touched);
+    }
+
+    return orders.map((order) => ({
+      orderCode: order.orderCode,
+      patronId: order.patronId,
+      amount: Number(order.amount),
+      status: order.status,
+      paymentMethod: order.paymentMethod,
+      recordIds: order.recordIds,
+      expiresAt: order.expiresAt,
+      createdAt: order.createdAt,
+    }));
+  }
+
+  /**
+   * Settle a VietQR transaction-sync callback (automatic bank reconciliation).
+   * Matching priority: VietQR orderId -> exact content (= our VietQR order id)
+   * -> legacy content containing our internal orderCode (static-QR fallback).
+   * Failed validations throw so VietQR retries the callback later.
+   */
+  async processVietqrCallback(input: {
+    transactionid: string;
+    referencenumber?: string;
+    bankaccount?: string;
+    amount: number | string;
+    transType?: string;
+    content?: string;
+    orderId?: string;
+  }): Promise<{ orderCode: string; duplicate: boolean }> {
+    const { transactionid, referencenumber, bankaccount, amount, transType, content, orderId } = input;
+    if (!transactionid) {
+      throw new HttpError(400, 'Thiếu transactionid trong callback VietQR');
+    }
+
+    const existing = await this.callbackRepo.findOne({ where: { transactionId: transactionid } });
+    if (existing) {
+      return { orderCode: existing.orderCode ?? '', duplicate: true };
+    }
+
+    if (transType && transType !== 'C') {
+      throw new HttpError(400, `Giao dịch ${transType} không phải khoản thu (ghi có), bỏ qua`);
+    }
+
+    const expectedAccount = process.env.VIETQR_ACCOUNT_NUMBER;
+    if (expectedAccount && bankaccount && bankaccount !== expectedAccount) {
+      throw new HttpError(400, `TK nhận ${bankaccount} không khớp TK thư viện`);
+    }
+
+    let order = null;
+    if (orderId) {
+      order = await this.orderRepo.findOne({ where: { vietqrOrderId: orderId } });
+    }
+    if (!order && content) {
+      order = await this.orderRepo.findOne({ where: { vietqrOrderId: content } });
+    }
+    if (!order && content) {
+      const candidates = await this.orderRepo.find({
+        where: [{ status: 'pending' }, { status: 'expired' }],
+        order: { createdAt: 'DESC' },
+        take: 100,
+      });
+      order = candidates.find((o) => content.includes(o.orderCode)) ?? null;
+    }
+    if (!order) {
+      throw new HttpError(404, `Không tìm thấy đơn hàng cho callback VietQR (orderId=${orderId ?? ''})`);
+    }
+
+    if (order.status === 'completed') {
+      await this.recordVietqrCallback(transactionid, order.orderCode, amount, input);
+      return { orderCode: order.orderCode, duplicate: true };
+    }
+
+    if (Number(amount) < Number(order.amount)) {
+      throw new HttpError(400, `Số tiền ${amount} không đủ cho đơn ${order.amount} (${order.orderCode})`);
+    }
+
+    await this.settleCompletedOrder(order, referencenumber || transactionid, { vietqrCallback: input });
+    await this.recordVietqrCallback(transactionid, order.orderCode, amount, input);
+    return { orderCode: order.orderCode, duplicate: false };
+  }
+
+  private async recordVietqrCallback(
+    transactionId: string,
+    orderCode: string,
+    amount: number | string,
+    payload: Record<string, any>,
+  ): Promise<void> {
+    try {
+      await this.callbackRepo.save(this.callbackRepo.create({
+        transactionId,
+        orderCode,
+        amount: Number(amount) || 0,
+        payload,
+      }));
+    } catch (err: any) {
+      // Best-effort audit row: duplicate inserts (23505) just mean a retried callback.
+      console.warn('[processVietqrCallback] callback audit row skipped:', err?.message);
+    }
+  }
+
+  private async settleCompletedOrder(    order: PaymentOrder,
+    gatewayTransId: string | null,
+    receiptPayload: Record<string, any>,
+  ): Promise<{ success: boolean; orderCode: string; alreadyCompleted: boolean; activatedPatrons: string[] }> {
     const now = new Date();
     order.status = 'completed';
     order.paidAt = now;
-    order.gatewayTransId = payload?.data?.reference || payload?.gatewayTransId || payload?.data?.paymentLinkId || null;
-    order.webhookPayload = payload;
+    order.gatewayTransId = gatewayTransId;
+    order.webhookPayload = receiptPayload;
     await this.orderRepo.save(order);
 
     // Settle borrow records

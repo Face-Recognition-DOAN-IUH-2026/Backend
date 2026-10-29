@@ -13,9 +13,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.dependencies import get_db_session
+from api.dependencies import get_db_session, require_internal_key_or_staff
 from core.schemas import KioskResult, PatronPublic
 from core.service_token import get_auth_headers
+from core.uploads import validate_image_upload
 from infra.config import settings
 from infra.milvus_client import MilvusClient as _MilvusClient
 from infra.minio_client import MinioStorage as _MinioStorage
@@ -40,7 +41,11 @@ def _internal_headers() -> dict[str, str]:
         secret=settings.service_jwt_secret,
     )
 
-router = APIRouter(prefix="/kiosk", tags=["kiosk"])
+router = APIRouter(
+    prefix="/kiosk",
+    tags=["kiosk"],
+    dependencies=[Depends(require_internal_key_or_staff)],
+)
 celery_app = _celery_app
 logger = logging.getLogger(__name__)
 
@@ -268,6 +273,7 @@ async def kiosk_enroll(
         raise HTTPException(409, "Student code already exists")
 
     raw = await image.read()
+    validate_image_upload(raw)
     object_key = await _store_temp_frame(raw)
     user_data = await _proxy_create_user({
         "full_name": full_name,
@@ -308,6 +314,7 @@ async def kiosk_enter(
         return KioskResult(success=False, message="Patron has no enrolled face")
 
     raw = await image.read()
+    validate_image_upload(raw)
     object_key = await _store_temp_frame(raw)
     task = celery_app.send_task(
         "verify_face",
@@ -344,6 +351,8 @@ async def kiosk_batch_enroll(
         "left": await image_left.read(),
         "down": await image_down.read(),
     }
+    for raw in raws.values():
+        validate_image_upload(raw)
     keys = {angle: await _store_temp_frame(raw) for angle, raw in raws.items()}
     user_data = await _proxy_create_user({
         "full_name": full_name,
@@ -389,6 +398,7 @@ async def kiosk_enroll_face(
 ):
     await _proxy_get_user(str(patron_id))
     raw = await image.read()
+    validate_image_upload(raw)
     object_key = await _store_temp_frame(raw)
     task = celery_app.send_task(
         "enroll_face",

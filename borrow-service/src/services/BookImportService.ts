@@ -1,7 +1,7 @@
 import ExcelJS from 'exceljs';
 import { z } from 'zod';
 import { BorrowRepository } from '../repositories/BorrowRepository';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared/error-handler';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { Book } from '../entities/Book';
 

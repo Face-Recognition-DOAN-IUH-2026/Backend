@@ -2,7 +2,7 @@ import express, { Express } from 'express';
 import request from 'supertest';
 import ExcelJS from 'exceljs';
 import bookRoutes from '../../routes/book.routes';
-import { HttpError } from '../../middlewares/errorHandler';
+import { HttpError } from '../../../../shared/error-handler';
 import { createMockBook, createMockBorrowRepository, MockBorrowRepository } from '../helpers/mock-repo';
 import { STAFF_UUID } from '../helpers/auth';
 

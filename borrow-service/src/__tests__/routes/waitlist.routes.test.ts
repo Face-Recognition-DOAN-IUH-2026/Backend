@@ -1,7 +1,7 @@
 import express, { Express } from 'express';
 import request from 'supertest';
 import waitlistRoutes from '../../routes/waitlist.routes';
-import { HttpError } from '../../middlewares/errorHandler';
+import { HttpError } from '../../../../shared/error-handler';
 
 jest.mock('../../middlewares/auth', () => {
   const PATRON_UUID = '11111111-1111-1111-1111-111111111111';
@@ -27,7 +27,7 @@ jest.mock('../../middlewares/auth', () => {
         req.user = { id: PATRON_UUID, email: 'patron@test.com', role };
       }
       if (!roles.includes(req.user.role)) {
-        res.status(403).json({ detail });
+        res.status(403).json({ error: 'Forbidden' });
         return;
       }
       next();
@@ -98,16 +98,6 @@ jest.mock('../../data-source', () => ({
       count: jest.fn().mockResolvedValue(0),
     }),
     query: jest.fn().mockResolvedValue([]),
-  },
-}));
-
-jest.mock('../../middlewares/errorHandler', () => ({
-  HttpError: class HttpError extends Error {
-    statusCode: number;
-    constructor(statusCode: number, message: string) {
-      super(message);
-      this.statusCode = statusCode;
-    }
   },
 }));
 

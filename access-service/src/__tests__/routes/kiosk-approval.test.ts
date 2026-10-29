@@ -1,6 +1,6 @@
 import request from 'supertest';
 
-jest.mock('../../../shared', () => ({
+jest.mock('../../../shared/auth', () => ({
   createAuth: () => (_req: any, _res: any, next: any) => next(),
   requireRole: () => (_req: any, _res: any, next: any) => next(),
   createInternalAuth: () => (_req: any, _res: any, next: any) => next(),

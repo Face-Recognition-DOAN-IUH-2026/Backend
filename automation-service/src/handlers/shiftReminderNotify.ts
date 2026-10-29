@@ -16,8 +16,9 @@ export async function shiftReminderNotify(config: Record<string, any>): Promise<
   let assignments;
   try {
     assignments = await scheduleClient.getUpcomingAssignments(tomorrowStr, tomorrowStr);
-  } catch {
-    return { notified: 0, message: 'Failed to fetch upcoming schedule' };
+  } catch (error) {
+    console.error('[shiftReminderNotify] Failed to fetch upcoming schedule:', error);
+    throw error;
   }
 
   const items = assignments?.items || [];
@@ -69,6 +70,6 @@ export async function shiftReminderNotify(config: Record<string, any>): Promise<
     return { notified: notifications.length, message: `Sent ${notifications.length} reminders` };
   } catch (err) {
     console.error('[shiftReminderNotify] Failed to send notifications:', err);
-    return { notified: 0, message: 'Failed to send notifications' };
+    throw err;
   }
 }

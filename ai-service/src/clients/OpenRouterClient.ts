@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { config } from '../config';
 import { AiAnalysisResult, LibraryOperationsSnapshot } from '../services/types';
 import { HttpError } from '../../../shared/error-handler';
+import { extractJson } from '../utils/extractJson';
 
 const analysisSchema = z.object({
   headline: z.string().min(1),
@@ -21,12 +22,7 @@ const analysisSchema = z.object({
     alternatives: z.array(z.string()).default([]),
   })).default([]),
 });
-
-function extractJson(text: string) {
-  const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
-  return JSON.parse(cleaned);
-}
-
+
 async function throwOpenRouterError(res: Response) {
   const detail = (await res.text()).slice(0, 300);
   if (res.status === 401) {

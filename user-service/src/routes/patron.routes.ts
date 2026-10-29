@@ -3,7 +3,7 @@ import multer from 'multer';
 import { patronController } from '../controllers';
 import { BadRequestError } from '../errors';
 import { createAuth, requireDynamicPermission } from '../../../shared/auth';
-import { requireRole } from '../middlewares/requireRole';
+import { requireRole } from '../../../shared/auth';
 import { config } from '../config';
 
 const auth = createAuth({
@@ -228,7 +228,7 @@ router.get('/search', auth, (req, res) => patronController.search(req, res));
  *       404:
  *         description: Patron not found
  */
-router.get('/lookup', (req, res) => patronController.lookup(req, res));
+router.get('/lookup', auth, requireRole('admin', 'staff'), (req, res) => patronController.lookup(req, res));
 
 /**
  * @swagger

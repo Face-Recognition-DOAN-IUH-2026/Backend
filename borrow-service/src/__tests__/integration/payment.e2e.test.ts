@@ -7,7 +7,7 @@ import { PaymentService } from '../../services/PaymentService';
 import { AppDataSource } from '../../data-source';
 import * as eventPublisher from '../../utils/eventPublisher';
 import * as userServiceClient from '../../clients/UserServiceClient';
-import { errorHandler } from '../../middlewares/errorHandler';
+import { errorHandler } from '../../../../shared/error-handler';
 
 jest.mock('../../data-source');
 jest.mock('../../utils/eventPublisher');
@@ -189,7 +189,7 @@ describe('Payment & Fine Settlement E2E Lifecycle', () => {
       });
 
     expect(badSigWebhookRes.status).toBe(400);
-    expect(badSigWebhookRes.body.detail).toContain('Chữ ký webhook (signature) không hợp lệ');
+    expect(badSigWebhookRes.body.error).toContain('Chữ ký webhook (signature) không hợp lệ');
 
     // -------------------------------------------------------------
     // Step 5: Webhook without required signature is REJECTED
@@ -202,7 +202,7 @@ describe('Payment & Fine Settlement E2E Lifecycle', () => {
       });
 
     expect(noSigWebhookRes.status).toBe(400);
-    expect(noSigWebhookRes.body.detail).toContain('Thiếu chữ ký webhook');
+    expect(noSigWebhookRes.body.error).toContain('Thiếu chữ ký webhook');
 
     // -------------------------------------------------------------
     // Step 6: Webhook with insufficient amount is REJECTED
@@ -217,7 +217,7 @@ describe('Payment & Fine Settlement E2E Lifecycle', () => {
       .send(underpaidPayload);
 
     expect(underpaidRes.status).toBe(400);
-    expect(underpaidRes.body.detail).toContain('không đủ cho đơn');
+    expect(underpaidRes.body.error).toContain('không đủ cho đơn');
 
     // -------------------------------------------------------------
     // Step 7: Authentic Bank/PayOS Webhook arrives with VALID HMAC signature

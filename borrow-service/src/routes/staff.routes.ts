@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { In } from 'typeorm';
 import { auth, AuthRequest, requireRole, requireDynamicPermission } from '../middlewares/auth';
-import { HttpError } from '../middlewares/errorHandler';
+import { HttpError } from '../../../shared/error-handler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { isPatronInside, getPatronAccessStatus, getPatronRawAccessStatus } from '../clients/AccessServiceClient';
 import { lookupPatronById, lookupPatronByStudentCode, lookupPatronsByIds, PatronSummary } from '../clients/UserServiceClient';
@@ -14,33 +14,19 @@ import { BookCopy } from '../entities/BookCopy';
 import { configService } from '../services/ConfigService';
 import { ReturnService } from '../services/ReturnService';
 import { SlipService } from '../services/SlipService';
-import { CONDITION_CODES, markCopyAsBorrowed } from '../constants/copy';
+import { CONDITION_CODES, assessCopyBorrowability, markCopyAsBorrowed } from '../constants/copy';
+import { patronIdFrom, patronSummary } from '../utils/patron';
 
 const router = Router();
 router.use(auth);
-
-function patronIdFrom(user: AuthRequest['user']) {
-  if (!user?.id) throw new HttpError(401, 'Invalid or expired token');
-  return user.id;
-}
-
-function patronSummary(patron: PatronSummary) {
-  const id = patron.id;
-  const studentCode = patron.student_code || patron.studentCode;
-  if (!id || !studentCode) throw new HttpError(502, 'Dữ liệu độc giả không hợp lệ');
-  if (!/^[0-9a-f]{32}$/i.test(id.replace(/-/g, ''))) {
-    throw new HttpError(502, 'ID độc giả không hợp lệ');
+
+function assertCopyBorrowable(copy: { status?: string | null; condition?: string | null }) {
+  const assessment = assessCopyBorrowability(copy);
+  if (assessment.blocked) {
+    throw new HttpError(409, assessment.reason || 'Bản sao không đủ điều kiện mượn');
   }
-  return {
-    id,
-    full_name: patron.full_name || patron.fullName || null,
-    student_code: studentCode,
-    email: patron.email || null,
-    card_number: patron.card_number || patron.cardNumber || null,
-    current_status: patron.current_status || patron.currentStatus || null,
-  };
 }
-
+
 async function getOrCreateBookAndCopy(repo: BorrowRepository, barcode: string, isbn?: string) {
   const existingCopy = await repo.getCopyByBarcode(barcode);
   if (existingCopy) return { book: existingCopy.book || await repo.getBookById(existingCopy.bookId), copy: existingCopy };
@@ -48,7 +34,7 @@ async function getOrCreateBookAndCopy(repo: BorrowRepository, barcode: string, i
 }
 
 // POST /staff/slip/lookup
-router.post(['/slip/lookup', '/staff/slip/lookup'], requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tao phieu muon'), async (req: AuthRequest, res, next) => {
+router.post(['/slip/lookup', '/staff/slip/lookup'], requireRole(['admin', 'staff']), async (req: AuthRequest, res, next) => {
   try {
     const body = z.object({
       patron_id: z.string().min(1),
@@ -123,6 +109,8 @@ router.post(['/slip/confirm', '/staff/slip/confirm'], requireDynamicPermission('
       const normCopyBarcode = (copy.barcode || '').replace(/[\s-]+/g, '').toLowerCase();
       const normItemBarcode = (item.barcode || '').replace(/[\s-]+/g, '').toLowerCase();
       if (normCopyBarcode !== normItemBarcode) throw new HttpError(400, 'Dữ liệu không hợp lệ: barcode không khớp');
+
+      assertCopyBorrowable(copy);
 
       const active = await repo.getActiveBorrow(body.patron_id, book.id);
       if (active) throw new HttpError(409, `Sach "${book.title}" đã được độc giả này mượn`);
@@ -230,6 +218,8 @@ router.post(['/slip/create', '/staff/slip/create'], requireDynamicPermission('bo
       }
 
       if (!book || !copy) throw new HttpError(404, 'Khong tim thay sach');
+
+      assertCopyBorrowable(copy);
 
       const active = await repo.getActiveBorrow(body.patron_id, book.id);
       if (active) throw new HttpError(409, `Sach "${book.title}" đã được độc giả này mượn`);
@@ -383,7 +373,7 @@ router.post(['/return/record/:record_id', '/staff-return/record/:record_id'], re
 });
 
 // GET /barcode/:barcode
-router.get('/barcode/:barcode', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra cuu tra sach'), async (req, res, next) => {
+router.get('/barcode/:barcode', requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     const repo = new BorrowRepository();
     const copy = await repo.getCopyByBarcode(req.params.barcode.trim());
@@ -397,7 +387,7 @@ router.get('/barcode/:barcode', requireRole(['admin', 'staff'], 'Chi quan tri vi
 });
 
 // GET /active-borrowers
-router.get(['/active-borrowers', '/staff/active-borrowers'], requireRole(['admin', 'staff'], 'Chỉ quản trị viên hoặc nhân viên thư viện mới có thể xem danh sách độc giả đang mượn'), async (_req, res, next) => {
+router.get(['/active-borrowers', '/staff/active-borrowers'], requireRole(['admin', 'staff']), async (_req, res, next) => {
   try {
     const repo = new BorrowRepository();
     const records = await repo.getAllActiveBorrows();
@@ -428,7 +418,7 @@ router.get(['/active-borrowers', '/staff/active-borrowers'], requireRole(['admin
 });
 
 // GET /active
-router.get('/active', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem danh sach muon'), async (req, res, next) => {
+router.get('/active', requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     const records = await new BorrowRepository().getAllActiveBorrows();
     res.json(records.map(serializeBorrowRecord));
@@ -438,7 +428,7 @@ router.get('/active', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nh
 });
 
 // GET /patrons/:student_code/active
-router.get(['/patrons/:student_code/active', '/staff/patrons/:student_code/active'], requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra cuu sach dang muon'), async (req, res, next) => {
+router.get(['/patrons/:student_code/active', '/staff/patrons/:student_code/active'], requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     const raw = await lookupPatronByStudentCode(req.params.student_code);
     const status = raw.current_status || raw.currentStatus;
@@ -460,7 +450,7 @@ router.get(['/patrons/:student_code/active', '/staff/patrons/:student_code/activ
 });
 
 // GET /patrons/:student_code/history
-router.get('/patrons/:student_code/history', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra cuu lich su muon sach'), async (req, res, next) => {
+router.get('/patrons/:student_code/history', requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     const raw = await lookupPatronByStudentCode(req.params.student_code);
     const status = raw.current_status || raw.currentStatus;
@@ -476,7 +466,7 @@ router.get('/patrons/:student_code/history', requireRole(['admin', 'staff'], 'Ch
 });
 
 // GET /patrons/id/:patron_id/history
-router.get('/patrons/id/:patron_id/history', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the tra cuu lich su muon sach'), async (req, res, next) => {
+router.get('/patrons/id/:patron_id/history', requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     const records = await new BorrowRepository().getBorrowsByPatron(req.params.patron_id, req.query.status_filter as string | undefined);
     res.json(records.map(serializeBorrowRecord));
@@ -486,7 +476,7 @@ router.get('/patrons/id/:patron_id/history', requireRole(['admin', 'staff'], 'Ch
 });
 
 // GET /stats
-router.get('/stats', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem thong ke'), async (req, res, next) => {
+router.get('/stats', requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     res.json(await new BorrowRepository().getStats());
   } catch (error) {
@@ -495,7 +485,7 @@ router.get('/stats', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nha
 });
 
 // GET /stats/finance
-router.get('/stats/finance', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem thong ke'), async (req, res, next) => {
+router.get('/stats/finance', requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     const rawMonths = req.query.months ? Number(req.query.months) : 6;
     const months = Math.min(Math.max(isNaN(rawMonths) ? 6 : rawMonths, 1), 24);
@@ -506,7 +496,7 @@ router.get('/stats/finance', requireRole(['admin', 'staff'], 'Chi quan tri vien 
 });
 
 // GET /stats/inventory
-router.get('/stats/inventory', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem thong ke'), async (req, res, next) => {
+router.get('/stats/inventory', requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     res.json(await new BorrowRepository().getInventoryStats());
   } catch (error) {
@@ -515,7 +505,7 @@ router.get('/stats/inventory', requireRole(['admin', 'staff'], 'Chi quan tri vie
 });
 
 // GET /stats/condition-distribution — copy counts by condition and status
-router.get('/stats/condition-distribution', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem thong ke'), async (req, res, next) => {
+router.get('/stats/condition-distribution', requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     res.json(await new BorrowRepository().getConditionDistribution());
   } catch (error) {
@@ -524,7 +514,7 @@ router.get('/stats/condition-distribution', requireRole(['admin', 'staff'], 'Chi
 });
 
 // GET /stats/condition-attention — copies needing repair/disposal review
-router.get('/stats/condition-attention', requireRole(['admin', 'staff'], 'Chi quan tri vien hoac nhan vien thu vien moi co the xem thong ke'), async (req, res, next) => {
+router.get('/stats/condition-attention', requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     const limit = Math.min(Math.max(Number(req.query.limit) || 200, 1), 500);
     const { summary, items } = await new BorrowRepository().getConditionAttention(limit);
