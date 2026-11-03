@@ -1,4 +1,5 @@
 import { AppDataSource } from '../data-source';
+import { QueryFailedError } from 'typeorm';
 import { Waitlist } from '../entities/Waitlist';
 import { Book } from '../entities/Book';
 
@@ -14,7 +15,19 @@ export class WaitlistRepository {
     if (existing) throw Object.assign(new Error('Already on waitlist for this book'), { statusCode: 409 });
 
     const entry = this.repo().create({ bookId, patronId, status: 'waiting' });
-    return this.repo().save(entry);
+    try {
+      return await this.repo().save(entry);
+    } catch (err) {
+      // 1a: two concurrent subscriptions for the same (book, patron) can both
+      // pass the pre-check above. The unique index is the correctness mechanism;
+      // a 23505 violation means another request won the race, so return the
+      // existing row instead of throwing a spurious 409.
+      if (err instanceof QueryFailedError && (err as any).code === '23505') {
+        const winner = await this.repo().findOne({ where: { bookId, patronId, status: 'waiting' } });
+        if (winner) return winner;
+      }
+      throw err;
+    }
   }
 
   async getWaitlistByBook(bookId: string): Promise<Waitlist[]> {
@@ -31,6 +44,20 @@ export class WaitlistRepository {
       .update(Waitlist)
       .set({ status: 'notified', notifiedAt: new Date() })
       .whereInIds(ids)
+      .execute();
+  }
+
+  /**
+   * 1b: reset this book's notified waitlist rows back to waiting so they are
+   * re-notified on the next return. Called after a borrow is created for the
+   * book (BorrowRepository.createBorrowRecord).
+   */
+  async resetNotifiedToWaiting(bookId: string): Promise<void> {
+    await this.repo()
+      .createQueryBuilder()
+      .update(Waitlist)
+      .set({ status: 'waiting', notifiedAt: null })
+      .where({ bookId, status: 'notified' })
       .execute();
   }
 

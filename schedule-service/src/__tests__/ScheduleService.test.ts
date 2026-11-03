@@ -1131,6 +1131,53 @@ describe('ScheduleService', () => {
         service.checkIn('staff-1', 'a1', 'web')
       ).rejects.toThrow('Không xác định được vị trí GPS');
     });
+
+    it('should use the unified global geofence (zone_id NULL, is_global=true) for check-in verification', async () => {
+      const scheduleRepo = createMockRepo();
+      const attendanceRepo = createMockRepo();
+      const shiftRepo = createMockRepo();
+      const geofenceRepo = createMockRepo();
+
+      // Bản ghi địa điểm chung: toạ độ trung tâm IUH, bán kính 150m, zone_id NULL.
+      geofenceRepo.findOneBy.mockResolvedValue({
+        id: 'gf-global', zoneId: null, isGlobal: true, isActive: true,
+        latitude: 10.8220244, longitude: 106.6875689, radiusMeters: 150,
+      });
+      scheduleRepo.findOneBy.mockResolvedValue({
+        id: 'a1', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: today(), status: 'scheduled',
+      });
+      attendanceRepo.findOneBy.mockResolvedValue(null);
+      shiftRepo.findOneBy.mockResolvedValue({ id: 'sh1', startTime: '00:01', endTime: '12:00' });
+
+      (AppDataSource.getRepository as jest.Mock).mockImplementation((entity: any) => {
+        const name = entity?.name || String(entity);
+        if (name === 'StaffSchedule') return scheduleRepo;
+        if (name === 'StaffAttendance') return attendanceRepo;
+        if (name === 'StaffShift') return shiftRepo;
+        if (name === 'GeofenceConfig') return geofenceRepo;
+        if (!mockRepos[name]) mockRepos[name] = createMockRepo();
+        return mockRepos[name];
+      });
+
+      service = new ScheduleService();
+
+      // Toạ độ cùng tâm geofence => trong vùng => check-in thành công, verified=true.
+      const inside = await service.checkIn('staff-1', 'a1', 'mobile', 10.8220244, 106.6875689);
+      expect(inside.schedule.status).toBe('in_progress');
+      expect(inside.location.verified).toBe(true);
+      expect(inside.location.distanceMeters).toBe(0);
+      expect(inside.location.radiusMeters).toBe(150);
+
+      // Reset trạng thái schedule mock về 'scheduled' cho cuộc gọi tiếp theo.
+      scheduleRepo.findOneBy.mockResolvedValue({
+        id: 'a2', staffId: 'staff-1', shiftId: 'sh1', zoneId: 'z1', workDate: today(), status: 'scheduled',
+      });
+
+      // Toạ độ xa tâm 5km => ngoài vùng => bị từ chối.
+      await expect(
+        service.checkIn('staff-1', 'a2', 'mobile', 10.8720244, 106.6875689)
+      ).rejects.toThrow(BadRequestError);
+    });
   });
 
 

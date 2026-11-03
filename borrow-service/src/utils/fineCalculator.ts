@@ -18,29 +18,67 @@ export const DEFAULT_DAMAGE_FEE_CONFIG: DamageFeeConfig = {
   fallbackBookPrice: 100000,
 };
 
+export interface DamageFeeResult {
+  amount: number;
+  /** True when book.price was null/0/negative and no fee was invented. */
+  priceUnavailable: boolean;
+}
+
 /**
  * Damage fee derived from the returned copy's condition and the book's cover price.
- * new/good → no damage fee. NULL/0 book price falls back to the configured default.
+ * new/good → no damage fee.
+ *
+ * BLF-FEE-01: when book.price is null / 0 / negative we do NOT substitute
+ * fallbackBookPrice. The fee is 0 and priceUnavailable is true so the staff
+ * flow can value the book manually instead of silently charging an invented
+ * price.
  */
 export function calculateDamageFee(
   condition: string | null | undefined,
   priceVnd: number | null | undefined,
   config: DamageFeeConfig = DEFAULT_DAMAGE_FEE_CONFIG,
-): number {
-  const effectivePrice = priceVnd !== null && priceVnd !== undefined && Number(priceVnd) > 0
-    ? Number(priceVnd)
-    : config.fallbackBookPrice;
+): DamageFeeResult {
+  const priceUnavailable =
+    priceVnd === null || priceVnd === undefined || Number(priceVnd) <= 0;
+
+  if (priceUnavailable) {
+    return { amount: 0, priceUnavailable: true };
+  }
+
+  const effectivePrice = Number(priceVnd);
 
   switch (condition) {
     case 'minor_damage':
-      return Math.round(effectivePrice * config.damageFeePct.minor / 100) + config.damageFeeFixed.minor;
+      return {
+        amount: Math.round(effectivePrice * config.damageFeePct.minor / 100) + config.damageFeeFixed.minor,
+        priceUnavailable: false,
+      };
     case 'major_damage':
-      return Math.round(effectivePrice * config.damageFeePct.major / 100) + config.damageFeeFixed.major;
+      return {
+        amount: Math.round(effectivePrice * config.damageFeePct.major / 100) + config.damageFeeFixed.major,
+        priceUnavailable: false,
+      };
     case 'lost':
-      return Math.round(effectivePrice * config.damageFeePct.lost / 100) + config.damageFeeFixed.lost;
+      return {
+        amount: Math.round(effectivePrice * config.damageFeePct.lost / 100) + config.damageFeeFixed.lost,
+        priceUnavailable: false,
+      };
     default:
-      return 0;
+      return { amount: 0, priceUnavailable: false };
   }
+}
+
+/**
+ * Backward-compatible thin wrapper returning just the fee amount.
+ * New code should prefer calculateDamageFee so the priceUnavailable signal
+ * is not silently dropped.
+ */
+export function calculateDamageFeeAmount(
+  condition: string | null | undefined,
+  priceVnd: number | null | undefined,
+  config: DamageFeeConfig = DEFAULT_DAMAGE_FEE_CONFIG,
+): number {
+  return calculateDamageFee(condition, priceVnd, config).amount;
 }
 
 export function generatePaymentRef(now: Date = new Date()): string {

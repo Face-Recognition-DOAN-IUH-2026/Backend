@@ -919,28 +919,54 @@ export class ScheduleService {
   }
 
 
-  async setGeofence(actorId: string, body: { zoneId: string; latitude: number; longitude: number; radiusMeters?: number; addressHint?: string | null; allowedWifiSsids?: string[] | null }) {
+  async setGeofence(actorId: string, body: { zoneId?: string | null; latitude: number; longitude: number; radiusMeters?: number; addressHint?: string | null; allowedWifiSsids?: string[] | null; isGlobal?: boolean }) {
+    const isGlobal = body.isGlobal === true;
+
+    if (isGlobal) {
+      // Chỉ cho phép 1 bản ghi global tại một thời điểm: vô hiệu hóa các global cũ.
+      await this.geofence.update({ isGlobal: true, isActive: true }, { isActive: false, isGlobal: false });
+      const config = await this.geofence.save(this.geofence.create({
+        zoneId: null,
+        isGlobal: true,
+        isActive: true,
+        latitude: body.latitude,
+        longitude: body.longitude,
+        radiusMeters: body.radiusMeters ?? 100,
+        addressHint: body.addressHint ?? 'Trung tâm Thư viện IUH (tổng hợp)',
+        allowedWifiSsids: body.allowedWifiSsids ?? null,
+      }));
+      await this.log('geofence.created', 'geofence_config', config.id, actorId, { ...body, isGlobal: true });
+      return config;
+    }
+
+    // Bản ghi theo khu vực: bắt buộc zona tồn tại.
+    if (!body.zoneId) throw new BadRequestError('zoneId là bắt buộc khi cấu hình geofence theo khu vực');
     const zone = await this.zones.findOneBy({ id: body.zoneId, isActive: true });
     if (!zone) throw new NotFoundError('Zone not found');
-    const existing = await this.geofence.findOneBy({ zoneId: body.zoneId });
+    const existing = await this.geofence.findOneBy({ zoneId: body.zoneId, isGlobal: false });
     if (existing) {
       existing.latitude = body.latitude;
       existing.longitude = body.longitude;
       existing.radiusMeters = body.radiusMeters ?? existing.radiusMeters;
       existing.addressHint = body.addressHint ?? existing.addressHint;
       existing.allowedWifiSsids = body.allowedWifiSsids !== undefined ? body.allowedWifiSsids : existing.allowedWifiSsids;
+      existing.isGlobal = false;
       await this.geofence.save(existing);
       await this.log('geofence.updated', 'geofence_config', existing.id, actorId, body);
       return existing;
     }
-    const config = await this.geofence.save(this.geofence.create({ ...body, radiusMeters: body.radiusMeters ?? 100 }));
+    const config = await this.geofence.save(this.geofence.create({
+      ...body,
+      isGlobal: false,
+      radiusMeters: body.radiusMeters ?? 100,
+    }));
     await this.log('geofence.created', 'geofence_config', config.id, actorId, body);
     return config;
   }
 
   async listGeofenceConfigs() {
     const configs = await this.geofence.find({ where: { isActive: true } });
-    const zoneIds = configs.map((c) => c.zoneId);
+    const zoneIds = configs.map((c) => c.zoneId).filter((id): id is string => id != null);
     const zones = zoneIds.length ? await this.zones.findBy({ id: In(zoneIds) }) : [];
     return configs.map((c) => ({ ...c, zone: zones.find((z) => z.id === c.zoneId) ?? null }));
   }
@@ -955,8 +981,18 @@ export class ScheduleService {
   }
 
   /**
-   * Trả về geofence của khu vực được phân công để client vẽ bản đồ và tự đánh giá
-   * vị trí trước khi gọi check-in. Chỉ nhân viên sở hữu phân công mới đọc được.
+   * Lấy bản ghi địa điểm chung (global geofence) — toạ độ Trung tâm Thư viện
+   * duy nhất cho toàn hệ thống. Trả về null nếu chưa cấu hình.
+   */
+  private async getGlobalGeofence() {
+    return this.geofence.findOneBy({ isGlobal: true, isActive: true });
+  }
+
+  /**
+   * Trả về geofence để client vẽ bản đồ và tự đánh giá vị trí trước khi gọi check-in.
+   * Ưu tiên bản ghi địa điểm chung (global). Nếu chưa có global, quay về bản ghi
+   * theo khu vực phân công (hỗ trợ backward-compat). Chỉ nhân viên sở hữu phân
+   * công mới đọc được.
    *
    * Lưu ý: đây chỉ là dữ liệu hiển thị. Việc quyết định cho check-in vẫn do
    * `verifyCheckInGeofence` tính lại trên server.
@@ -973,6 +1009,20 @@ export class ScheduleService {
       toleranceMeters: GPS_TOLERANCE_METERS,
     };
 
+    // Ưu tiên địa điểm chung (global) — 1 tọa độ thống nhất cho toàn hệ thống.
+    const global = await this.getGlobalGeofence();
+    if (global) {
+      return {
+        zoneId,
+        configured: true as const,
+        latitude: global.latitude,
+        longitude: global.longitude,
+        radiusMeters: global.radiusMeters,
+        toleranceMeters: GPS_TOLERANCE_METERS,
+        isGlobal: true as const,
+      };
+    }
+
     if (!zoneId) return unconfigured;
 
     const geofence = await this.geofence.findOneBy({ zoneId, isActive: true });
@@ -985,6 +1035,7 @@ export class ScheduleService {
       longitude: geofence.longitude,
       radiusMeters: geofence.radiusMeters,
       toleranceMeters: GPS_TOLERANCE_METERS,
+      isGlobal: false as const,
     };
   }
 
@@ -1060,14 +1111,20 @@ export class ScheduleService {
     const { lat, lng, method } = input;
     const zoneId = schedule.zoneId ?? null;
 
-    if (!zoneId) {
-      return { verified: false, method, distanceMeters: null, radiusMeters: null, zoneId, reason: 'Phân công chưa gắn khu vực' };
-    }
-
-    const geofence = await this.geofence.findOneBy({ zoneId, isActive: true });
+    // Ưu tiên địa điểm chung (global) — 1 tọa độ Trung tâm Thư viện duy nhất.
+    // Nếu chưa có global, quay về bản ghi theo khu vực phân công (backward-compat).
+    let geofence = await this.getGlobalGeofence();
+    let source = 'global';
     if (!geofence) {
-      await this.log('attendance.check_in_unconfigured_geofence', 'staff_schedule', schedule.id, staffId, { zoneId });
-      return { verified: false, method, distanceMeters: null, radiusMeters: null, zoneId, reason: 'Khu vực chưa cấu hình geofence' };
+      if (!zoneId) {
+        return { verified: false, method, distanceMeters: null, radiusMeters: null, zoneId, reason: 'Chưa cấu hình địa điểm điểm danh chung' };
+      }
+      geofence = await this.geofence.findOneBy({ zoneId, isActive: true });
+      source = 'zone';
+    }
+    if (!geofence) {
+      await this.log('attendance.check_in_unconfigured_geofence', 'staff_schedule', schedule.id, staffId, { zoneId, source });
+      return { verified: false, method, distanceMeters: null, radiusMeters: null, zoneId, reason: 'Chưa cấu hình địa điểm điểm danh chung' };
     }
 
     const radiusMeters = geofence.radiusMeters;
@@ -1124,12 +1181,49 @@ export class ScheduleService {
     return item;
   }
 
-  async approveManualCheckIn(adminId: string, attendanceId: string, checkInAt?: Date) {
+  async approveManualCheckIn(
+    adminId: string,
+    attendanceId: string,
+    checkInAtOrOptions?: Date | { checkInAt?: Date; lat?: number; lng?: number },
+  ) {
     const att = await this.attendance.findOneBy({ id: attendanceId });
     if (!att) throw new NotFoundError('Attendance record not found');
     if (att.status !== 'pending_manual') throw new ConflictError('Attendance is not a pending manual check-in request');
 
+    // D5: self-approval is forbidden — a staff member cannot approve their own
+    // manual check-in request, regardless of role or geofence.
+    if (adminId === att.staffId) {
+      throw new ForbiddenError('SELF_APPROVAL_FORBIDDEN');
+    }
+
     const schedule = await this.schedules.findOneBy({ id: att.scheduleId });
+
+    let checkInAt: Date | undefined;
+    let lat: number | undefined;
+    let lng: number | undefined;
+    if (checkInAtOrOptions instanceof Date) {
+      checkInAt = checkInAtOrOptions;
+    } else if (checkInAtOrOptions) {
+      checkInAt = checkInAtOrOptions.checkInAt;
+      lat = checkInAtOrOptions.lat;
+      lng = checkInAtOrOptions.lng;
+    }
+
+    // Geofence is enforced server-side: never trust raw request coordinates alone.
+    // If the assigned zone has an active geofence, the check-in location must be
+    // provided and verified against it before approval.
+    if (schedule?.zoneId) {
+      const geofence = await this.geofence.findOneBy({ zoneId: schedule.zoneId, isActive: true });
+      if (geofence) {
+        if (lat === undefined || lng === undefined) {
+          throw new BadRequestError(
+            'Thiếu toạ độ GPS cho việc duyệt check-in thủ công. Vui lòng cung cấp vị trí thiết bị.',
+          );
+        }
+        await this.verifyCheckInGeofence(schedule, adminId, { lat, lng, method: 'manual' });
+      }
+    }
+
     att.status = 'completed';
     att.checkInAt = checkInAt ?? new Date();
     att.invalidatedReason = null;

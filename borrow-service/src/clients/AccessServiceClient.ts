@@ -21,7 +21,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function setAccessStatus(patronId: string, status: 'inside' | 'outside'): Promise<void> {
+const TOUCH_COOLDOWN_MS = 5 * 60 * 1000; // 5 min — avoid DB churn on every in-library action
+
+export async function setAccessStatus(patronId: string, status: 'inside' | 'outside'): Promise<void> {
   await fetch(`${config.accessServiceUrl}/internal/access/patrons/${patronId}/status`, {
     method: 'POST',
     headers: {
@@ -31,6 +33,23 @@ async function setAccessStatus(patronId: string, status: 'inside' | 'outside'): 
     body: JSON.stringify({ current_status: status }),
     signal: AbortSignal.timeout(5000),
   });
+}
+
+/**
+ * BLF-PRES-01 — refresh a patron's in-library presence so an active session
+ * does not expire mid-visit. Best-effort: never throws, never fails the borrow.
+ */
+export async function touchPatronPresence(patronId: string): Promise<void> {
+  try {
+    await setAccessStatus(patronId, 'inside');
+  } catch (err) {
+    console.error('[AccessServiceClient] touchPatronPresence failed:', err);
+  }
+}
+
+export function shouldTouchPresence(lastEntryAt: string | null | undefined, cooldownMs = TOUCH_COOLDOWN_MS): boolean {
+  if (!lastEntryAt) return true;
+  return Date.now() - new Date(lastEntryAt).getTime() > cooldownMs;
 }
 
 async function getUserStatus(patronId: string): Promise<string | null> {

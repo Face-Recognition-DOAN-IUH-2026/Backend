@@ -1,9 +1,18 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
-export type PaymentOrderStatus = 'pending' | 'completed' | 'expired' | 'cancelled';
+export type PaymentOrderStatus =
+  | 'pending'
+  | 'completed'
+  | 'expired'
+  | 'cancelled'
+  /** Money arrived, but part or all of the debt was already settled elsewhere. */
+  | 'reconcile_needed'
+  /** Staff confirmed the duplicate payment was refunded out-of-band. */
+  | 'refunded';
 export type PaymentMethodType = 'vietqr' | 'payos' | 'vnpay' | 'cash';
 
 @Entity('payment_orders')
+@Index('IDX_payment_orders_status_created_at', ['status', 'createdAt'])
 export class PaymentOrder {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -39,6 +48,32 @@ export class PaymentOrder {
 
   @Column({ name: 'webhook_payload', type: 'jsonb', nullable: true })
   webhookPayload: Record<string, any> | null;
+
+  // --- Settlement idempotency (BLF-PAY-01) -----------------------------------
+  // Records this order actually settled. Empty when nothing could be settled
+  // because the debt had already been paid at the counter.
+  @Column({ name: 'settled_record_ids', type: 'jsonb', default: () => "'[]'::jsonb" })
+  settledRecordIds: string[];
+
+  // Records that were already paid before this order settled. Their payment
+  // fields are never touched; the amount is refundable.
+  @Column({ name: 'already_paid_record_ids', type: 'jsonb', default: () => "'[]'::jsonb" })
+  alreadyPaidRecordIds: string[];
+
+  @Column({ name: 'reconcile_reason', type: 'varchar', length: 64, nullable: true })
+  reconcileReason: string | null;
+
+  @Column({ name: 'reconcile_amount', type: 'decimal', precision: 12, scale: 2, nullable: true })
+  reconcileAmount: number | null;
+
+  @Column({ name: 'reconcile_ack_by', type: 'uuid', nullable: true })
+  reconcileAckBy: string | null;
+
+  @Column({ name: 'reconcile_ack_note', type: 'varchar', length: 500, nullable: true })
+  reconcileAckNote: string | null;
+
+  @Column({ name: 'reconcile_ack_at', type: 'timestamp', nullable: true })
+  reconcileAckAt: Date | null;
 
   @Column({ name: 'vietqr_order_id', type: 'varchar', length: 13, nullable: true, unique: true })
   vietqrOrderId: string | null;

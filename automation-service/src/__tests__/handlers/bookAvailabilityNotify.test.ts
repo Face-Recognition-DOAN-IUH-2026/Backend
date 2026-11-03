@@ -65,6 +65,29 @@ describe('bookAvailabilityNotify', () => {
     expect(mockBorrowClient.batchNotifyWaitlist).toHaveBeenCalledWith(['wl-1', 'wl-2', 'wl-3']);
   });
 
+  it('uses the mandatory D5 copy (broadcast to all, first-come-first-served)', async () => {
+    const waitlist = [
+      { id: 'wl-1', patron_id: 'p1', book_id: 'b1', status: 'waiting', created_at: '2025-01-01' },
+    ];
+
+    mockBorrowClient.getWaitlistByBook = jest.fn().mockResolvedValue(waitlist);
+    mockBorrowClient.batchNotifyWaitlist = jest.fn().mockResolvedValue({});
+    mockNotificationClient.createNotification = jest.fn().mockResolvedValue({});
+
+    await bookAvailabilityNotify({}, { type: 'book.returned', payload: { bookId: 'b1', title: 'Clean Code' } } as any);
+
+    expect(mockNotificationClient.createNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.stringContaining('tất cả độc giả trong hàng chờ'),
+      }),
+    );
+    expect(mockNotificationClient.createNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.stringContaining('mượn sớm nhất'),
+      }),
+    );
+  });
+
   it('handles patron_id field in camelCase', async () => {
     const waitlist = [
       { id: 'wl-1', patronId: 'p-camel', bookId: 'b1', status: 'waiting', createdAt: '2025-01-01' },

@@ -3,6 +3,7 @@ import { AppDataSource } from '../data-source';
 import { PaymentOrder, PaymentOrderStatus, PaymentMethodType } from '../entities/PaymentOrder';
 import { VietqrCallback } from '../entities/VietqrCallback';
 import { BorrowRepository } from '../repositories/BorrowRepository';
+import { BorrowRecord } from '../entities/BorrowRecord';
 import { activateCardAutoFine } from '../clients/UserServiceClient';
 import { publishEvent } from '../utils/eventPublisher';
 import { generatePaymentRef } from '../utils/fineCalculator';
@@ -58,6 +59,71 @@ export function verifyHmacSignature(payload: any, signature: string, secretKey: 
   } catch {
     return false;
   }
+}
+
+/**
+ * BLF-PAY-01 — statuses that mean the order will never settle again.
+ * Settlement must short-circuit on these instead of re-applying the payment.
+ */
+export const TERMINAL_ORDER_STATUSES: PaymentOrderStatus[] = [
+  'completed',
+  'reconcile_needed',
+  'refunded',
+  'cancelled',
+];
+
+export function isTerminalOrderStatus(status: PaymentOrderStatus): boolean {
+  return TERMINAL_ORDER_STATUSES.includes(status);
+}
+
+export type ReconcileReason =
+  | 'all_records_already_paid'
+  | 'partial_already_paid'
+  /** A second bank transfer arrived for an order that had already settled. */
+  | 'duplicate_transfer_after_settlement'
+  /** Money arrived but the order's fine records no longer exist. */
+  | 'records_missing';
+
+export interface ReconcileSummary {
+  reason: ReconcileReason;
+  amount: number;
+  alreadyPaidRecordIds: string[];
+  settledRecordIds: string[];
+}
+
+export interface SettlementResult {
+  success: boolean;
+  orderCode: string;
+  alreadyCompleted: boolean;
+  activatedPatrons: string[];
+  reconcile?: ReconcileSummary;
+}
+
+/**
+ * Split the records referenced by an order into the ones this payment may
+ * settle and the ones that were already settled elsewhere (counter cash,
+ * another gateway). Splitting — instead of blindly overwriting — is what makes
+ * settlement non-destructive.
+ */
+export function partitionSettlementRecords<T extends { finePaid: boolean }>(
+  records: T[],
+): { settleable: T[]; alreadyPaid: T[] } {
+  const settleable: T[] = [];
+  const alreadyPaid: T[] = [];
+  for (const record of records) {
+    (record.finePaid ? alreadyPaid : settleable).push(record);
+  }
+  return { settleable, alreadyPaid };
+}
+
+export function sumRecordAmount(
+  records: Array<{ fineAmount?: number | string | null; damageFee?: number | string | null }>,
+): number {
+  return records.reduce(
+    (total, record) =>
+      total + (Number(record.fineAmount) || 0) + (Number(record.damageFee) || 0),
+    0,
+  );
 }
 
 export class PaymentService {
@@ -185,6 +251,11 @@ export class PaymentService {
     paidAt: Date | null;
     expiresAt: Date;
     recordIds: string[];
+    reconcile?: {
+      reason: string | null;
+      amount: number;
+      requiresStaffAction: boolean;
+    };
   }> {
     const order = await this.orderRepo.findOne({ where: { orderCode } });
     if (!order) {
@@ -205,13 +276,22 @@ export class PaymentService {
       paidAt: order.paidAt,
       expiresAt: order.expiresAt,
       recordIds: order.recordIds,
+      ...(order.status === 'reconcile_needed'
+        ? {
+            reconcile: {
+              reason: order.reconcileReason ?? null,
+              amount: Number(order.reconcileAmount) || 0,
+              requiresStaffAction: true,
+            },
+          }
+        : {}),
     };
   }
 
   async processWebhook(
     payload: any,
     signatureHeader?: string,
-  ): Promise<{ success: boolean; orderCode: string; alreadyCompleted: boolean; activatedPatrons: string[] }> {
+  ): Promise<SettlementResult> {
     const secretKey = process.env.PAYOS_CHECKSUM_KEY || process.env.PAYMENT_WEBHOOK_SECRET;
     const signature = signatureHeader || payload?.signature;
     if (secretKey) {
@@ -235,7 +315,7 @@ export class PaymentService {
       throw new HttpError(404, `Không tìm thấy đơn hàng tương ứng với orderCode: ${orderCode}`);
     }
 
-    if (order.status === 'completed') {
+    if (isTerminalOrderStatus(order.status)) {
       return { success: true, orderCode: order.orderCode, alreadyCompleted: true, activatedPatrons: [] };
     }
 
@@ -259,13 +339,17 @@ export class PaymentService {
     orderCode: string,
     confirmedBy: string,
     note?: string,
-  ): Promise<{ success: boolean; orderCode: string; alreadyCompleted: boolean; activatedPatrons: string[] }> {
+  ): Promise<SettlementResult> {
     const order = await this.orderRepo.findOne({ where: { orderCode } });
     if (!order) {
       throw new HttpError(404, `Không tìm thấy đơn hàng tương ứng với orderCode: ${orderCode}`);
     }
 
-    if (order.status === 'completed') {
+    if (
+      order.status === 'completed' ||
+      order.status === 'reconcile_needed' ||
+      order.status === 'refunded'
+    ) {
       return { success: true, orderCode: order.orderCode, alreadyCompleted: true, activatedPatrons: [] };
     }
 
@@ -364,8 +448,11 @@ export class PaymentService {
       order = await this.orderRepo.findOne({ where: { vietqrOrderId: content } });
     }
     if (!order && content) {
+      // No status filter on purpose: a static-QR order has no vietqrOrderId, so
+      // this content match is its only lookup path. Filtering to pending/expired
+      // made every retry for an already-settled order fall through to a 404 that
+      // the bank keeps retrying forever.
       const candidates = await this.orderRepo.find({
-        where: [{ status: 'pending' }, { status: 'expired' }],
         order: { createdAt: 'DESC' },
         take: 100,
       });
@@ -375,8 +462,21 @@ export class PaymentService {
       throw new HttpError(404, `Không tìm thấy đơn hàng cho callback VietQR (orderId=${orderId ?? ''})`);
     }
 
-    if (order.status === 'completed') {
+    if (isTerminalOrderStatus(order.status)) {
       await this.recordVietqrCallback(transactionid, order.orderCode, amount, input);
+      // A transfer that arrives after the order settled is money the library
+      // holds but has not accounted for: raise it on the reconcile queue
+      // instead of answering "duplicate" and silently keeping it.
+      if (order.status !== 'refunded') {
+        publishEvent('payment.reconcile_needed', {
+          orderCode: order.orderCode,
+          patronId: order.patronId,
+          amount: Number(amount) || 0,
+          reason: 'duplicate_transfer_after_settlement',
+          alreadyPaidRecordIds: order.recordIds ?? [],
+          source: 'vietqr_callback',
+        });
+      }
       return { orderCode: order.orderCode, duplicate: true };
     }
 
@@ -403,33 +503,364 @@ export class PaymentService {
         payload,
       }));
     } catch (err: any) {
-      // Best-effort audit row: duplicate inserts (23505) just mean a retried callback.
-      console.warn('[processVietqrCallback] callback audit row skipped:', err?.message);
+      // A duplicate insert (23505) just means a retried callback. Anything else
+      // is a real write failure on money that has already been applied, so it
+      // must be loud enough to find in the logs.
+      if (err?.code === '23505') {
+        console.warn('[processVietqrCallback] duplicate callback audit row skipped:', transactionId);
+        return;
+      }
+      console.error(
+        '[processVietqrCallback] failed to store callback audit row:',
+        transactionId,
+        err?.message,
+      );
     }
   }
 
-  private async settleCompletedOrder(    order: PaymentOrder,
-    gatewayTransId: string | null,
-    receiptPayload: Record<string, any>,
-  ): Promise<{ success: boolean; orderCode: string; alreadyCompleted: boolean; activatedPatrons: string[] }> {
-    const now = new Date();
-    order.status = 'completed';
-    order.paidAt = now;
-    order.gatewayTransId = gatewayTransId;
-    order.webhookPayload = receiptPayload;
+  /**
+   * List orders that need manual reconciliation (default: `reconcile_needed`).
+   * Newest first, paginated so the staff dashboard never pulls an unbounded set.
+   */
+  async listReconcileOrders(params: {
+    status?: PaymentOrderStatus;
+    page?: number;
+    pageSize?: number;
+  } = {}): Promise<{
+    items: Array<{
+      orderCode: string;
+      patronId: string;
+      amount: number;
+      status: PaymentOrderStatus;
+      paymentMethod: PaymentMethodType;
+      recordIds: string[];
+      reconcileReason: string | null;
+      reconcileAmount: number | null;
+      alreadyPaidRecordIds: string[];
+      settledRecordIds: string[];
+      paidAt: Date | null;
+      reconcileAckBy: string | null;
+      reconcileAckAt: Date | null;
+      createdAt: Date;
+    }>;
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const page = Math.max(params.page ?? 1, 1);
+    const pageSize = Math.min(Math.max(params.pageSize ?? 20, 1), 100);
+    const status = params.status ?? 'reconcile_needed';
+
+    const [orders, total] = await this.orderRepo.findAndCount({
+      where: { status },
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    });
+
+    return {
+      items: orders.map((order) => ({
+        orderCode: order.orderCode,
+        patronId: order.patronId,
+        amount: Number(order.amount),
+        status: order.status,
+        paymentMethod: order.paymentMethod,
+        recordIds: order.recordIds ?? [],
+        reconcileReason: order.reconcileReason ?? null,
+        reconcileAmount:
+          order.reconcileAmount === null || order.reconcileAmount === undefined
+            ? null
+            : Number(order.reconcileAmount),
+        alreadyPaidRecordIds: order.alreadyPaidRecordIds ?? [],
+        settledRecordIds: order.settledRecordIds ?? [],
+        paidAt: order.paidAt,
+        reconcileAckBy: order.reconcileAckBy ?? null,
+        reconcileAckAt: order.reconcileAckAt ?? null,
+        createdAt: order.createdAt,
+      })),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  /**
+   * Staff confirms the duplicate payment was refunded out-of-band (D4: the
+   * refund itself stays a manual bank transfer; this only closes the ticket).
+   */
+  async acknowledgeReconcile(
+    orderCode: string,
+    staffId: string,
+    note: string,
+  ): Promise<{
+    orderCode: string;
+    status: PaymentOrderStatus;
+    alreadyAcknowledged: boolean;
+    reconcileAckBy: string | null;
+    reconcileAckAt: Date | null;
+  }> {
+    const order = await this.orderRepo.findOne({ where: { orderCode } });
+    if (!order) {
+      throw new HttpError(404, `Không tìm thấy đơn thanh toán với mã: ${orderCode}`);
+    }
+
+    if (order.status === 'refunded') {
+      return {
+        orderCode: order.orderCode,
+        status: order.status,
+        alreadyAcknowledged: true,
+        reconcileAckBy: order.reconcileAckBy ?? null,
+        reconcileAckAt: order.reconcileAckAt ?? null,
+      };
+    }
+
+    if (order.status !== 'reconcile_needed') {
+      throw new HttpError(
+        409,
+        `Đơn ${orderCode} ở trạng thái ${order.status}, không cần đối soát`,
+        'ORDER_NOT_IN_RECONCILE',
+      );
+    }
+
+    const acknowledgedAt = new Date();
+    order.status = 'refunded';
+    order.reconcileAckBy = staffId;
+    order.reconcileAckNote = note;
+    order.reconcileAckAt = acknowledgedAt;
     await this.orderRepo.save(order);
 
-    // Settle borrow records
-    const records = await this.repo.findFineRecordsByIds(order.recordIds);
-    for (const r of records) {
-      r.finePaid = true;
-      r.paymentMethod = order.paymentMethod;
-      r.paymentRef = order.orderCode;
-      r.paidAt = now;
-    }
-    await this.repo.saveBorrowRecords(records);
+    publishEvent('payment.refund_acknowledged', {
+      orderCode: order.orderCode,
+      patronId: order.patronId,
+      amount: Number(order.reconcileAmount) || 0,
+      acknowledgedBy: staffId,
+      acknowledgedAt,
+    });
 
-    // Auto-unlock card if patron has 0 remaining debt
+    return {
+      orderCode: order.orderCode,
+      status: order.status,
+      alreadyAcknowledged: false,
+      reconcileAckBy: staffId,
+      reconcileAckAt: acknowledgedAt,
+    };
+  }
+
+  /**
+   * Mark an order paid and settle the fine records behind it.
+   *
+   * Idempotency rules (BLF-PAY-01):
+   * - The order is re-read from the database first, so a caller holding a stale
+   *   object cannot bypass the terminal-state guard.
+   * - A record that is already `finePaid` is never mutated. Money that arrives
+   *   for an already-settled debt is quarantined as `reconcile_needed` so staff
+   *   can refund it (D4), instead of silently double-charging the patron.
+   * - Records are written BEFORE the order is flipped to `completed`. If the
+   *   process dies in between, the retry sees records stamped with this order's
+   *   own `paymentRef` and recovers them without opening a false refund ticket.
+   *   The opposite ordering could leave an order `completed` with unpaid
+   *   records, which no retry would ever fix.
+   *
+   * Known residual gap (follow-up BLF-PAY-02): there is no row lock, so two
+   * writers that both read `finePaid = false` before either commits can still
+   * race. Closing that needs a conditional write at the database layer
+   * (`UPDATE borrow_records ... WHERE id = ANY($1) AND fine_paid = false
+   * RETURNING id`) and a real Postgres integration harness.
+   */
+  private async settleCompletedOrder(
+    order: PaymentOrder,
+    gatewayTransId: string | null,
+    receiptPayload: Record<string, any>,
+  ): Promise<SettlementResult> {
+    const now = new Date();
+
+    // Re-read: the caller may be holding an order loaded before a concurrent
+    // settlement (counter payment, another webhook).
+    const fresh = await this.orderRepo.findOne({ where: { orderCode: order.orderCode } });
+    const current = fresh ?? order;
+
+    if (isTerminalOrderStatus(current.status)) {
+      return {
+        success: true,
+        orderCode: current.orderCode,
+        alreadyCompleted: true,
+        activatedPatrons: [],
+      };
+    }
+
+    current.paidAt = now;
+    current.gatewayTransId = gatewayTransId;
+    current.webhookPayload = receiptPayload;
+
+    const records = await this.repo.findFineRecordsByIds(current.recordIds);
+
+    // Money arrived but there is nothing left to settle — the debt rows were
+    // deleted or the order never carried any. Never mark this `completed`.
+    if (records.length === 0) {
+      return this.openReconcileTicket(current, {
+        reason: 'records_missing',
+        amount: Number(current.amount) || 0,
+        alreadyPaidRecordIds: current.recordIds ?? [],
+        settledRecordIds: [],
+      }, now);
+    }
+
+    const { settleable, alreadyPaid } = partitionSettlementRecords(records);
+    // Records stamped with THIS order's code were written by an earlier attempt
+    // of the same order (crash before the order save). Recover them silently.
+    const settledByThisOrder = alreadyPaid.filter((record) => record.paymentRef === current.orderCode);
+    const settledElsewhere = alreadyPaid.filter((record) => record.paymentRef !== current.orderCode);
+    const settledRecordIds = [...settledByThisOrder, ...settleable].map((record) => record.id);
+
+    // Records first: a crash here leaves the order retryable, never "paid but
+    // unsettled". A failure throws and the gateway retries.
+    await this.writeSettledRecords(current, settleable, now);
+
+    if (settledElsewhere.length > 0) {
+      return this.quarantineDuplicatePayment(
+        current,
+        settleable,
+        settledElsewhere,
+        settledRecordIds,
+        now,
+      );
+    }
+
+    current.status = 'completed';
+    current.settledRecordIds = settledRecordIds;
+    current.alreadyPaidRecordIds = [];
+    current.reconcileReason = null;
+    current.reconcileAmount = null;
+    await this.orderRepo.save(current);
+
+    const activatedPatrons = await this.autoUnlockCard(current);
+
+    publishEvent('payment.completed', {
+      orderCode: current.orderCode,
+      patronId: current.patronId,
+      amount: Number(current.amount),
+      recordIds: current.settledRecordIds,
+      paidAt: now,
+    });
+
+    return {
+      success: true,
+      orderCode: current.orderCode,
+      alreadyCompleted: false,
+      activatedPatrons,
+    };
+  }
+
+  /**
+   * Money arrived for a debt that was (partly) already settled elsewhere.
+   * The still-unpaid subset has already been settled by the caller; this opens
+   * the refund ticket for the overlap.
+   */
+  private async quarantineDuplicatePayment(
+    current: PaymentOrder,
+    settleable: BorrowRecord[],
+    settledElsewhere: BorrowRecord[],
+    settledRecordIds: string[],
+    now: Date,
+  ): Promise<SettlementResult> {
+    if (settleable.length > 0) {
+      publishEvent('payment.completed', {
+        orderCode: current.orderCode,
+        patronId: current.patronId,
+        amount: sumRecordAmount(settleable),
+        recordIds: settleable.map((record) => record.id),
+        paidAt: now,
+        partial: true,
+      });
+    }
+
+    return this.openReconcileTicket(current, {
+      reason: settledRecordIds.length === 0 ? 'all_records_already_paid' : 'partial_already_paid',
+      amount: sumRecordAmount(settledElsewhere),
+      alreadyPaidRecordIds: settledElsewhere.map((record) => record.id),
+      settledRecordIds,
+    }, now);
+  }
+
+  /**
+   * Persist a `reconcile_needed` order so staff can refund it (D4). Never
+   * touches the records that were already paid elsewhere.
+   */
+  private async openReconcileTicket(
+    current: PaymentOrder,
+    ticket: {
+      reason: ReconcileReason;
+      amount: number;
+      alreadyPaidRecordIds: string[];
+      settledRecordIds: string[];
+    },
+    now: Date,
+  ): Promise<SettlementResult> {
+    current.status = 'reconcile_needed';
+    current.reconcileReason = ticket.reason;
+    current.reconcileAmount = ticket.amount;
+    current.alreadyPaidRecordIds = ticket.alreadyPaidRecordIds;
+    current.settledRecordIds = ticket.settledRecordIds;
+    await this.orderRepo.save(current);
+
+    publishEvent('payment.reconcile_needed', {
+      orderCode: current.orderCode,
+      patronId: current.patronId,
+      amount: ticket.amount,
+      reason: ticket.reason,
+      alreadyPaidRecordIds: ticket.alreadyPaidRecordIds,
+      paidAt: now,
+    });
+
+    const activatedPatrons = await this.autoUnlockCard(current);
+
+    return {
+      success: true,
+      orderCode: current.orderCode,
+      alreadyCompleted: false,
+      activatedPatrons,
+      reconcile: {
+        reason: ticket.reason,
+        amount: ticket.amount,
+        alreadyPaidRecordIds: ticket.alreadyPaidRecordIds,
+        settledRecordIds: ticket.settledRecordIds,
+      },
+    };
+  }
+
+  /**
+   * Write the records this payment settles. Deliberately does NOT touch the
+   * order: if this throws, the order keeps its previous status and the gateway
+   * retry re-runs the whole settlement.
+   */
+  private async writeSettledRecords(
+    order: PaymentOrder,
+    records: BorrowRecord[],
+    paidAt: Date,
+  ): Promise<void> {
+    if (records.length === 0) return;
+    this.markRecordsPaid(records, order, paidAt);
+    await this.repo.saveBorrowRecords(records);
+  }
+
+  private markRecordsPaid(
+    records: BorrowRecord[],
+    order: PaymentOrder,
+    paidAt: Date,
+  ): void {
+    for (const record of records) {
+      record.finePaid = true;
+      record.paymentMethod = order.paymentMethod;
+      record.paymentRef = order.orderCode;
+      record.paidAt = paidAt;
+    }
+  }
+
+  /**
+   * Auto-unlock the patron card when the settlement cleared their last debt.
+   * Best-effort: a user-service outage must not fail the settlement.
+   */
+  private async autoUnlockCard(order: PaymentOrder): Promise<string[]> {
     const activatedPatrons: string[] = [];
     try {
       const hasDebt = await this.repo.hasUnpaidFinesForPatron(order.patronId);
@@ -438,22 +869,8 @@ export class PaymentService {
         activatedPatrons.push(order.patronId);
       }
     } catch (err: any) {
-      console.warn('[processWebhook] card auto-activate best-effort failed:', err?.message);
+      console.warn('[settleCompletedOrder] card auto-activate best-effort failed:', err?.message);
     }
-
-    publishEvent('payment.completed', {
-      orderCode: order.orderCode,
-      patronId: order.patronId,
-      amount: Number(order.amount),
-      recordIds: order.recordIds,
-      paidAt: now,
-    });
-
-    return {
-      success: true,
-      orderCode: order.orderCode,
-      alreadyCompleted: false,
-      activatedPatrons,
-    };
+    return activatedPatrons;
   }
 }

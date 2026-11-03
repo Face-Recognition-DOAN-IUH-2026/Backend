@@ -9,6 +9,7 @@ import { BorrowSlip } from '../entities/BorrowSlip';
 import { config } from '../config';
 import { finalizeReturnFees } from '../services/returnFinalizer';
 import { PaymentFinalization } from '../utils/fineCalculator';
+import { WaitlistRepository } from './WaitlistRepository';
 
 import { configService } from '../services/ConfigService';
 import { CopyCondition, DEFAULT_CONDITION, DEFAULT_COPY_STATUS, markCopyAsBorrowed, recommendCopyAction } from '../constants/copy';
@@ -714,7 +715,18 @@ export class BorrowRepository {
     const limits = await configService.getBorrowLimits();
     const dueAt = new Date(Date.now() + limits.maxBorrowDays * 24 * 60 * 60 * 1000);
     const record = this.records.create({ patronId, bookId, copyId: copyId || null, borrowAt: new Date(), dueAt, shelfLocation: shelfLocation || null, status: 'borrowed' });
-    return this.records.save(record);
+    const saved = await this.records.save(record);
+
+    // BLF-WL-01 1b: a new borrow for this book re-arms its notified waiters so
+    // they are re-notified when the book is returned again. Best-effort — a
+    // waitlist reset failure never fails the borrow.
+    try {
+      await new WaitlistRepository().resetNotifiedToWaiting(bookId);
+    } catch {
+      // swallow: borrow success is independent of waitlist state
+    }
+
+    return saved;
   }
 
   async returnBook(record: BorrowRecord, returnedByUserId?: string | null, returnedByEmail?: string | null, returnMethod?: string | null, note?: string | null, payment?: PaymentFinalization) {

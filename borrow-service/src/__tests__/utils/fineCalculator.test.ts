@@ -63,38 +63,66 @@ const DAMAGE_CONFIG = {
 
 describe('calculateDamageFee', () => {
   it.each(['new', 'good', null, undefined])('returns 0 for condition %j', (condition) => {
-    expect(calculateDamageFee(condition as any, 120000, DAMAGE_CONFIG)).toBe(0);
+    expect(calculateDamageFee(condition as any, 120000, DAMAGE_CONFIG)).toEqual({
+      amount: 0,
+      priceUnavailable: false,
+    });
   });
 
   it('minor_damage = round(price*30%) + 5000', () => {
-    expect(calculateDamageFee('minor_damage', 100000, DAMAGE_CONFIG)).toBe(35000);
+    expect(calculateDamageFee('minor_damage', 100000, DAMAGE_CONFIG)).toEqual({
+      amount: 35000,
+      priceUnavailable: false,
+    });
   });
 
   it('major_damage = round(price*70%) + 10000', () => {
-    expect(calculateDamageFee('major_damage', 100000, DAMAGE_CONFIG)).toBe(80000);
+    expect(calculateDamageFee('major_damage', 100000, DAMAGE_CONFIG)).toEqual({
+      amount: 80000,
+      priceUnavailable: false,
+    });
   });
 
   it('lost = round(price*100%) + 10000', () => {
-    expect(calculateDamageFee('lost', 100000, DAMAGE_CONFIG)).toBe(110000);
+    expect(calculateDamageFee('lost', 100000, DAMAGE_CONFIG)).toEqual({
+      amount: 110000,
+      priceUnavailable: false,
+    });
   });
 
-  it('uses fallback price when book price is null', () => {
-    expect(calculateDamageFee('lost', null, DAMAGE_CONFIG)).toBe(110000);
+  it('uses fallback price when book price is null — REMOVED: price null now means priceUnavailable, amount 0', () => {
+    expect(calculateDamageFee('lost', null, DAMAGE_CONFIG)).toEqual({
+      amount: 0,
+      priceUnavailable: true,
+    });
   });
 
-  it('uses fallback price when book price is 0', () => {
-    expect(calculateDamageFee('major_damage', 0, DAMAGE_CONFIG)).toBe(80000);
+  it('uses fallback price when book price is 0 — REMOVED: price 0 now means priceUnavailable, amount 0', () => {
+    expect(calculateDamageFee('major_damage', 0, DAMAGE_CONFIG)).toEqual({
+      amount: 0,
+      priceUnavailable: true,
+    });
   });
 
-  it('honors custom config pcts/fixed and fallback', () => {
+  it('honors custom config pcts/fixed when a price is known', () => {
     const custom = {
       damageFeePct: { minor: 10, major: 50, lost: 90 },
       damageFeeFixed: { minor: 1000, major: 2000, lost: 3000 },
       fallbackBookPrice: 50000,
     };
-    expect(calculateDamageFee('minor_damage', 200000, custom)).toBe(21000);
-    expect(calculateDamageFee('major_damage', undefined, custom)).toBe(27000);
-    expect(calculateDamageFee('lost', undefined, custom)).toBe(48000);
+    expect(calculateDamageFee('minor_damage', 200000, custom)).toEqual({
+      amount: 21000,
+      priceUnavailable: false,
+    });
+    // No price → no fee is invented, regardless of fallbackBookPrice.
+    expect(calculateDamageFee('major_damage', undefined, custom)).toEqual({
+      amount: 0,
+      priceUnavailable: true,
+    });
+    expect(calculateDamageFee('lost', undefined, custom)).toEqual({
+      amount: 0,
+      priceUnavailable: true,
+    });
   });
 });
 

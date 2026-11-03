@@ -1,5 +1,18 @@
 import { FineConfig } from './ConfigService';
-import { applyPaymentState, calculateDamageFee, calculateOverdueFine, PaymentFinalization } from '../utils/fineCalculator';
+import {
+  applyPaymentState,
+  calculateDamageFee,
+  calculateOverdueFine,
+  PaymentFinalization,
+} from '../utils/fineCalculator';
+
+/** Result of finalizeReturnFees, including the priceUnavailable signal. */
+export interface PaymentFinalizationResult {
+  overdueDays: number;
+  total: number;
+  /** True when damage could not be priced (book.price unknown) — staff must value it manually. */
+  priceUnavailable: boolean;
+}
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -23,7 +36,7 @@ export function finalizeReturnFees(
   },
   options: PaymentFinalization,
   fineConfig: FineConfig,
-): { overdueDays: number; total: number } {
+): PaymentFinalizationResult {
   const now = record.returnAt ? new Date(record.returnAt) : new Date();
   const dueAt = record.dueAt ? new Date(record.dueAt) : null;
 
@@ -33,13 +46,18 @@ export function finalizeReturnFees(
   }
 
   record.fineAmount = calculateOverdueFine(overdueDays, fineConfig.fineBrackets, fineConfig.finePerDay);
-  record.damageFee = calculateDamageFee(record.returnCondition, record.book?.price, {
+  const damageResult = calculateDamageFee(record.returnCondition, record.book?.price, {
     damageFeePct: fineConfig.damageFeePct,
     damageFeeFixed: fineConfig.damageFeeFixed,
     fallbackBookPrice: fineConfig.fallbackBookPrice,
   });
+  record.damageFee = damageResult.amount;
 
   applyPaymentState(record, options);
 
-  return { overdueDays, total: (Number(record.fineAmount) || 0) + (Number(record.damageFee) || 0) };
+  return {
+    overdueDays,
+    total: (Number(record.fineAmount) || 0) + (Number(record.damageFee) || 0),
+    priceUnavailable: damageResult.priceUnavailable,
+  };
 }

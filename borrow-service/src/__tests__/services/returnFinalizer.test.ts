@@ -45,11 +45,11 @@ describe('finalizeReturnFees', () => {
     expect(record.paymentMethod).toBe('qr_code');
   });
 
-  it('uses fallback price when the book price is null', () => {
+  it('does not charge damage when the book price is null', () => {
     const record = buildRecord({ returnCondition: 'minor_damage', book: { price: null } });
     finalizeReturnFees(record, { isPaidImmediately: true }, FINE_CONFIG);
 
-    expect(record.damageFee).toBe(100000 * 0.3 + 5000); // 35000
+    expect(record.damageFee).toBe(0);
   });
 
   it('leaves the record as unpaid debt when payment is not immediate', () => {
