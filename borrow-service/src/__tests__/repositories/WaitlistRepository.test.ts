@@ -1,5 +1,6 @@
 import { WaitlistRepository } from '../../repositories/WaitlistRepository';
 import { AppDataSource } from '../../data-source';
+import { QueryFailedError } from 'typeorm';
 
 jest.mock('../../data-source');
 
@@ -193,6 +194,68 @@ describe('WaitlistRepository', () => {
       const result = await repo.getExpiredNotifications(24);
 
       expect(result).toHaveLength(0);
+    });
+  });
+
+  describe('joinWaitlist — duplicate handling (BLF-WL-01 1a)', () => {
+    it('returns the existing row when a concurrent save hits the unique index (23505)', async () => {
+      mockBookRepo.findOne.mockResolvedValue({ id: 'book-1' });
+      const winner = { id: 'wl-winner', bookId: 'book-1', patronId: 'patron-1', status: 'waiting' };
+
+      const dupErr = new QueryFailedError(
+        'insert into waitlists',
+        [],
+        Object.assign(new Error('duplicate key'), { code: '23505' }),
+      );
+      mockWaitlistRepo.save.mockRejectedValue(dupErr);
+      // pre-check: null (nothing yet); re-read after 23505: the concurrent winner.
+      mockWaitlistRepo.findOne.mockResolvedValueOnce(null).mockResolvedValue(winner);
+
+      const result = await repo.joinWaitlist('book-1', 'patron-1');
+
+      expect(result).toEqual(winner);
+      expect(mockWaitlistRepo.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-throws non-23505 save errors', async () => {
+      mockBookRepo.findOne.mockResolvedValue({ id: 'book-1' });
+      mockWaitlistRepo.findOne.mockResolvedValue(null);
+      mockWaitlistRepo.save.mockRejectedValue(new Error('connection lost'));
+
+      await expect(repo.joinWaitlist('book-1', 'patron-1')).rejects.toThrow('connection lost');
+    });
+  });
+
+  describe('resetNotifiedToWaiting (BLF-WL-01 1b)', () => {
+    it('resets notified rows back to waiting for the book only', async () => {
+      const qb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 2 }),
+      };
+      mockWaitlistRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await repo.resetNotifiedToWaiting('book-1');
+
+      expect(qb.update).toHaveBeenCalledWith(expect.anything());
+      expect(qb.set).toHaveBeenCalledWith({ status: 'waiting', notifiedAt: null });
+      expect(qb.where).toHaveBeenCalledWith({ bookId: 'book-1', status: 'notified' });
+      expect(qb.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('still executes when there are no notified rows', async () => {
+      const qb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 0 }),
+      };
+      mockWaitlistRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await repo.resetNotifiedToWaiting('book-1');
+
+      expect(qb.execute).toHaveBeenCalledTimes(1);
     });
   });
 });

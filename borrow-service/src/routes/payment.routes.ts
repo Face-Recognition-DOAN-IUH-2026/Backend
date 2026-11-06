@@ -62,6 +62,69 @@ export function createPaymentRouter(service: PaymentService = new PaymentService
   });
 
   /**
+   * GET /borrow/payments/reconcile
+   * Staff-only: orders where money arrived after the debt was already settled.
+   * Decision D4 — the refund itself is a manual bank transfer, this is the queue.
+   */
+  router.get('/reconcile', auth, requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
+    try {
+      const query = z.object({
+        status: z.enum(['reconcile_needed', 'refunded']).optional(),
+        page: z.coerce.number().int().min(1).optional(),
+        pageSize: z.coerce.number().int().min(1).max(100).optional(),
+      }).parse(req.query ?? {});
+
+      const result = await service.listReconcileOrders({
+        status: query.status ?? 'reconcile_needed',
+        page: query.page ?? 1,
+        pageSize: query.pageSize ?? 20,
+      });
+      const patrons = await lookupPatronsByIds([...new Set(result.items.map((o) => o.patronId))])
+        .catch(() => new Map());
+
+      res.json({
+        ...result,
+        items: result.items.map((order) => ({
+          ...order,
+          patron: {
+            id: order.patronId,
+            full_name: (patrons.get(order.patronId) as any)?.full_name ?? (patrons.get(order.patronId) as any)?.fullName ?? null,
+            student_code: (patrons.get(order.patronId) as any)?.student_code ?? (patrons.get(order.patronId) as any)?.studentCode ?? null,
+          },
+        })),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * POST /borrow/payments/:orderCode/reconcile/ack
+   * Staff-only: close a reconcile ticket after the duplicate payment was
+   * refunded out-of-band. Idempotent — a second call is a no-op.
+   */
+  router.post('/:orderCode/reconcile/ack', auth, requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
+    try {
+      const { orderCode } = req.params;
+      if (!orderCode) {
+        throw new HttpError(400, 'Thiếu orderCode');
+      }
+      const body = z.object({
+        note: z.string().trim().min(5).max(500),
+      }).parse(req.body ?? {});
+
+      const result = await service.acknowledgeReconcile(
+        orderCode,
+        req.user?.id || 'staff',
+        body.note,
+      );
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
    * POST /borrow/payments/:orderCode/confirm
    * Staff-only: confirm money has arrived in the bank account (checked against
    * the bank statement) and settle the debt. Accepts pending + expired orders.

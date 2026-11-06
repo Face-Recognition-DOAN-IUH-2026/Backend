@@ -31,7 +31,15 @@ export const config = {
     baseUrl: (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, ''),
   },
 
-  // NVIDIA NIM (for Agent Chat)
+  // Primary LLM for Agent Chat (OpenAI-compatible endpoint).
+  // LLM_* takes precedence; NVIDIA_* remains as a backward-compatible fallback.
+  llm: {
+    baseUrl: (process.env.LLM_BASE_URL || 'https://integrate.api.nvidia.com/v1').replace(/\/$/, ''),
+    apiKey: process.env.LLM_API_KEY || process.env.NVIDIA_API_KEY || '',
+    model: process.env.LLM_MODEL || process.env.NVIDIA_MODEL || 'meta/llama-3.1-70b-instruct',
+  },
+
+  // NVIDIA NIM (embeddings for RAG; also legacy chat fallback)
   nvidiaApiKey: process.env.NVIDIA_API_KEY || '',
   nvidiaModel: process.env.NVIDIA_MODEL || 'meta/llama-3.1-70b-instruct',
   nvidiaEmbedModel: process.env.NVIDIA_EMBED_MODEL || 'nvidia/nv-embedqa-e5-v5',

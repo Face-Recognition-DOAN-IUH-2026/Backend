@@ -27,7 +27,7 @@ function getDocTitle(filePath: string): string {
   return titles[fileName] || fileName;
 }
 
-function extractFrontmatter(content: string): { metadata: Record<string, string>; body: string } {
+export function extractFrontmatter(content: string): { metadata: Record<string, string>; body: string } {
   // Handle both LF and CRLF (Windows) line endings
   const normalized = content.replace(/\r\n/g, '\n');
   const frontmatterMatch = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
@@ -44,10 +44,13 @@ function extractFrontmatter(content: string): { metadata: Record<string, string>
     }
     return { metadata, body: frontmatterMatch[2] };
   }
-  return { metadata: { roles: 'patron' }, body: normalized };
+  // BLF-RAG-01: documents without frontmatter must NOT fail-open to `patron`.
+  // Return no roles so the document is treated as restricted (skipped at indexing)
+  // instead of being silently indexed into the patron collection.
+  return { metadata: {}, body: normalized };
 }
 
-function parseRoles(rolesStr: string): string[] {
+export function parseRoles(rolesStr: string): string[] {
   return rolesStr
     .split(',')
     .map(r => r.trim())

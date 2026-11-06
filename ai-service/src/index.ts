@@ -128,8 +128,8 @@ async function start() {
       console.log(`  Staff Chat:    /ai/staff/chat (requireRole: admin, staff)`);
       console.log(`  Admin Chat:    /ai/admin/chat (requireRole: admin)`);
       console.log(`  Command Center: /ai/command-center/*`);
-      console.log(`  LLM (OpenRouter): ${config.openRouter.model}`);
-      console.log(`  LLM (NVIDIA NIM): ${config.nvidiaModel}`);
+      console.log(`  LLM (primary):    ${config.llm.model} @ ${config.llm.baseUrl}`);
+      if (config.openRouter.apiKey) console.log(`  LLM (fallback):   ${config.openRouter.model} @ OpenRouter`);
     });
 
     const shutdown = async () => {

@@ -5,8 +5,11 @@ export class GeofenceConfig {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid', name: 'zone_id', unique: true })
-  zoneId: string;
+  @Column({ type: 'uuid', name: 'zone_id', unique: true, nullable: true })
+  zoneId: string | null;
+
+  @Column({ type: 'boolean', default: false, name: 'is_global' })
+  isGlobal: boolean;
 
   @Column({ type: 'double precision' })
   latitude: number;

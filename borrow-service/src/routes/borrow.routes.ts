@@ -4,7 +4,7 @@ import { AppDataSource } from '../data-source';
 import { auth, AuthRequest, requireRole, requireDynamicPermission } from '../middlewares/auth';
 import { HttpError } from '../../../shared/error-handler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
-import { isPatronInside, getPatronAccessStatus } from '../clients/AccessServiceClient';
+import { isPatronInside, getPatronAccessStatus, touchPatronPresence, shouldTouchPresence } from '../clients/AccessServiceClient';
 import { lookupPatronById, lookupPatronsByIds, PatronSummary } from '../clients/UserServiceClient';
 import { activateCardAutoFine } from '../clients/UserServiceClient';
 import { generatePaymentRef } from '../utils/fineCalculator';
@@ -157,6 +157,13 @@ router.post('/', requireRole(['patron', 'admin', 'staff']), async (req: AuthRequ
         throw new HttpError(403, `Phiên làm việc tại thư viện đã hết hạn (${config.maxEntryHours}h). Vui lòng quét thẻ hoặc khuôn mặt tại cổng vào để tiếp tục mượn sách.`, 'PATRON_ACCESS_EXPIRED');
       }
       throw new HttpError(403, 'Bạn phải có mặt trong thư viện để mượn sách. Vui lòng quét khuôn mặt hoặc thẻ tại cổng vào để xác nhận hiện diện.', 'PATRON_NOT_INSIDE');
+    }
+
+    // BLF-PRES-01: refresh presence so an active in-library session does not
+    // expire mid-visit. Best-effort; skipped if touched recently (cooldown).
+    // An already-expired session is never revived here (403 thrown above).
+    if (shouldTouchPresence(accessStatus.lastEntryAt)) {
+      await touchPatronPresence(userId);
     }
     const repo = new BorrowRepository();
     const barcode = sanitizeBarcode(body.barcode);

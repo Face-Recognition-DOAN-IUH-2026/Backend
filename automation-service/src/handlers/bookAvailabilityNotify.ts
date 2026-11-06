@@ -31,7 +31,7 @@ export async function bookAvailabilityNotify(
       userId: entry.patron_id || entry.patronId,
       type: 'book_available',
       title: 'Sách đã có sẵn',
-      body: `Cuốn "${bookTitle || 'Sách'}" đã có sẵn tại thư viện${qtyText}. Bạn có thể đến mượn ngay theo nguyên tắc đến trước phục vụ trước!`,
+      body: `Cuốn "${bookTitle || 'Sách'}" đã có sẵn tại thư viện${qtyText}. Thông báo này được gửi tới tất cả độc giả trong hàng chờ, vui lòng đến mượn sớm nhất theo nguyên tắc đến trước phục vụ trước!`,
       data: { bookId, title: bookTitle, availableCopies },
     }));
 

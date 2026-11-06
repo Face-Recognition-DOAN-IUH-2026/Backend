@@ -98,7 +98,13 @@ describe('ReturnService — payment finalization + card suspend', () => {
   });
 
   it('publishes fine.incurred with the extended payload when there is a total', async () => {
-    primeReturn({ fineAmount: 10000, damageFee: 80000, returnCondition: 'major_damage' });
+    const { record } = primeReturn({
+      fineAmount: 10000,
+      damageFee: 80000,
+      returnCondition: 'major_damage',
+    });
+    // price is null by default in the mock; set a real price so damage is computable.
+    record.book.price = 100000;
 
     await new ReturnService().returnByBarcode('LIB-9780123456789-001', STAFF_UUID, 'staff@test.com', null, 'major_damage', {
       isPaidImmediately: true,

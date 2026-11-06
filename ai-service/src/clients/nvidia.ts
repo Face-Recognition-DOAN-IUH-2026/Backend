@@ -63,6 +63,28 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
+ * Resolve the primary chat LLM endpoint. `config.llm` is the canonical source; test mocks and
+ * older deployments may only expose the legacy NVIDIA_* fields, so fall back to those.
+ */
+function primaryLlm(): { baseUrl: string; apiKey: string; model: string } {
+  const llm = config.llm;
+  return {
+    baseUrl: (llm?.baseUrl || 'https://integrate.api.nvidia.com/v1').replace(/\/$/, ''),
+    apiKey: llm?.apiKey || config.nvidiaApiKey || '',
+    model: llm?.model || config.nvidiaModel,
+  };
+}
+
+/** Human-readable provider label for logs and errors (the endpoint host). */
+function llmProviderName(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return 'LLM';
+  }
+}
+
+/**
  * Accumulate a non-`arguments` stream fragment: accept the first value, extend it when the
  * provider splits it across frames, and ignore verbatim repeats from the next frame.
  */
@@ -239,12 +261,18 @@ interface LLMClient {
 class NvidiaNIMClient implements LLMClient {
   private client: AxiosInstance;
   private maxRetries: number = 3;
+  private model: string;
+  private providerName: string;
 
   constructor() {
+    const llm = primaryLlm();
+    this.model = llm.model;
+    this.providerName = llmProviderName(llm.baseUrl);
+
     this.client = axios.create({
-      baseURL: 'https://integrate.api.nvidia.com/v1',
+      baseURL: llm.baseUrl,
       headers: {
-        'Authorization': `Bearer ${config.nvidiaApiKey}`,
+        'Authorization': `Bearer ${llm.apiKey}`,
         'Content-Type': 'application/json',
       },
       timeout: 120000,
@@ -258,7 +286,7 @@ class NvidiaNIMClient implements LLMClient {
     const { temperature = 0.7, maxTokens = 2048 } = options;
 
     const request: ChatCompletionRequest = {
-      model: config.nvidiaModel,
+      model: this.model,
       messages,
       temperature,
       max_tokens: maxTokens,
@@ -281,7 +309,7 @@ class NvidiaNIMClient implements LLMClient {
           }
         }
 
-        throw new Error('Empty or invalid response content from NVIDIA NIM');
+        throw new Error(`Empty or invalid response content from ${this.providerName}`);
       } catch (error: any) {
         lastError = error;
 
@@ -293,7 +321,7 @@ class NvidiaNIMClient implements LLMClient {
             ? parseInt(retryAfter, 10) * 1000
             : Math.min(2000 * Math.pow(2, attempt - 1) + Math.random() * 1000, 30000);
 
-          console.log(`[NVIDIA NIM] 429 rate limited, attempt ${attempt}/${this.maxRetries}, retrying in ${backoffMs}ms`);
+          console.log(`[${this.providerName}] 429 rate limited, attempt ${attempt}/${this.maxRetries}, retrying in ${backoffMs}ms`);
 
           if (attempt < this.maxRetries) {
             await this.delay(backoffMs);
@@ -302,7 +330,7 @@ class NvidiaNIMClient implements LLMClient {
         }
 
         if (status && status >= 400 && status < 500 && status !== 429) {
-          throw new Error(`NVIDIA NIM client error ${status}: ${error.response?.data?.error?.message || error.message}`);
+          throw new Error(`${this.providerName} client error ${status}: ${error.response?.data?.error?.message || error.message}`);
         }
 
         if (attempt < this.maxRetries) {
@@ -312,7 +340,7 @@ class NvidiaNIMClient implements LLMClient {
       }
     }
 
-    throw new Error(`NVIDIA NIM request failed after ${this.maxRetries} attempts: ${lastError?.message}`);
+    throw new Error(`${this.providerName} request failed after ${this.maxRetries} attempts: ${lastError?.message}`);
   }
 
   async *streamChatCompletion(
@@ -322,7 +350,7 @@ class NvidiaNIMClient implements LLMClient {
     const { temperature = 0.7, maxTokens = 2048, tools } = options;
 
     const request: ChatCompletionRequest = {
-      model: config.nvidiaModel,
+      model: this.model,
       messages,
       temperature,
       max_tokens: maxTokens,
@@ -330,7 +358,7 @@ class NvidiaNIMClient implements LLMClient {
       ...(tools && tools.length > 0 ? { tools, tool_choice: 'auto' } : {}),
     };
 
-    const rawStream = await postStreamRequest(this.client, request, 'NVIDIA NIM', this.maxRetries);
+    const rawStream = await postStreamRequest(this.client, request, this.providerName, this.maxRetries);
     yield* emitStreamEvents(rawStream, Boolean(tools && tools.length > 0));
   }
 
@@ -503,9 +531,10 @@ class FallbackLLMClient implements LLMClient {
       this.fallbackName = '';
       return;
     }
-    if (config.nvidiaApiKey) {
+    const llm = primaryLlm();
+    if (llm.apiKey) {
       this.primary = new NvidiaNIMClient();
-      this.primaryName = 'NVIDIA NIM';
+      this.primaryName = llmProviderName(llm.baseUrl);
       if (config.openRouter.apiKey) {
         this.fallback = new OpenRouterClient();
         this.fallbackName = 'OpenRouter';
@@ -519,7 +548,7 @@ class FallbackLLMClient implements LLMClient {
       this.fallback = null;
       this.fallbackName = '';
     } else {
-      throw new Error('No LLM API key configured (OPENROUTER_API_KEY or NVIDIA_API_KEY required)');
+      throw new Error('No LLM API key configured (LLM_API_KEY, NVIDIA_API_KEY or OPENROUTER_API_KEY required)');
     }
   }
 

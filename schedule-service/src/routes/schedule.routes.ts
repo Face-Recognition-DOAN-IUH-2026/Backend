@@ -1176,8 +1176,16 @@ router.post('/attendance/manual-checkin', auth, asyncHandler(async (req, res) =>
 
 router.put('/attendance/:id/approve-manual', requireDynamicPermission('schedules', 'approve'), asyncHandler(async (req, res) => {
   const { id } = idParam.parse(req.params);
-  const checkInAt = req.body?.checkInAt ? new Date(req.body.checkInAt) : undefined;
-  res.json(await scheduleService.approveManualCheckIn(req.user!.userId, id, checkInAt));
+  const { checkInAt, lat, lng } = z.object({
+    checkInAt: z.string().datetime().optional(),
+    lat: z.coerce.number().optional(),
+    lng: z.coerce.number().optional(),
+  }).parse(req.body ?? {});
+  res.json(await scheduleService.approveManualCheckIn(req.user!.userId, id, {
+    checkInAt: checkInAt ? new Date(checkInAt) : undefined,
+    lat,
+    lng,
+  }));
 }));
 
 router.put('/attendance/:id/reject-manual', requireDynamicPermission('schedules', 'approve'), asyncHandler(async (req, res) => {
