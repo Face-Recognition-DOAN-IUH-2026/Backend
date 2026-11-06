@@ -1,8 +1,11 @@
 import { Column, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Book } from './Book';
+import { MIGRATION_MANAGED_INDEX } from './migrationManagedIndex';
 
 @Index(['bookId', 'isAvailable'])
 @Index(['bookId', 'status'])
+// Trigram GIN index is created by migration 1770800000000-AddPgTrgmSearchIndexes.
+@Index('idx_book_copies_barcode_trgm', ['barcode'], MIGRATION_MANAGED_INDEX)
 @Entity({ name: 'book_copies' })
 export class BookCopy {
   @PrimaryGeneratedColumn('uuid')

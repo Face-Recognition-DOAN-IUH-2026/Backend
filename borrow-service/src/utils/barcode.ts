@@ -58,6 +58,16 @@ function gluedBarcodeCandidates(raw: string): string[] {
   return candidates;
 }
 
+// LIB-<isbn>-<seq> with ISBN-10 <-> ISBN-13 conversion:
+// LIB-9780140328721-001 (ISBN-13) <-> LIB-0140328726-001 (ISBN-10).
+function libBarcodeIsbnCandidates(raw: string): string[] {
+  const match = raw.match(/^LIB[\s-]*(\d{10,13})[\s-]*(\d+)$/i);
+  if (!match) return [];
+  const altIsbn = convertIsbnFormat(match[1]);
+  if (!altIsbn) return [];
+  return [normalizeCopySeq(`LIB-${altIsbn}-${match[2]}`)];
+}
+
 export async function findCopyByBarcode<T>(repo: { getCopyByBarcode(barcode: string): Promise<T | null> }, barcode: string): Promise<T | null> {
   const raw = sanitizeBarcode(barcode);
   const exact = await repo.getCopyByBarcode(raw);
@@ -65,6 +75,10 @@ export async function findCopyByBarcode<T>(repo: { getCopyByBarcode(barcode: str
   const normalized = normalizeCopySeq(raw);
   if (normalized !== raw) {
     const hit = await repo.getCopyByBarcode(normalized);
+    if (hit) return hit;
+  }
+  for (const candidate of libBarcodeIsbnCandidates(raw)) {
+    const hit = await repo.getCopyByBarcode(candidate);
     if (hit) return hit;
   }
   for (const candidate of gluedBarcodeCandidates(raw)) {
