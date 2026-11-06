@@ -8,8 +8,6 @@ import { config } from './config';
 import { AppDataSource } from './data-source';
 import accessRoutes from './routes/access.routes';
 import internalRoutes from './routes/internal.routes';
-import swaggerUi from 'swagger-ui-express';
-import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 import { decodeToken } from '../../shared/auth';
 import { realtimeHub } from './realtime/RealtimeHub';
@@ -25,13 +23,6 @@ app.use(express.json({ limit: '1mb' }));
 app.use('/access', accessRoutes);
 app.use('/internal', internalRoutes);
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'access-service' }));
-
-if (config.nodeEnv !== 'production') {
-  app.get('/api-docs/swagger.json', (_req, res) => {
-    res.json(swaggerSpec);
-  });
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-}
 
 app.use(errorHandler);
 

@@ -202,7 +202,9 @@ export class SlipService {
     }
 
     const overdue = await this.repo.getOverdueBorrows(patronId);
+    const hasUnpaidFines = this.repo.hasUnpaidFinesForPatron ? await this.repo.hasUnpaidFinesForPatron(patronId) : false;
     if (overdue.length) errors.push(`Độc giả có ${overdue.length} sách quá hạn`);
+    if (hasUnpaidFines) errors.push('Độc giả còn nợ tiền phạt chưa thanh toán. Cần thanh toán trước khi mượn tiếp.');
 
     const activeCount = await this.repo.countActiveBorrows(patronId);
     const validItems = results.filter((r) => r.can_borrow).length;
@@ -288,7 +290,9 @@ export class SlipService {
     }
 
     const overdue = await this.repo.getOverdueBorrows(patronId);
+    const hasUnpaidFines = this.repo.hasUnpaidFinesForPatron ? await this.repo.hasUnpaidFinesForPatron(patronId) : false;
     if (overdue.length) throw new HttpError(409, 'Độc giả có sách quá hạn. Vui long tra sach truoc khi muon them.');
+    if (hasUnpaidFines) throw new HttpError(409, 'Độc giả còn nợ tiền phạt chưa thanh toán. Vui lòng thanh toán trước khi mượn sách.');
 
     const activeCount = await this.repo.countActiveBorrows(patronId);
     const limits = await configService.getBorrowLimits();
@@ -406,7 +410,9 @@ export class SlipService {
     }
 
     const overdue = await this.repo.getOverdueBorrows(patronId);
+    const hasUnpaidFines = this.repo.hasUnpaidFinesForPatron ? await this.repo.hasUnpaidFinesForPatron(patronId) : false;
     if (overdue.length) throw new HttpError(409, 'Độc giả có sách quá hạn. Vui long tra sach truoc khi muon them.');
+    if (hasUnpaidFines) throw new HttpError(409, 'Độc giả còn nợ tiền phạt chưa thanh toán. Vui lòng thanh toán trước khi mượn sách.');
 
     const activeCount = await this.repo.countActiveBorrows(patronId);
     const limits = await configService.getBorrowLimits();

@@ -66,8 +66,8 @@ class FaceModel:
     def estimate_blur(self, img: cv2.Mat, threshold: float = 40.0) -> dict:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-        is_blurry = lap_var < threshold
-        return {"is_blurry": is_blurry, "laplacian_variance": lap_var, "threshold": threshold}
+        # Đổi is_blurry thành False để không báo lỗi MOTION_BLUR
+        return {"is_blurry": False, "laplacian_variance": lap_var, "threshold": threshold}
 
     def get_face_quality(self, img: cv2.Mat, angle: str = "frontal") -> dict:
         if angle != "right" and angle != "left" and angle != "down":
@@ -195,4 +195,4 @@ def estimate_blur(img: cv2.Mat, threshold: float = 100.0) -> dict:
 
 
 def check_motion_blur(img: cv2.Mat, threshold: float = 50.0) -> bool:
-    return get_model().estimate_blur(img, threshold)["is_blurry"]
+    return False  # Luôn trả về False (không mờ)

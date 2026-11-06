@@ -1,7 +1,7 @@
 import { borrowClient, notificationClient, userClient } from '../clients/serviceClients';
 
 export async function checkDueSoonBorrows(config: Record<string, any>): Promise<any> {
-  const daysBefore = parseInt(config?.days_before) || 3;
+  const daysBefore = parseInt(config?.days_before) || 1;
   const dueSoon = await borrowClient.getDueSoonBorrows(daysBefore);
 
   if (!dueSoon || !Array.isArray(dueSoon) || dueSoon.length === 0) {
