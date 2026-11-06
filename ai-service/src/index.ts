@@ -11,8 +11,6 @@ import adminChatRouter from './routes/chat.admin';
 import companionRouter from './routes/companion';
 import legacyChatRouter from './routes/chat.legacy';
 import sessionRouter from './routes/session.routes';
-import swaggerUi from 'swagger-ui-express';
-import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 import { createAuth, requireRole } from '../../shared/auth';
 import { getCollection } from './clients/chromadb';
@@ -84,13 +82,6 @@ app.use('/ai', auth, aiRoutes);
 
 // Session retrieval - /ai/sessions/:sessionId (ownership enforced via getOwned)
 app.use('/ai', auth, sessionRouter);
-
-if (config.nodeEnv !== 'production') {
-  app.get('/api-docs/swagger.json', (_req, res) => {
-    res.json(swaggerSpec);
-  });
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-}
 
 app.use(errorHandler);
 

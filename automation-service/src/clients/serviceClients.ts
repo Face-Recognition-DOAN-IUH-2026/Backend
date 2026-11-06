@@ -252,13 +252,14 @@ export const userClient = {
 };
 
 export const emailClient = {
-  async sendOverdueEmail(toEmail: string, bookTitle: string, daysOverdue: number) {
+  async sendOverdueEmail(toEmail: string, bookTitle: string, daysOverdue: number, fineAmount?: number) {
     try {
       const published = await amqpClient.publish('notification.send', {
         emailType: 'overdue',
         toEmail,
         bookTitle,
         daysOverdue,
+        fineAmount,
       });
       if (published) return { success: true, via: 'rabbitmq' };
     } catch (err: any) {
@@ -267,7 +268,7 @@ export const emailClient = {
 
     return request(`${config.services.notificationService}/internal/send-overdue-email`, {
       method: 'POST',
-      body: { toEmail, bookTitle, daysOverdue },
+      body: { toEmail, bookTitle, daysOverdue, fineAmount },
     });
   },
 

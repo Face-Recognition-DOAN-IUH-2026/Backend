@@ -5,8 +5,6 @@ import cookieParser from 'cookie-parser';
 import { config } from './config';
 import { AppDataSource } from './data-source';
 import { authRoutes, userRoutes, patronRoutes, internalRoutes, permissionRoutes } from './routes';
-import swaggerUi from 'swagger-ui-express';
-import { swaggerSpec } from './config/swagger';
 import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 
 const app = express();
@@ -24,13 +22,6 @@ app.use('/users', userRoutes);
 app.use('/patrons', patronRoutes);
 app.use('/internal', internalRoutes);
 app.use('/permissions', permissionRoutes);
-
-if (config.nodeEnv !== 'production') {
-  app.get('/api-docs/swagger.json', (_req, res) => {
-    res.json(swaggerSpec);
-  });
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-}
 
 app.use(errorHandler);
 

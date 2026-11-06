@@ -597,6 +597,9 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
         img = safe_read_image_from_bytes(raw_bytes)
         img = resize_if_necessary(img, max_w=settings.max_image_width, max_h=settings.max_image_height, max_pixels=settings.max_image_pixels)
 
+        # FIX: Tách ảnh enhanced (dùng cho face detection + embedding)
+        # và ảnh gốc (dùng cho liveness — tránh CLAHE khuếch đại edge gây false SCREEN_BEZEL)
+        img_original = img.copy()
         img = enhance_illumination(img)
 
         face_data = detect_face_once(img)
@@ -646,10 +649,12 @@ def _sync_face_login(raw_bytes: bytes) -> dict:
                 "error": "Đăng nhập khuôn mặt tạm thời không khả dụng. Vui lòng dùng mật khẩu.",
             }
 
-        liveness = run_liveness_analysis(img)
+        # FIX: Dùng ảnh GỐC (chưa qua CLAHE) để kiểm tra liveness
+        # CLAHE khuếch đại cạnh frame → analyze_screen_bezel() nhận nhầm là màn hình → false positive
+        liveness = run_liveness_analysis(img_original)
         is_live = liveness.get("is_live", False)
         if not is_live:
-            logger.warning("Spoof attempt detected for user %s (%s)", user_email, user_id)
+            logger.warning("Spoof attempt detected for user %s (%s): %s", user_email, user_id, liveness.get("veto_reasons"))
             try:
                 import redis as _redis
                 r = _redis.Redis.from_url(settings.redis_url)

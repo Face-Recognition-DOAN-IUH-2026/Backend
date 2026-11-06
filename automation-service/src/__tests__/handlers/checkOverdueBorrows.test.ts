@@ -20,8 +20,8 @@ describe('checkOverdueBorrows', () => {
     expect(result.notified).toBe(0);
   });
 
-  it('should create notifications for overdue records', async () => {
-    const pastDate = new Date(Date.now() - 5 * 86400000).toISOString();
+  it('should create notifications for overdue records on periodic reminder days (day 1, 3, 6...)', async () => {
+    const pastDate = new Date(Date.now() - 3 * 86400000).toISOString();
     const mockRecords = [
       { id: 'r1', patron_id: 'p1', book_id: 'b1', due_at: pastDate, book: { title: 'Overdue Book' } },
     ];
@@ -33,8 +33,28 @@ describe('checkOverdueBorrows', () => {
     expect(result.checked).toBe(1);
     expect(result.notified).toBe(1);
     expect(mockNotificationClient.createBulkNotifications).toHaveBeenCalledWith([
-      expect.objectContaining({ userId: 'p1', type: 'overdue_reminder' }),
+      expect.objectContaining({
+        userId: 'p1',
+        type: 'overdue_reminder',
+        title: 'Nhắc trả sách quá hạn',
+        body: expect.stringContaining('10.000 đ'),
+      }),
     ]);
+  });
+
+  it('should skip non-periodic reminder days (e.g. day 2, 5)', async () => {
+    const pastDate = new Date(Date.now() - 5 * 86400000).toISOString();
+    const mockRecords = [
+      { id: 'r1', patron_id: 'p1', book_id: 'b1', due_at: pastDate, book: { title: 'Overdue Book' } },
+    ];
+    mockBorrowClient.getOverdueBorrows = jest.fn().mockResolvedValue(mockRecords);
+    mockUserClient.getUsers = jest.fn().mockResolvedValue({ p1: { fullName: 'Test Patron' } });
+
+    const result = await checkOverdueBorrows({ notify_patrons: true });
+
+    expect(result.checked).toBe(1);
+    expect(result.notified).toBe(0);
+    expect(mockNotificationClient.createBulkNotifications).not.toHaveBeenCalled();
   });
 
   it('should send overdue email when patron email is available', async () => {
@@ -47,7 +67,7 @@ describe('checkOverdueBorrows', () => {
 
     await checkOverdueBorrows({ notify_patrons: true });
 
-    expect(mockEmailClient.sendOverdueEmail).toHaveBeenCalledWith('patron@test.com', 'Late Book', 3);
+    expect(mockEmailClient.sendOverdueEmail).toHaveBeenCalledWith('patron@test.com', 'Late Book', 3, 10000);
   });
 
   it('should not send email when patron has no email', async () => {

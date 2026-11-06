@@ -69,12 +69,12 @@ describe('checkDueSoonBorrows', () => {
     expect(call.body).toContain('Bạn');
   });
 
-  it('should default days_before to 3 when not provided', async () => {
+  it('should default days_before to 1 when not provided', async () => {
     mockBorrowClient.getDueSoonBorrows = jest.fn().mockResolvedValue([]);
 
     await checkDueSoonBorrows({});
 
-    expect(mockBorrowClient.getDueSoonBorrows).toHaveBeenCalledWith(3);
+    expect(mockBorrowClient.getDueSoonBorrows).toHaveBeenCalledWith(1);
   });
 
   it('should handle null/undefined config gracefully', async () => {
@@ -82,6 +82,6 @@ describe('checkDueSoonBorrows', () => {
 
     await checkDueSoonBorrows(null as any);
 
-    expect(mockBorrowClient.getDueSoonBorrows).toHaveBeenCalledWith(3);
+    expect(mockBorrowClient.getDueSoonBorrows).toHaveBeenCalledWith(1);
   });
 });

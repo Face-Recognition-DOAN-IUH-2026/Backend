@@ -411,4 +411,32 @@ describe('SlipService.create — stale condition re-validation', () => {
     expect(mockRepo.getBookByIsbn).toHaveBeenCalledWith('9780123456789');
     expect(mockRepo.getBookByIsbn).not.toHaveBeenCalledWith('9780123456789\u0000');
   });
+
+  it('rejects create with 409 when patron has unpaid fines', async () => {
+    const { book, copy } = copyWithBook('good', 'available');
+    mockRepo.getCopyByBarcode.mockResolvedValue(copy);
+    mockRepo.getBookById.mockResolvedValue(book);
+    mockRepo.getActiveBorrow.mockResolvedValue(null);
+    mockRepo.getOverdueBorrows.mockResolvedValue([]);
+    mockRepo.hasUnpaidFinesForPatron.mockResolvedValue(true);
+    mockRepo.countActiveBorrows.mockResolvedValue(0);
+
+    await expect(
+      new SlipService().create(PATRON_UUID, [{ barcode: copy.barcode }], STAFF_UUID, 'staff@test.com', null, true),
+    ).rejects.toThrow('Độc giả còn nợ tiền phạt chưa thanh toán');
+  });
+
+  it('reports error during lookup when patron has unpaid fines', async () => {
+    const { book, copy } = copyWithBook('good', 'available');
+    mockRepo.getCopyByBarcode.mockResolvedValue(copy);
+    mockRepo.getBookById.mockResolvedValue(book);
+    mockRepo.getActiveBorrow.mockResolvedValue(null);
+    mockRepo.getOverdueBorrows.mockResolvedValue([]);
+    mockRepo.hasUnpaidFinesForPatron.mockResolvedValue(true);
+    mockRepo.countActiveBorrows.mockResolvedValue(0);
+
+    const res = await new SlipService().lookup(PATRON_UUID, [{ barcode: copy.barcode }], true);
+    expect(res.can_create).toBe(false);
+    expect(res.errors).toContain('Độc giả còn nợ tiền phạt chưa thanh toán. Cần thanh toán trước khi mượn tiếp.');
+  });
 });
