@@ -56,6 +56,46 @@ function getServiceName(): string {
   return serviceMap[port] || `service-${port}`;
 }
 
+/**
+ * A failing dependency makes the clients poll fail over and over (the dashboard
+ * polls every 30s). Reporting every occurrence to Jira buries the real
+ * incidents, so identical 5xx errors are reported at most once per window.
+ * Further occurrences are counted and logged locally instead.
+ */
+const JIRA_REPORT_WINDOW_MS = 10 * 60 * 1000;
+const jiraReportState = new Map<string, { lastReportedAt: number; totalCount: number }>();
+
+function pruneJiraReportState(now: number): void {
+  if (jiraReportState.size < 500) return;
+  for (const [key, state] of jiraReportState) {
+    if (now - state.lastReportedAt > JIRA_REPORT_WINDOW_MS) jiraReportState.delete(key);
+  }
+}
+
+/**
+ * Registers one 5xx occurrence and decides whether it should be reported to
+ * Jira. `occurrence` is the cumulative number of times this exact error has
+ * been seen, so the created issue carries the impact of the failure.
+ */
+function registerJiraReport(key: string): { report: boolean; occurrence: number } {
+  const now = Date.now();
+  pruneJiraReportState(now);
+
+  const state = jiraReportState.get(key);
+  if (!state) {
+    jiraReportState.set(key, { lastReportedAt: now, totalCount: 1 });
+    return { report: true, occurrence: 1 };
+  }
+
+  state.totalCount += 1;
+  if (now - state.lastReportedAt < JIRA_REPORT_WINDOW_MS) {
+    return { report: false, occurrence: state.totalCount };
+  }
+
+  state.lastReportedAt = now;
+  return { report: true, occurrence: state.totalCount };
+}
+
 export function errorHandler(err: any, req: Request, res: Response, _next: NextFunction) {
   // Zod validation errors → 400
   if (err?.name === 'ZodError') {
@@ -87,25 +127,35 @@ export function errorHandler(err: any, req: Request, res: Response, _next: NextF
     console.error(err.stack);
   }
 
-  // Report 5xx errors to Jira
+  // Report 5xx errors to Jira (de-duplicated per reporting window)
   if (statusCode >= 500) {
-    const jiraParams: JiraIssueParams = {
-      title: `[${serviceName}] ${req.method} ${req.path} - ${message}`,
-      description: message,
-      priority: statusCode >= 500 ? 'High' : 'Medium',
-      labels: [serviceName, `${statusCode}-error`],
-      service: serviceName,
-      endpoint: req.path,
-      method: req.method,
-      stacktrace: err.stack,
-      userId: (req as any).user?.userId || (req as any).user?.sub,
-      requestBody: req.body ? JSON.stringify(stripSensitiveFields(req.body)).substring(0, 2000) : undefined,
-      timestamp: new Date().toISOString(),
-    };
+    const reportKey = `${serviceName}|${req.method}|${req.path}|${statusCode}|${message}`;
+    const { report, occurrence } = registerJiraReport(reportKey);
 
-    createJiraBug(jiraParams).catch((e) => {
-      console.error('[JiraClient] Failed to report error:', e);
-    });
+    if (!report) {
+      console.warn(
+        `[${serviceName}] Jira report suppressed for ${req.method} ${req.path} ` +
+        `(occurrence #${occurrence} within ${JIRA_REPORT_WINDOW_MS / 60000} min window)`
+      );
+    } else {
+      const jiraParams: JiraIssueParams = {
+        title: `[${serviceName}] ${req.method} ${req.path} - ${message}`,
+        description: `${message}\n\nOccurrence count: ${occurrence}`,
+        priority: statusCode >= 500 ? 'High' : 'Medium',
+        labels: [serviceName, `${statusCode}-error`],
+        service: serviceName,
+        endpoint: req.path,
+        method: req.method,
+        stacktrace: err.stack,
+        userId: (req as any).user?.userId || (req as any).user?.sub,
+        requestBody: req.body ? JSON.stringify(stripSensitiveFields(req.body)).substring(0, 2000) : undefined,
+        timestamp: new Date().toISOString(),
+      };
+
+      createJiraBug(jiraParams).catch((e) => {
+        console.error('[JiraClient] Failed to report error:', e);
+      });
+    }
   }
 
   // Send response — 5xx bodies stay generic; details live in logs/Jira only

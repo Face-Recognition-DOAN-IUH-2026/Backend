@@ -16,6 +16,7 @@ import { ReturnService } from '../services/ReturnService';
 import { SlipService } from '../services/SlipService';
 import { CONDITION_CODES, assessCopyBorrowability, markCopyAsBorrowed } from '../constants/copy';
 import { patronIdFrom, patronSummary } from '../utils/patron';
+import { findCopyByBarcode, sanitizeBarcode } from '../utils/barcode';
 
 const router = Router();
 router.use(auth);
@@ -28,7 +29,7 @@ function assertCopyBorrowable(copy: { status?: string | null; condition?: string
 }
 
 async function getOrCreateBookAndCopy(repo: BorrowRepository, barcode: string, isbn?: string) {
-  const existingCopy = await repo.getCopyByBarcode(barcode);
+  const existingCopy = await findCopyByBarcode(repo, barcode);
   if (existingCopy) return { book: existingCopy.book || await repo.getBookById(existingCopy.bookId), copy: existingCopy };
   return null;
 }
@@ -193,7 +194,7 @@ router.post(['/slip/create', '/staff/slip/create'], requireDynamicPermission('bo
         const lookupIsbn = isbn || barcode;
         book = await repo.getBookByIsbn(lookupIsbn);
         if (!book) {
-          const existingCopy = await repo.getCopyByBarcode(barcode);
+          const existingCopy = await findCopyByBarcode(repo, barcode);
           if (existingCopy) {
             book = existingCopy.book || await repo.getBookById(existingCopy.bookId);
             copy = existingCopy;
@@ -210,7 +211,7 @@ router.post(['/slip/create', '/staff/slip/create'], requireDynamicPermission('bo
           if (!copy) throw new HttpError(409, `Sach ${book.title} da het ban co the muon`);
         }
       } else {
-        copy = await repo.getCopyByBarcode(barcode);
+        copy = await findCopyByBarcode(repo, barcode);
         if (!copy) throw new HttpError(404, `Khong tim thay ban sao voi ma vach ${barcode}`);
         book = copy.book || await repo.getBookById(copy.bookId);
         if (!book) throw new HttpError(404, 'Khong tim thay sach');
@@ -376,7 +377,7 @@ router.post(['/return/record/:record_id', '/staff-return/record/:record_id'], re
 router.get('/barcode/:barcode', requireRole(['admin', 'staff']), async (req, res, next) => {
   try {
     const repo = new BorrowRepository();
-    const copy = await repo.getCopyByBarcode(req.params.barcode.trim());
+    const copy = await findCopyByBarcode(repo, sanitizeBarcode(req.params.barcode));
     if (!copy) throw new HttpError(404, `Khong tim thay ban sao voi ma vach ${req.params.barcode}`);
     const record = await repo.getActiveBorrowByCopy(copy.id);
     if (!record) throw new HttpError(404, 'Bản sao nay hien khong duoc muon');

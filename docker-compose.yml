@@ -141,10 +141,9 @@ services:
     build:
       context: face-recognition-service
       dockerfile: Dockerfile.worker
+    container_name: face-recognition-worker
     restart: unless-stopped
-    shm_size: "2gb"
-    deploy:
-      replicas: 1
+    shm_size: "1gb"
     command: ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--concurrency=1", "--include=worker.tasks"]
     env_file:
       - ./.env
@@ -171,6 +170,12 @@ services:
         condition: service_healthy
     networks:
       - face-network
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A worker.celery_app inspect ping --timeout=5 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   user-service:
     build:

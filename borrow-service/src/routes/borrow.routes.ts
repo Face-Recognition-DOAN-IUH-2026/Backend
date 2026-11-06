@@ -4,13 +4,14 @@ import { AppDataSource } from '../data-source';
 import { auth, AuthRequest, requireRole, requireDynamicPermission } from '../middlewares/auth';
 import { HttpError } from '../../../shared/error-handler';
 import { BorrowRepository } from '../repositories/BorrowRepository';
+import { BookCopyRepository } from '../repositories/BookCopyRepository';
 import { isPatronInside, getPatronAccessStatus, touchPatronPresence, shouldTouchPresence } from '../clients/AccessServiceClient';
 import { lookupPatronById, lookupPatronsByIds, PatronSummary } from '../clients/UserServiceClient';
 import { activateCardAutoFine } from '../clients/UserServiceClient';
 import { generatePaymentRef } from '../utils/fineCalculator';
-import { serializeBook, serializeBorrowRecord } from '../services/serializers';
+import { serializeBook, serializeBorrowRecord, serializeCopy } from '../services/serializers';
 import { publishEvent } from '../utils/eventPublisher';
-import { nearestCopyBarcodes, sanitizeBarcode } from '../utils/barcode';
+import { nearestCopyBarcodes, sanitizeBarcode, findCopyByBarcode } from '../utils/barcode';
 import { config } from '../config';
 import { Book } from '../entities/Book';
 import { BookCopy } from '../entities/BookCopy';
@@ -45,7 +46,29 @@ router.get('/config', async (_req, res, next) => {
 });
 
 router.use(auth);
-
+
+// GET /copies/quick-search — Tìm kiếm nhanh bản sao khi quét mã vạch thất bại
+// Hỗ trợ LIKE/ILIKE mờ trên mã vạch, ISBN, tên sách, tác giả.
+router.get('/copies/quick-search', async (req: AuthRequest, res, next) => {
+  try {
+    const { q, limit } = req.query;
+    if (!q || typeof q !== 'string' || q.trim().length === 0) {
+      throw new HttpError(400, 'Thieu tu khoa tim kiem');
+    }
+    const take = Math.min(Math.max(Number(limit || 10), 1), 50);
+    const repo = new BookCopyRepository();
+    const copies = await repo.quickSearchCopies(q, take);
+    res.json(
+      copies.map((copy) => ({
+        ...serializeCopy(copy),
+        book: copy.book ? serializeBook(copy.book) : null,
+      })),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /fines — unpaid fine ledger (staff/admin)
 router.get('/fines', requireDynamicPermission('borrows', 'update'), async (req: AuthRequest, res, next) => {
   try {
@@ -182,7 +205,7 @@ router.post('/', requireRole(['patron', 'admin', 'staff']), async (req: AuthRequ
       if (!copy) throw new HttpError(409, 'Sach nay hien da het ban co the muon');
     } else {
       const copyBarcode = /^LIB/i.test(barcode.replace(/[\s-]/g, '')) ? barcode : (isbnInput || barcode);
-      copy = await repo.getCopyByBarcode(copyBarcode);
+      copy = await findCopyByBarcode(repo, copyBarcode);
       if (!copy) {
         const cleanScan = copyBarcode.replace(/[\s-]/g, '');
         const match = cleanScan.match(/^LIB(\d{10,13})(\d+)?$/i);

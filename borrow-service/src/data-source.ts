@@ -30,5 +30,13 @@ export const AppDataSource = new DataSource({
     VietqrCallback,
   ],
   synchronize: process.env.NODE_ENV === 'development',
+  // When running from source (ts-node) load the TypeScript migrations; when running
+  // the compiled build (container) load the compiled JavaScript. Mixing both globs
+  // makes TypeORM try to require() .ts files, which fails at runtime.
+  migrations: [
+    __filename.endsWith('.ts')
+      ? 'src/migrations/*.ts'
+      : 'dist/borrow-service/src/migrations/*.js',
+  ],
   logging: process.env.TYPEORM_LOGGING === 'true',
 });
