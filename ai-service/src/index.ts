@@ -11,6 +11,7 @@ import adminChatRouter from './routes/chat.admin';
 import companionRouter from './routes/companion';
 import legacyChatRouter from './routes/chat.legacy';
 import sessionRouter from './routes/session.routes';
+import ragRouter from './routes/rag.routes';
 import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 import { createAuth, requireRole } from '../../shared/auth';
 import { getCollection } from './clients/chromadb';
@@ -82,6 +83,9 @@ app.use('/ai', auth, aiRoutes);
 
 // Session retrieval - /ai/sessions/:sessionId (ownership enforced via getOwned)
 app.use('/ai', auth, sessionRouter);
+
+// RAG Document Management - /ai/rag/upload, /ai/rag/documents (admin/staff)
+app.use('/ai/rag', auth, ragRouter);
 
 app.use(errorHandler);
 

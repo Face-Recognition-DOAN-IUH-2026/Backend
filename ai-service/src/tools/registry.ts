@@ -129,18 +129,27 @@ export const staffToolDefs: ToolDef[] = [
   },
   {
     name: 'get_schedule_today',
-    description: 'Xem lich truc cua nhan vien hom nay. Khong can tham so.',
-    func: getScheduleToday,
+    description: 'Xem lich truc cua chinh nhan vien (staff/admin) hom nay. Khong can tham so.',
+    func: (userId: string) => getScheduleToday(userId),
+    injectUserId: true,
     parameters: NO_ARGS,
   },
 ];
 
-export const adminToolDefs: ToolDef[] = [...staffToolDefs];
+export const adminToolDefs: ToolDef[] = [
+  ...staffToolDefs,
+  {
+    name: 'get_all_schedules',
+    description: 'Xem toan bo lich truc cua tat ca nhan vien hom nay trong thu vien (chi danh cho admin). Khong can tham so.',
+    func: () => getScheduleToday(),
+    parameters: NO_ARGS,
+  },
+];
 
 export function getToolDefsForRole(role: string): ToolDef[] {
   switch (role) {
     case 'patron': return patronToolDefs;
-    case 'staff':
+    case 'staff': return staffToolDefs;
     case 'admin': return adminToolDefs;
     default: return patronToolDefs;
   }
