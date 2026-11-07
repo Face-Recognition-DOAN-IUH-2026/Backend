@@ -34,19 +34,21 @@ describe('AI Tools - RBAC Security', () => {
       expect(tools.find(t => t.name === 'get_overdue_borrows')).toBeUndefined();
     });
 
-    it('should provide staff+ tools for staff role without injectUserId', () => {
+    it('should provide staff+ tools for staff role', () => {
       const tools = getToolDefsForRole('staff');
-      // Staff tools should NOT have injectUserId (they accept AI-supplied params)
       const staffInfo = tools.find(t => t.name === 'get_patron_info');
       expect(staffInfo?.injectUserId).toBeUndefined();
       expect(tools.find(t => t.name === 'get_overdue_borrows')).toBeDefined();
-      expect(tools.find(t => t.name === 'get_schedule_today')).toBeDefined();
+      const scheduleToday = tools.find(t => t.name === 'get_schedule_today');
+      expect(scheduleToday).toBeDefined();
+      expect(scheduleToday?.injectUserId).toBe(true);
     });
 
-    it('should provide admin tools for admin role (same as staff)', () => {
+    it('should provide admin tools for admin role (staff tools plus get_all_schedules)', () => {
       const adminTools = getToolDefsForRole('admin');
       const staffTools = getToolDefsForRole('staff');
-      expect(adminTools.length).toBe(staffTools.length);
+      expect(adminTools.length).toBe(staffTools.length + 1);
+      expect(adminTools.find(t => t.name === 'get_all_schedules')).toBeDefined();
     });
 
     it('should default to patron tools for unknown role', () => {
@@ -112,7 +114,32 @@ describe('AI Tools - RBAC Security', () => {
   });
 
   describe('get_schedule_today', () => {
-    it('should call schedule-service internal today endpoint', async () => {
+    it('should call schedule-service internal today endpoint with staffId when provided', async () => {
+      const mockResponse = {
+        data: [
+          { id: '1', shift: { startTime: '08:00' }, staffId: 'staff-123' },
+        ],
+      };
+
+      (axios.get as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result = await getScheduleToday('staff-123');
+
+      expect(axios.get).toHaveBeenCalledWith(
+        'http://schedule-service:3002/schedules/internal/today?staffId=staff-123',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'Authorization': expect.stringContaining('Bearer '),
+          }),
+          timeout: 10000,
+        })
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data).toHaveLength(1);
+    });
+
+    it('should call schedule-service internal today endpoint without staffId when omitted', async () => {
       const mockResponse = {
         data: [
           { id: '1', shift: { startTime: '08:00' }, staff: { name: 'Staff A' } },

@@ -4,6 +4,7 @@ import { createAuth, requireRole } from '../../../shared/auth';
 import type { AuthRequest } from '../../../shared/auth/types';
 import { config } from '../config';
 import { aiService } from '../services/AiService';
+import { getToolDefsForRole } from '../tools/registry';
 
 const auth = createAuth({
   jwtSecret: config.jwtSecret,
@@ -183,6 +184,28 @@ router.post('/command-center/chat', requireRole(['admin', 'staff']), asyncHandle
  */
 router.get('/recommendations/patron/:studentCode', asyncHandler(async (req, res) => {
   res.json(await aiService.recommendBooks(req.user!.token || '', req.params.studentCode));
+}));
+
+/**
+ * @swagger
+ * /ai/tools:
+ *   get:
+ *     summary: Get available AI tools for current user role
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of available AI tools
+ */
+router.get('/tools', asyncHandler(async (req, res) => {
+  const role = req.user?.role || 'patron';
+  const tools = getToolDefsForRole(role);
+  const toolSummary = tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+  }));
+  res.json(toolSummary);
 }));
 
 export default router;

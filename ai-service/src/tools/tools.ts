@@ -102,16 +102,26 @@ export async function getOverdueBorrows(): Promise<ToolResult> {
   return safeGet<any>(url);
 }
 
-export async function getScheduleToday(): Promise<ToolResult> {
-  const url = `${config.scheduleServiceUrl}/schedules/internal/today`;
+export async function getScheduleToday(staffId?: string): Promise<ToolResult> {
+  const url = staffId
+    ? `${config.scheduleServiceUrl}/schedules/internal/today?staffId=${encodeURIComponent(staffId)}`
+    : `${config.scheduleServiceUrl}/schedules/internal/today`;
   const result = await safeGet<any>(url);
 
-  if (result.success && result.data && Array.isArray(result.data)) {
-    result.data.sort((a: any, b: any) => {
-      const timeA = a.shift?.startTime || '';
-      const timeB = b.shift?.startTime || '';
-      return timeA.localeCompare(timeB);
-    });
+  if (result.success && result.data) {
+    const list = Array.isArray(result.data)
+      ? result.data
+      : Array.isArray(result.data.items)
+      ? result.data.items
+      : null;
+
+    if (list) {
+      list.sort((a: any, b: any) => {
+        const timeA = a.shift?.startTime || '';
+        const timeB = b.shift?.startTime || '';
+        return timeA.localeCompare(timeB);
+      });
+    }
   }
 
   return result;

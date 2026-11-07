@@ -28,6 +28,10 @@ export async function retrieve(query: string, topK: number = 5, role?: string): 
 
       for (let i = 0; i < docs.length; i++) {
         const metadata = metadatas[i] as Record<string, string> || {};
+        // Guard: patrons must never retrieve staff_only documents
+        if ((role === 'patron' || !role) && metadata.audience === 'staff_only') {
+          continue;
+        }
         documents.push({
           id: ids[i] || String(i),
           content: docs[i] || '',
@@ -51,6 +55,9 @@ export async function retrieve(query: string, topK: number = 5, role?: string): 
       for (let i = 0; i < allDocs.documents.length; i++) {
         const doc = allDocs.documents[i] || '';
         const meta = (allDocs.metadatas[i] || {}) as Record<string, string>;
+        if ((role === 'patron' || !role) && meta.audience === 'staff_only') {
+          continue;
+        }
         const docLower = doc.toLowerCase();
 
         const words = queryLower.split(/\s+/).filter(w => w.length > 2);

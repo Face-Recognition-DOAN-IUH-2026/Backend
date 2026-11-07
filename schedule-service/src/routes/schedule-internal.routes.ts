@@ -19,9 +19,12 @@ router.get('/today', async (req: Request, res: Response) => {
     const dd = String(today.getDate()).padStart(2, '0');
     const dateStr = `${yyyy}-${mm}-${dd}`;
 
+    const staffId = req.query.staffId ? String(req.query.staffId) : undefined;
+
     const assignments = await scheduleService.listAssignments({
       from: dateStr,
       to: dateStr,
+      staffId,
     });
 
     res.json(assignments);
