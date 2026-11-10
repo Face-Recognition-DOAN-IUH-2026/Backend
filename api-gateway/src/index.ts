@@ -18,14 +18,34 @@ import {
   addComment,
 } from '../../shared/jira-client';
 const app = express();
-const corsOrigin = config.corsOrigins.includes('*') ? true : config.corsOrigins.length > 0 ? config.corsOrigins : false;
+app.set('trust proxy', 1);
+
+const isAllowedOrigin = (origin: string | undefined): boolean => {
+  if (!origin) return true;
+  if (config.corsOrigins.includes('*')) return true;
+  const configured = config.corsOrigins.map((o) => o.trim()).filter(Boolean);
+  if (configured.includes(origin)) return true;
+  // Allow all Vercel domains (*.vercel.app)
+  if (/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.vercel\.app$/i.test(origin)) return true;
+  // Allow DuckDNS domains (*.duckdns.org)
+  if (/^https?:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.duckdns\.org(:\d+)?$/i.test(origin)) return true;
+  // Allow localhost & local IP
+  if (/^https?:\/\/localhost(:\d+)?$/i.test(origin) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/i.test(origin)) return true;
+  return false;
+};
 
 // Security headers
 app.use(helmet());
 app.use(cookieParser());
 
 app.use(cors({
-  origin: corsOrigin,
+  origin: (origin, callback) => {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, false);
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
