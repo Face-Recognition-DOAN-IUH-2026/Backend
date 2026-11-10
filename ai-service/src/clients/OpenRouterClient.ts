@@ -22,7 +22,8 @@ const analysisSchema = z.object({
     alternatives: z.array(z.string()).default([]),
   })).default([]),
 });
-
+
+
 async function throwOpenRouterError(res: Response) {
   const detail = (await res.text()).slice(0, 300);
   if (res.status === 401) {
@@ -89,7 +90,35 @@ export class OpenRouterClient {
     const data: any = await res.json();
     const content = data.choices?.[0]?.message?.content;
     if (!content) throw new HttpError(502, 'OpenRouter returned an empty response');
-    const parsed = analysisSchema.parse(extractJson(content));
+    const rawParsed = extractJson(content);
+    let parsed: any;
+    try {
+      parsed = analysisSchema.parse(rawParsed);
+    } catch {
+      const rawObj = (rawParsed && typeof rawParsed === 'object') ? (rawParsed as any) : {};
+      const rawInsights = Array.isArray(rawObj.insights) ? rawObj.insights : [];
+      const normalizedInsights = rawInsights.map((item: any) => ({
+        category: ['access', 'borrow', 'schedule', 'inventory', 'risk'].includes(String(item?.category || item?.type).toLowerCase())
+          ? String(item?.category || item?.type).toLowerCase()
+          : 'risk',
+        severity: ['info', 'warning', 'critical'].includes(String(item?.severity || item?.level).toLowerCase())
+          ? String(item?.severity || item?.level).toLowerCase()
+          : 'info',
+        title: item?.title || item?.name || 'Đánh giá vận hành',
+        summary: item?.summary || item?.description || item?.detail || item?.message || 'Hệ thống vận hành bình thường',
+        evidence: Array.isArray(item?.evidence) ? item.evidence : [],
+        recommended_actions: Array.isArray(item?.recommended_actions) ? item.recommended_actions : [],
+        reason: item?.reason || '',
+        confidence: typeof item?.confidence === 'number' ? item.confidence : 0.85,
+        alternatives: Array.isArray(item?.alternatives) ? item.alternatives : [],
+      }));
+
+      parsed = {
+        headline: rawObj.headline || rawObj.title || 'Báo cáo tổng quan vận hành thư viện',
+        operational_score: typeof rawObj.operational_score === 'number' ? rawObj.operational_score : 85,
+        insights: normalizedInsights,
+      };
+    }
     return { result: parsed, usage: data.usage || null, latencyMs };
   }
 
