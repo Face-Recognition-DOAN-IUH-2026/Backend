@@ -1,0 +1,40 @@
+name: Deploy Backend to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+      - 07-11-26
+      - 18-10-26
+  workflow_dispatch: # Cho phép bấm nút "Run workflow" thủ công trên GitHub
+
+jobs:
+  deploy:
+    name: Deploy Microservices to AWS EC2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: SSH to EC2 and Trigger Deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER || 'ubuntu' }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          timeout: 600s
+          script_stop: true
+          script: |
+            echo "== 🚀 Bắt đầu cập nhật Backend trên AWS EC2 =="
+            cd /opt/iuh-backend
+            
+            # Kiểm tra script deploy tồn tại
+            if [ ! -f scripts/deploy-backend.sh ]; then
+              echo "❌ Không tìm thấy scripts/deploy-backend.sh tại /opt/iuh-backend"
+              exit 1
+            fi
+
+            # Chạy script deploy với nhánh tương ứng
+            bash scripts/deploy-backend.sh "${{ github.ref_name }}"
+            
+            echo "== ✅ Hoàn tất cập nhật Backend! =="
+
