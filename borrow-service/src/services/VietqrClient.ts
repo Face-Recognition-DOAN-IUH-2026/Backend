@@ -86,7 +86,7 @@ export class VietqrClient {
         userBankName: this.config.accountName,
         content: input.content,
         qrType: 0,
-        amount: String(Math.round(input.amount)),
+        amount: Math.round(input.amount),
         orderId: input.orderId,
         transType: 'C',
         ...(this.config.terminalCode ? { terminalCode: this.config.terminalCode } : {}),
