@@ -18,7 +18,11 @@ import { amqpClient } from './clients/AmqpClient';
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(express.json({
+  verify: (req: any, _res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 
 app.use('/borrow/internal', borrowInternalRoutes);
 app.use('/borrow/waitlist', waitlistRoutes);
