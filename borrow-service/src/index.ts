@@ -12,6 +12,7 @@ import waitlistRoutes from './routes/waitlist.routes';
 import adminSettingsRoutes from './routes/admin-settings.routes';
 import paymentRoutes from './routes/payment.routes';
 import vietqrRoutes from './routes/vietqr.routes';
+import sepayRoutes from './routes/sepay.routes';
 import { errorHandler, setupProcessErrorHandlers } from '../../shared/error-handler';
 import { amqpClient } from './clients/AmqpClient';
 
@@ -23,6 +24,7 @@ app.use('/borrow/internal', borrowInternalRoutes);
 app.use('/borrow/waitlist', waitlistRoutes);
 app.use('/borrow/payments', paymentRoutes);
 app.use('/borrow/vietqr', vietqrRoutes);
+app.use('/borrow/sepay', sepayRoutes);
 app.use('/borrow', borrowRoutes);
 app.use('/borrow', bookRoutes);
 app.use('/borrow', staffRoutes);

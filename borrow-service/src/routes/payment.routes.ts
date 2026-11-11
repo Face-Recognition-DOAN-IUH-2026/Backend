@@ -18,7 +18,7 @@ export function createPaymentRouter(service: PaymentService = new PaymentService
       const body = z.object({
         patron_id: z.string().uuid().optional(),
         record_ids: z.array(z.string().uuid()).min(1).max(50),
-        payment_method: z.enum(['vietqr', 'payos', 'vnpay']).optional(),
+        payment_method: z.enum(['vietqr', 'sepay', 'payos', 'vnpay']).optional(),
       }).parse(req.body);
 
       const isStaffOrAdmin = req.user?.role === 'admin' || req.user?.role === 'staff';
@@ -27,10 +27,11 @@ export function createPaymentRouter(service: PaymentService = new PaymentService
         throw new HttpError(400, 'Thiếu thông tin patron_id');
       }
 
+      const defaultMethod = (process.env.DEFAULT_PAYMENT_METHOD as any) || 'sepay';
       const order = await service.createPaymentOrder(
         patronId,
         body.record_ids,
-        body.payment_method || 'vietqr',
+        body.payment_method || defaultMethod,
       );
 
       res.status(201).json(order);
@@ -177,6 +178,33 @@ export function createPaymentRouter(service: PaymentService = new PaymentService
 
       const status = await service.getOrderStatus(orderCode);
       res.json(status);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * POST /borrow/payments/sepay/webhook
+   * Public webhook callback from SePay payment gateway.
+   */
+  router.post('/sepay/webhook', async (req, res, next) => {
+    try {
+      console.log('[SePay Callback] /payments/sepay/webhook received payload:', JSON.stringify(req.body));
+      const authHeader = req.headers.authorization || '';
+      const expectedApiKey = process.env.SEPAY_API_KEY;
+      if (expectedApiKey) {
+        const token = authHeader.startsWith('Apikey ')
+          ? authHeader.slice(7).trim()
+          : authHeader.replace(/^Bearer /i, '').trim();
+        if (token !== expectedApiKey) {
+          console.warn('[SePay Callback] Unauthorized: Invalid SePay API Key');
+          res.status(401).json({ success: false, message: 'Unauthorized: Invalid SePay API Key' });
+          return;
+        }
+      }
+
+      const result = await service.processSepayWebhook(req.body);
+      res.json({ success: true, ...result });
     } catch (error) {
       next(error);
     }

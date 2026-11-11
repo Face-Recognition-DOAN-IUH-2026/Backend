@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { PaymentService, generateVietQrData, verifyHmacSignature } from '../../services/PaymentService';
+import { PaymentService, generateVietQrData, generateSepayQrData, verifyHmacSignature } from '../../services/PaymentService';
 import { generateVietqrOrderId } from '../../services/VietqrClient';
 import { issuePartnerToken, verifyPartnerToken, checkPartnerBasicAuth } from '../../services/VietqrCallbackAuth';
 import { AppDataSource } from '../../data-source';
