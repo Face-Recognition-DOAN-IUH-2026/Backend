@@ -21,6 +21,11 @@ export interface CreatePaymentOrderResult {
   qrData: string | null;
   expiresAt: Date;
   recordIds: string[];
+  bankCode?: string;
+  bankName?: string;
+  accountNumber?: string;
+  accountName?: string;
+  transferContent?: string;
 }
 
 export function generateVietQrData(
@@ -181,6 +186,11 @@ export class PaymentService {
     const orderCode = generatePaymentRef();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins timeout
 
+    const bankCode = process.env.VIETQR_BANK_CODE || 'MB';
+    const accountNumber = process.env.VIETQR_ACCOUNT_NUMBER || '0395324779';
+    const accountName = process.env.VIETQR_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM';
+    const bankName = bankCode === 'MB' ? 'MB Bank (Ngân hàng Quân đội)' : bankCode;
+
     // Prefer VietQR dynamic QR (carries a ≤13-char orderId so the automatic
     // transaction-sync callback can match the order exactly). Fall back to the
     // static img.vietqr.io QR when the VietQR API is not configured/fails.
@@ -197,21 +207,23 @@ export class PaymentService {
           content: vietqrOrderId,
           amount: totalAmount,
         });
-        // qrLink is a VietQR landing page (not an embeddable image), so the
-        // frontend renders the EMV string itself via QRCodeSVG.
-        qrUrl = null;
         qrData = dynamic.qrCode;
         vietqrQrLink = dynamic.qrLink || null;
+        // Also provide standard VietQR image link with the dynamic orderId as addInfo
+        const staticFallback = generateVietQrData(vietqrOrderId, totalAmount, bankCode, accountNumber, accountName);
+        qrUrl = staticFallback.qrUrl;
       } catch (err: any) {
         console.warn('[createPaymentOrder] VietQR dynamic QR failed, fallback to static QR:', err?.message);
         vietqrOrderId = null;
       }
     }
     if (vietqrOrderId === null) {
-      const staticQr = generateVietQrData(orderCode, totalAmount);
+      const staticQr = generateVietQrData(orderCode, totalAmount, bankCode, accountNumber, accountName);
       qrUrl = staticQr.qrUrl;
       qrData = staticQr.qrData;
     }
+
+    const transferContent = vietqrOrderId || orderCode;
 
     const order = this.orderRepo.create({
       orderCode,
@@ -240,6 +252,11 @@ export class PaymentService {
       qrData: saved.qrData,
       expiresAt: saved.expiresAt,
       recordIds: saved.recordIds,
+      bankCode,
+      bankName,
+      accountNumber,
+      accountName,
+      transferContent,
     };
   }
 
@@ -359,6 +376,31 @@ export class PaymentService {
 
     return this.settleCompletedOrder(order, `MANUAL:${confirmedBy}`, {
       manualConfirm: { by: confirmedBy, at: new Date().toISOString(), note: note || null },
+    });
+  }
+
+  /**
+   * Demo / Testing sandbox simulation: settle order immediately as if paid.
+   */
+  async simulatePayment(
+    orderCode: string,
+    operatorId = 'demo-tester',
+  ): Promise<SettlementResult> {
+    const order = await this.orderRepo.findOne({ where: { orderCode } });
+    if (!order) {
+      throw new HttpError(404, `Không tìm thấy đơn hàng tương ứng với orderCode: ${orderCode}`);
+    }
+
+    if (
+      order.status === 'completed' ||
+      order.status === 'reconcile_needed' ||
+      order.status === 'refunded'
+    ) {
+      return { success: true, orderCode: order.orderCode, alreadyCompleted: true, activatedPatrons: [] };
+    }
+
+    return this.settleCompletedOrder(order, `SIMULATED:${Date.now()}`, {
+      simulatedPayment: { by: operatorId, at: new Date().toISOString() },
     });
   }
 
