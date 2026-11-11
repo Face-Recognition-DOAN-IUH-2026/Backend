@@ -147,6 +147,24 @@ export function createPaymentRouter(service: PaymentService = new PaymentService
   });
 
   /**
+   * POST /borrow/payments/:orderCode/simulate
+   * Dev & Demo only: simulate a completed VietQR payment for presentation/testing.
+   */
+  router.post('/:orderCode/simulate', async (req, res, next) => {
+    try {
+      const { orderCode } = req.params;
+      if (!orderCode) {
+        throw new HttpError(400, 'Thiếu orderCode');
+      }
+
+      const result = await service.simulatePayment(orderCode, (req as any).user?.id || 'demo-tester');
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
    * GET /borrow/payments/:orderCode/status
    * Check payment status by orderCode (used for polling or refresh).
    */
