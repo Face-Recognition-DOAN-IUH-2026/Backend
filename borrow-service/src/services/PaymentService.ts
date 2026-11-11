@@ -449,7 +449,7 @@ export class PaymentService {
     transType?: string;
     content?: string;
     orderId?: string;
-  }): Promise<{ orderCode: string; duplicate: boolean }> {
+  }): Promise<{ orderCode: string; duplicate: boolean; ignored?: boolean; message?: string }> {
     const { transactionid, referencenumber, bankaccount, amount, transType, content, orderId } = input;
     if (!transactionid) {
       throw new HttpError(400, 'Thiếu transactionid trong callback VietQR');
@@ -549,7 +549,7 @@ export class PaymentService {
     subAccount?: string | null;
     referenceCode?: string;
     description?: string;
-  }): Promise<{ orderCode: string; duplicate: boolean }> {
+  }): Promise<{ orderCode: string; duplicate: boolean; ignored?: boolean; message?: string }> {
     const { id, accountNumber, transferType, transferAmount, referenceCode } = input;
     if (id === undefined || id === null) {
       throw new HttpError(400, 'Thiếu id giao dịch trong callback SePay');
@@ -608,7 +608,13 @@ export class PaymentService {
     }
 
     if (!order) {
-      throw new HttpError(404, `Không tìm thấy đơn hàng tương ứng với giao dịch SePay (content="${rawContent}")`);
+      console.warn(`[SePay Callback] Không tìm thấy đơn hàng tương ứng với nội dung: "${rawContent}". Xác nhận 200 OK để SePay không gửi lại.`);
+      return {
+        orderCode: '',
+        duplicate: false,
+        ignored: true,
+        message: `Đã tiếp nhận nhưng không tìm thấy đơn nợ tương ứng với nội dung "${rawContent}"`,
+      };
     }
 
     const amount = Number(transferAmount);
