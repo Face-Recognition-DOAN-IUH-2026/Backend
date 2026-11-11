@@ -4,6 +4,7 @@ import { auth, AuthRequest, requireDynamicPermission } from '../middlewares/auth
 import { HttpError } from '../../../shared/error-handler';
 import { PaymentService } from '../services/PaymentService';
 import { lookupPatronsByIds } from '../clients/UserServiceClient';
+import { verifySepayAuth } from './sepay.routes';
 
 export function createPaymentRouter(service: PaymentService = new PaymentService()): Router {
   const router = Router();
@@ -190,17 +191,10 @@ export function createPaymentRouter(service: PaymentService = new PaymentService
   router.post('/sepay/webhook', async (req, res, next) => {
     try {
       console.log('[SePay Callback] /payments/sepay/webhook received payload:', JSON.stringify(req.body));
-      const authHeader = req.headers.authorization || '';
-      const expectedApiKey = process.env.SEPAY_API_KEY;
-      if (expectedApiKey) {
-        const token = authHeader.startsWith('Apikey ')
-          ? authHeader.slice(7).trim()
-          : authHeader.replace(/^Bearer /i, '').trim();
-        if (token !== expectedApiKey) {
-          console.warn('[SePay Callback] Unauthorized: Invalid SePay API Key');
-          res.status(401).json({ success: false, message: 'Unauthorized: Invalid SePay API Key' });
-          return;
-        }
+      if (!verifySepayAuth(req)) {
+        console.warn('[SePay Callback] Unauthorized: Invalid SePay API Key or Signature');
+        res.status(401).json({ success: false, message: 'Unauthorized: Invalid SePay API Key or Signature' });
+        return;
       }
 
       const result = await service.processSepayWebhook(req.body);
