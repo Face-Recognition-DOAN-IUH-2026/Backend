@@ -31,6 +31,15 @@ function requireInternalKeyOrStaff(req: AuthRequest, res: Response, next: NextFu
   });
 }
 
+function requireInternalKeyOrAuth(req: AuthRequest, res: Response, next: NextFunction) {
+  const expected = process.env.INTERNAL_API_KEY;
+  const provided = req.headers['x-internal-key'];
+  if (expected && typeof provided === 'string' && provided === expected) {
+    return next();
+  }
+  auth(req, res, next);
+}
+
 const router = Router();
 
 /**
@@ -43,7 +52,7 @@ const router = Router();
  *       200:
  *         description: Event stream (text/event-stream)
  */
-router.get('/events', requireInternalKeyOrStaff, (_req, res) => {
+router.get('/events', requireInternalKeyOrAuth, (_req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
