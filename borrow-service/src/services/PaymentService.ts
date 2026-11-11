@@ -482,7 +482,7 @@ export class PaymentService {
       throw new HttpError(400, `TK nhận ${bankaccount} không khớp TK thư viện`);
     }
 
-    let order = null;
+    let order: PaymentOrder | null = null;
     if (orderId) {
       order = await this.orderRepo.findOne({ where: { vietqrOrderId: orderId } });
     }
@@ -490,18 +490,32 @@ export class PaymentService {
       order = await this.orderRepo.findOne({ where: { vietqrOrderId: content } });
     }
     if (!order && content) {
-      // No status filter on purpose: a static-QR order has no vietqrOrderId, so
-      // this content match is its only lookup path. Filtering to pending/expired
-      // made every retry for an already-settled order fall through to a 404 that
-      // the bank keeps retrying forever.
+      // Lookup by partial content match: bank descriptions often include prefixes/suffixes
+      // like "VQRed91e7d3f1 LGEIRTFKCX50" or "MBVCB.123456.LGEIRTFKCX50"
       const candidates = await this.orderRepo.find({
         order: { createdAt: 'DESC' },
         take: 100,
       });
-      order = candidates.find((o) => content.includes(o.orderCode)) ?? null;
+      const upperContent = content.toUpperCase();
+      const cleanContent = upperContent.replace(/[^A-Z0-9]/g, '');
+      order = candidates.find((o) => {
+        if (o.vietqrOrderId) {
+          const cleanOrderId = o.vietqrOrderId.toUpperCase();
+          if (upperContent.includes(cleanOrderId) || cleanContent.includes(cleanOrderId)) {
+            return true;
+          }
+        }
+        if (o.orderCode) {
+          const cleanCode = o.orderCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (upperContent.includes(o.orderCode.toUpperCase()) || cleanContent.includes(cleanCode)) {
+            return true;
+          }
+        }
+        return false;
+      }) ?? null;
     }
     if (!order) {
-      throw new HttpError(404, `Không tìm thấy đơn hàng cho callback VietQR (orderId=${orderId ?? ''})`);
+      throw new HttpError(404, `Không tìm thấy đơn hàng cho callback VietQR (orderId=${orderId ?? ''}, content=${content ?? ''})`);
     }
 
     if (isTerminalOrderStatus(order.status)) {

@@ -40,11 +40,14 @@ export function createVietqrRouter(service: PaymentService = new PaymentService(
   const router = Router();
 
   router.post('/token-generate', async (req, res) => {
+    console.log('[VietQR Callback] /token-generate called. Auth header present:', !!req.headers.authorization);
     try {
       const username = checkPartnerBasicAuth(req.headers.authorization);
       const access_token = issuePartnerToken(username);
+      console.log('[VietQR Callback] Issued partner token for username:', username);
       res.json({ access_token, token_type: 'Bearer', expires_in: VIETQR_TOKEN_TTL_SECONDS });
     } catch (err: any) {
+      console.warn('[VietQR Callback] /token-generate error:', err?.message);
       const msg = err?.message ?? 'FAILED';
       if (msg === 'INVALID_AUTH_HEADER') {
         res.status(400).json({ status: 'FAILED', message: msg });
@@ -59,14 +62,17 @@ export function createVietqrRouter(service: PaymentService = new PaymentService(
   });
 
   router.post('/transaction-sync', async (req, res) => {
+    console.log('[VietQR Callback] /transaction-sync received payload:', JSON.stringify(req.body));
     const auth = req.headers.authorization;
     if (!auth || !auth.startsWith('Bearer ')) {
+      console.warn('[VietQR Callback] /transaction-sync missing or invalid Bearer auth header');
       res.status(401).json(failResponse('INVALID_AUTH_HEADER', 'Authorization header is missing or invalid'));
       return;
     }
     try {
       verifyPartnerToken(auth.slice('Bearer '.length).trim());
     } catch {
+      console.warn('[VietQR Callback] /transaction-sync token verification failed');
       res.status(401).json(failResponse('INVALID_TOKEN', 'Invalid or expired token'));
       return;
     }
