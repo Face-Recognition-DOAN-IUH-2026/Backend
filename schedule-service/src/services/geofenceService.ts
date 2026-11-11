@@ -91,11 +91,18 @@ export class GeofenceService {
     const configs = await this.geofence.find({ where: { isActive: true } });
     const zoneIds = configs.map((c) => c.zoneId).filter((id): id is string => id != null);
     const zones = zoneIds.length ? await this.zones.findBy({ id: In(zoneIds) }) : [];
-    return configs.map((c) => ({ ...c, zone: zones.find((z) => z.id === c.zoneId) ?? null }));
+    return configs.map((c) => ({
+      ...c,
+      zone: c.isGlobal
+        ? { id: 'global', zoneName: 'Toàn Thư viện IUH (Toạ độ chung)', floor: 0 }
+        : (zones.find((z) => z.id === c.zoneId) ?? null),
+    }));
   }
 
   async deleteGeofence(actorId: string, zoneId: string) {
-    const config = await this.geofence.findOneBy({ zoneId });
+    const config = zoneId === 'global'
+      ? await this.geofence.findOneBy({ isGlobal: true, isActive: true })
+      : await this.geofence.findOneBy({ zoneId, isActive: true });
     if (!config) throw new NotFoundError('Geofence config not found');
     config.isActive = false;
     await this.geofence.save(config);

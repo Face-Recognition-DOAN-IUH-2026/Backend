@@ -999,7 +999,8 @@ router.post('/auto-schedule', requireDynamicPermission('schedules', 'create'), a
 }));
 
 const geofenceSchema = z.object({
-  zoneId: z.string().uuid(),
+  zoneId: z.string().uuid().nullable().optional(),
+  isGlobal: z.boolean().optional(),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   radiusMeters: z.number().int().min(10).max(10000).optional(),
@@ -1079,7 +1080,7 @@ router.put('/geofence', requireDynamicPermission('schedules', 'update'), asyncHa
  *         description: Geofence deleted
  */
 router.delete('/geofence/:zoneId', requireDynamicPermission('schedules', 'delete'), asyncHandler(async (req, res) => {
-  const { zoneId } = z.object({ zoneId: z.string().uuid() }).parse(req.params);
+  const { zoneId } = z.object({ zoneId: z.string() }).parse(req.params);
   res.json(await scheduleService.deleteGeofence(req.user!.userId, zoneId));
 }));
 
