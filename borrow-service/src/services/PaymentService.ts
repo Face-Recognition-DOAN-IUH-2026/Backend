@@ -40,6 +40,19 @@ export function generateVietQrData(
   return { qrUrl, qrData };
 }
 
+export function generateSepayQrData(
+  orderCode: string,
+  amount: number,
+  bankCode = process.env.SEPAY_BANK_CODE || process.env.VIETQR_BANK_CODE || 'MB',
+  accountNumber = process.env.SEPAY_ACCOUNT_NUMBER || process.env.VIETQR_ACCOUNT_NUMBER || '0395324779',
+  accountName = process.env.SEPAY_ACCOUNT_NAME || process.env.VIETQR_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM',
+): { qrUrl: string; qrData: string } {
+  // SePay QR service provides clean, instant QR images with Napas 247 compatibility
+  const qrUrl = `https://qr.sepay.vn/img?acc=${accountNumber}&bank=${bankCode}&amount=${amount}&des=${encodeURIComponent(orderCode)}&template=compact`;
+  const qrData = `vietqr://pay?bank=${bankCode}&acc=${accountNumber}&amount=${amount}&msg=${encodeURIComponent(orderCode)}`;
+  return { qrUrl, qrData };
+}
+
 export function verifyHmacSignature(payload: any, signature: string, secretKey: string): boolean {
   try {
     const checkAgainst = (data: any) => {
@@ -149,7 +162,7 @@ export class PaymentService {
   async createPaymentOrder(
     patronId: string,
     recordIds: string[],
-    paymentMethod: PaymentMethodType = 'vietqr',
+    paymentMethod: PaymentMethodType = 'sepay',
   ): Promise<CreatePaymentOrderResult> {
     if (!recordIds || recordIds.length === 0) {
       throw new HttpError(400, 'Danh sách record_ids không được để trống');
@@ -186,44 +199,18 @@ export class PaymentService {
     const orderCode = generatePaymentRef();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins timeout
 
-    const bankCode = process.env.VIETQR_BANK_CODE || 'MB';
-    const accountNumber = process.env.VIETQR_ACCOUNT_NUMBER || '0395324779';
-    const accountName = process.env.VIETQR_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM';
+    const bankCode = process.env.SEPAY_BANK_CODE || 'MB';
+    const accountNumber = process.env.SEPAY_ACCOUNT_NUMBER || '0395324779';
+    const accountName = process.env.SEPAY_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM';
     const bankName = bankCode === 'MB' ? 'MB Bank (Ngân hàng Quân đội)' : bankCode;
 
-    // Prefer VietQR dynamic QR (carries a ≤13-char orderId so the automatic
-    // transaction-sync callback can match the order exactly). Fall back to the
-    // static img.vietqr.io QR when the VietQR API is not configured/fails.
-    let qrUrl: string | null = null;
-    let qrData: string | null = null;
-    let vietqrOrderId: string | null = null;
-    let vietqrQrLink: string | null = null;
-    const vietqr = new VietqrClient();
-    if (vietqr.isEnabled()) {
-      try {
-        vietqrOrderId = generateVietqrOrderId();
-        const dynamic = await vietqr.generateDynamicQr({
-          orderId: vietqrOrderId,
-          content: vietqrOrderId,
-          amount: totalAmount,
-        });
-        qrData = dynamic.qrCode;
-        vietqrQrLink = dynamic.qrLink || null;
-        // Also provide standard VietQR image link with the dynamic orderId as addInfo
-        const staticFallback = generateVietQrData(vietqrOrderId, totalAmount, bankCode, accountNumber, accountName);
-        qrUrl = staticFallback.qrUrl;
-      } catch (err: any) {
-        console.warn('[createPaymentOrder] VietQR dynamic QR failed, fallback to static QR:', err?.message);
-        vietqrOrderId = null;
-      }
-    }
-    if (vietqrOrderId === null) {
-      const staticQr = generateVietQrData(orderCode, totalAmount, bankCode, accountNumber, accountName);
-      qrUrl = staticQr.qrUrl;
-      qrData = staticQr.qrData;
-    }
-
-    const transferContent = vietqrOrderId || orderCode;
+    // Generate SePay QR with orderCode in the transfer description for automatic webhook reconciliation
+    const sepayQr = generateSepayQrData(orderCode, totalAmount, bankCode, accountNumber, accountName);
+    const qrUrl = sepayQr.qrUrl;
+    const qrData = sepayQr.qrData;
+    const vietqrOrderId: string | null = null;
+    const vietqrQrLink: string | null = null;
+    const transferContent = orderCode;
 
     const order = this.orderRepo.create({
       orderCode,
@@ -542,6 +529,110 @@ export class PaymentService {
 
     await this.settleCompletedOrder(order, referencenumber || transactionid, { vietqrCallback: input });
     await this.recordVietqrCallback(transactionid, order.orderCode, amount, input);
+    return { orderCode: order.orderCode, duplicate: false };
+  }
+
+  /**
+   * SePay Webhook callback: handles automatic bank transfer notifications.
+   * Matches transfer content / code to an unpaid PaymentOrder and settles the debt.
+   */
+  async processSepayWebhook(input: {
+    id: number | string;
+    gateway?: string;
+    transactionDate?: string;
+    accountNumber?: string;
+    code?: string | null;
+    content?: string;
+    transferType?: 'in' | 'out' | string;
+    transferAmount: number | string;
+    accumulated?: number;
+    subAccount?: string | null;
+    referenceCode?: string;
+    description?: string;
+  }): Promise<{ orderCode: string; duplicate: boolean }> {
+    const { id, accountNumber, transferType, transferAmount, referenceCode } = input;
+    if (id === undefined || id === null) {
+      throw new HttpError(400, 'Thiếu id giao dịch trong callback SePay');
+    }
+
+    const transactionId = `SEPAY_${id}`;
+    const existing = await this.callbackRepo.findOne({ where: { transactionId } });
+    if (existing) {
+      return { orderCode: existing.orderCode ?? '', duplicate: true };
+    }
+
+    if (transferType && transferType !== 'in') {
+      console.log(`[SePay] Giao dịch transferType=${transferType} không phải khoản tiền vào (in), bỏ qua`);
+      return { orderCode: '', duplicate: true };
+    }
+
+    const expectedAccount = process.env.SEPAY_ACCOUNT_NUMBER || process.env.VIETQR_ACCOUNT_NUMBER;
+    if (expectedAccount && accountNumber && accountNumber !== expectedAccount) {
+      console.warn(`[SePay] TK nhận ${accountNumber} không khớp TK cấu hình (${expectedAccount})`);
+    }
+
+    const rawContent = [input.code, input.content, input.description].filter(Boolean).join(' ');
+    const upperContent = rawContent.toUpperCase();
+    const cleanContent = upperContent.replace(/[^A-Z0-9]/g, '');
+
+    // Search matching order
+    let order: PaymentOrder | null = null;
+
+    // 1. Exact match by code
+    if (input.code) {
+      order = await this.orderRepo.findOne({ where: { orderCode: input.code } });
+    }
+
+    // 2. Search candidates among recent orders
+    if (!order) {
+      const candidates = await this.orderRepo.find({
+        order: { createdAt: 'DESC' },
+        take: 100,
+      });
+
+      order = candidates.find((o) => {
+        if (o.orderCode) {
+          const cleanCode = o.orderCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (upperContent.includes(o.orderCode.toUpperCase()) || cleanContent.includes(cleanCode)) {
+            return true;
+          }
+        }
+        if (o.vietqrOrderId) {
+          const cleanOrderId = o.vietqrOrderId.toUpperCase();
+          if (upperContent.includes(cleanOrderId) || cleanContent.includes(cleanOrderId)) {
+            return true;
+          }
+        }
+        return false;
+      }) ?? null;
+    }
+
+    if (!order) {
+      throw new HttpError(404, `Không tìm thấy đơn hàng tương ứng với giao dịch SePay (content="${rawContent}")`);
+    }
+
+    const amount = Number(transferAmount);
+    if (amount < Number(order.amount)) {
+      throw new HttpError(400, `Số tiền chuyển ${amount} không đủ cho đơn ${order.amount} (${order.orderCode})`);
+    }
+
+    if (isTerminalOrderStatus(order.status)) {
+      await this.recordVietqrCallback(transactionId, order.orderCode, amount, input);
+      if (order.status !== 'refunded') {
+        publishEvent('payment.reconcile_needed', {
+          orderCode: order.orderCode,
+          patronId: order.patronId,
+          amount: amount || 0,
+          reason: 'duplicate_transfer_after_settlement',
+          alreadyPaidRecordIds: order.recordIds ?? [],
+          source: 'sepay_webhook',
+        });
+      }
+      return { orderCode: order.orderCode, duplicate: true };
+    }
+
+    await this.settleCompletedOrder(order, referenceCode || transactionId, { sepayCallback: input });
+    await this.recordVietqrCallback(transactionId, order.orderCode, amount, input);
     return { orderCode: order.orderCode, duplicate: false };
   }
 

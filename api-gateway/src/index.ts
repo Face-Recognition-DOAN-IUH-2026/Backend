@@ -239,6 +239,12 @@ app.use('/permissions', createProxyMiddleware({
 
 // ---- BORROW-SERVICE ----
 // Direct callback aliases for payment providers without /api prefix
+app.use('/borrow/sepay', createProxyMiddleware({
+  target: config.services.borrowService,
+  changeOrigin: true,
+  pathRewrite: preserveOriginalPath,
+}));
+
 app.use('/borrow/vietqr', createProxyMiddleware({
   target: config.services.borrowService,
   changeOrigin: true,

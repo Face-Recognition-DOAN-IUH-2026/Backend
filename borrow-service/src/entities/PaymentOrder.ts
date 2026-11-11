@@ -9,7 +9,7 @@ export type PaymentOrderStatus =
   | 'reconcile_needed'
   /** Staff confirmed the duplicate payment was refunded out-of-band. */
   | 'refunded';
-export type PaymentMethodType = 'vietqr' | 'payos' | 'vnpay' | 'cash';
+export type PaymentMethodType = 'vietqr' | 'sepay' | 'payos' | 'vnpay' | 'cash';
 
 @Entity('payment_orders')
 @Index('IDX_payment_orders_status_created_at', ['status', 'createdAt'])
@@ -31,7 +31,7 @@ export class PaymentOrder {
   @Column({ name: 'status', type: 'varchar', length: 20, default: 'pending' })
   status: PaymentOrderStatus;
 
-  @Column({ name: 'payment_method', type: 'varchar', length: 20, default: 'vietqr' })
+  @Column({ name: 'payment_method', type: 'varchar', length: 20, default: 'sepay' })
   paymentMethod: PaymentMethodType;
 
   @Column({ name: 'gateway_trans_id', type: 'varchar', length: 100, nullable: true })
