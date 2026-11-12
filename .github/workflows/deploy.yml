@@ -28,6 +28,11 @@ jobs:
             echo "== 🚀 Bắt đầu cập nhật Backend trên AWS EC2 =="
             cd /opt/iuh-backend
 
+            echo "== 0/4 Cấp quyền sở hữu thư mục git cho $(whoami) =="
+            sudo chown -R $(whoami):$(whoami) /opt/iuh-backend
+            sudo chmod -R u+rwX /opt/iuh-backend/.git
+            git config --global --add safe.directory /opt/iuh-backend
+
             echo "== 1/4 Cập nhật mã nguồn git (${{ github.ref_name }}) =="
             git fetch origin "${{ github.ref_name }}"
             git checkout "${{ github.ref_name }}"

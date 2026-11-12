@@ -24,7 +24,7 @@ function resolveConfig(overrides?: Partial<VietqrClientConfig>): VietqrClientCon
     username: overrides?.username ?? process.env.VIETQR_API_USERNAME ?? '',
     password: overrides?.password ?? process.env.VIETQR_API_PASSWORD ?? '',
     bankCode: overrides?.bankCode ?? process.env.VIETQR_BANK_CODE ?? 'MB',
-    bankAccount: overrides?.bankAccount ?? process.env.VIETQR_ACCOUNT_NUMBER ?? '0395324779',
+    bankAccount: overrides?.bankAccount ?? process.env.VIETQR_ACCOUNT_NUMBER ?? process.env.SEPAY_ACCOUNT_NUMBER ?? '',
     accountName: overrides?.accountName ?? process.env.VIETQR_ACCOUNT_NAME ?? 'THU VIEN DAI HOC CONG NGHIEP TPHCM',
     terminalCode: overrides?.terminalCode ?? process.env.VIETQR_TERMINAL_CODE,
     timeoutMs: overrides?.timeoutMs ?? 10000,

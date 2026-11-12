@@ -6,7 +6,7 @@ import { createSepayRouter } from '../../routes/sepay.routes';
 describe('SePay Callback Routes (/borrow/sepay)', () => {
   let app: Express;
   let mockService: any;
-  const testSecret = 'whsec_PwDDjxIl9gybv1SuLrDbyufPgSHNPTid';
+  const testSecret = 'whsec_test_secret_for_unit_tests_only_123456789';
 
   beforeEach(() => {
     jest.clearAllMocks();

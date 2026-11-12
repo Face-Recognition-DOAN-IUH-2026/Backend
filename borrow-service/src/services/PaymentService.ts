@@ -32,8 +32,8 @@ export function generateVietQrData(
   orderCode: string,
   amount: number,
   bankCode = process.env.VIETQR_BANK_CODE || 'MB',
-  accountNumber = process.env.VIETQR_ACCOUNT_NUMBER || '0395324779',
-  accountName = process.env.VIETQR_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM',
+  accountNumber = process.env.VIETQR_ACCOUNT_NUMBER || process.env.SEPAY_ACCOUNT_NUMBER || '',
+  accountName = process.env.VIETQR_ACCOUNT_NAME || process.env.SEPAY_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM',
 ): { qrUrl: string; qrData: string } {
   const qrUrl = `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${amount}&addInfo=${encodeURIComponent(orderCode)}&accountName=${encodeURIComponent(accountName)}`;
   const qrData = `vietqr://pay?bank=${bankCode}&acc=${accountNumber}&amount=${amount}&msg=${encodeURIComponent(orderCode)}`;
@@ -44,7 +44,7 @@ export function generateSepayQrData(
   orderCode: string,
   amount: number,
   bankCode = process.env.SEPAY_BANK_CODE || process.env.VIETQR_BANK_CODE || 'MB',
-  accountNumber = process.env.SEPAY_ACCOUNT_NUMBER || process.env.VIETQR_ACCOUNT_NUMBER || '0395324779',
+  accountNumber = process.env.SEPAY_ACCOUNT_NUMBER || process.env.VIETQR_ACCOUNT_NUMBER || '',
   accountName = process.env.SEPAY_ACCOUNT_NAME || process.env.VIETQR_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM',
 ): { qrUrl: string; qrData: string } {
   // SePay QR service provides clean, instant QR images with Napas 247 compatibility
@@ -199,9 +199,9 @@ export class PaymentService {
     const orderCode = generatePaymentRef();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins timeout
 
-    const bankCode = process.env.SEPAY_BANK_CODE || 'MB';
-    const accountNumber = process.env.SEPAY_ACCOUNT_NUMBER || '0395324779';
-    const accountName = process.env.SEPAY_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM';
+    const bankCode = process.env.SEPAY_BANK_CODE || process.env.VIETQR_BANK_CODE || 'MB';
+    const accountNumber = process.env.SEPAY_ACCOUNT_NUMBER || process.env.VIETQR_ACCOUNT_NUMBER || '';
+    const accountName = process.env.SEPAY_ACCOUNT_NAME || process.env.VIETQR_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM';
     const bankName = bankCode === 'MB' ? 'MB Bank (Ngân hàng Quân đội)' : bankCode;
 
     // Generate SePay QR with orderCode in the transfer description for automatic webhook reconciliation

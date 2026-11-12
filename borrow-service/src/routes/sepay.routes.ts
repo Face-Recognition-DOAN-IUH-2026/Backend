@@ -13,7 +13,11 @@ function timingSafeEqual(a: string, b: string): boolean {
 export function verifySepayAuth(req: any): boolean {
   const expectedSecret = process.env.SEPAY_WEBHOOK_SECRET || process.env.SEPAY_API_KEY;
   if (!expectedSecret) {
-    return true; // No secret configured, allow (e.g. local dev / open test)
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[SePay Callback] Unauthorized: SEPAY_WEBHOOK_SECRET or SEPAY_API_KEY is not configured in production');
+      return false;
+    }
+    return true; // No secret configured, allow only in local dev / open test
   }
 
   // Method 1: Authorization Header (Apikey or Bearer)
