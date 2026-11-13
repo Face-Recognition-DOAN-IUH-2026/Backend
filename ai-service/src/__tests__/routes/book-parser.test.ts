@@ -19,6 +19,13 @@ function buildApp() {
   const app = express();
   app.use(express.json());
   const router = require('../../routes/book-parser').default;
+  // The route enforces requireRole(['admin','staff']) itself, so this suite must
+  // provide an authenticated staff user. The guard itself is covered by
+  // patron-ai-access.test.ts.
+  app.use((req: any, _res: any, next: any) => {
+    req.user = { sub: 'staff-1', role: 'staff', roles: ['staff'] };
+    next();
+  });
   app.use('/ai', router);
   return app;
 }

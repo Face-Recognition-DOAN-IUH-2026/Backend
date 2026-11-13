@@ -24,7 +24,7 @@ const auth = createAuth({
   jwtIssuer: config.jwtIssuer,
 });
 
-const app = express();
+export const app = express();
 
 app.use(cors({ origin: config.corsOrigins.includes('*') ? true : config.corsOrigins, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
@@ -78,9 +78,15 @@ app.use('/ai/admin/chat', auth, requireRole(['admin']), adminChatRouter);
 // NOTE: Public endpoint — used during registration BEFORE login, so no auth required.
 // Must be registered BEFORE the auth-protected /ai catch-all below.
 app.use('/ai', cardParserRouter);
-app.use('/ai', auth, requireRole(['admin', 'staff']), bookParserRouter);
+// NOTE: do NOT put requireRole(['admin','staff']) on this /ai mount. Express runs
+// the middleware chain for every request matching the /ai prefix, so a 403 from
+// requireRole would also block patron routes mounted below (/ai/recommendations/patron,
+// /ai/sessions). The role guard now lives on book-parser's own route.
+app.use('/ai', auth, bookParserRouter);
 
-// AI Command Center routes (admin/staff only) - /ai/command-center/*, /ai/insights/*, /ai/recommendations/*
+// AI routes - /ai/command-center/*, /ai/insights/* are guarded per-route with
+// requireRole(['admin','staff']); /ai/recommendations/patron/:studentCode and
+// /ai/tools are available to any authenticated user (incl. patrons).
 app.use('/ai', auth, aiRoutes);
 
 // Session retrieval - /ai/sessions/:sessionId (ownership enforced via getOwned)
@@ -150,4 +156,8 @@ async function start() {
   }
 }
 
-start();
+// Only boot the server when this file is the entry point (node dist/.../index.js).
+// Tests import `app` directly and must not start listeners or DB connections.
+if (require.main === module) {
+  start();
+}
