@@ -415,34 +415,6 @@ describe('PaymentService settlement idempotency (BLF-PAY-01)', () => {
     });
   });
 
-  describe('processVietqrCallback against a settled order', () => {
-    it('flags the second transfer for refund and answers duplicate', async () => {
-      orderStore.set(
-        'TXN-20261102-AAAA1111',
-        buildOrder({ status: 'completed', vietqrOrderId: 'VQR123456789' }),
-      );
-
-      const result = await service.processVietqrCallback({
-        transactionid: 'BANK-TX-2',
-        amount: 50000,
-        orderId: 'VQR123456789',
-      });
-
-      expect(result.duplicate).toBe(true);
-      expect(mockRepo.saveBorrowRecords).not.toHaveBeenCalled();
-
-      expect(eventPublisher.publishEvent).toHaveBeenCalledWith(
-        'payment.reconcile_needed',
-        expect.objectContaining({
-          orderCode: 'TXN-20261102-AAAA1111',
-          amount: 50000,
-          reason: 'duplicate_transfer_after_settlement',
-          source: 'vietqr_callback',
-        }),
-      );
-    });
-  });
-
   describe('acknowledgeReconcile', () => {
     it('closes the ticket, records the staff member and publishes the event', async () => {
       orderStore.set(

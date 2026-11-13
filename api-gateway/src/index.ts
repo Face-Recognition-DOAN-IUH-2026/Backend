@@ -245,12 +245,6 @@ app.use('/borrow/sepay', createProxyMiddleware({
   pathRewrite: preserveOriginalPath,
 }));
 
-app.use('/borrow/vietqr', createProxyMiddleware({
-  target: config.services.borrowService,
-  changeOrigin: true,
-  pathRewrite: preserveOriginalPath,
-}));
-
 app.use('/borrow/payments', createProxyMiddleware({
   target: config.services.borrowService,
   changeOrigin: true,
