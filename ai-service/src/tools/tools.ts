@@ -47,7 +47,44 @@ export async function lookupBook(isbnOrQuery: string): Promise<ToolResult> {
   return safeGet<any>(url);
 }
 
-export function getLibraryHours(): ToolResult {
+export async function getLibraryHours(): Promise<ToolResult> {
+  const url = `${config.scheduleServiceUrl}/schedules/internal/library-hours`;
+  const result = await safeGet<any>(url);
+
+  if (result.success && result.data && Array.isArray(result.data.schedule)) {
+    return result;
+  }
+
+  // Fallback to internal shifts if library-hours endpoint is not available
+  const shiftsUrl = `${config.scheduleServiceUrl}/schedules/internal/shifts`;
+  const shiftsResult = await safeGet<any[]>(shiftsUrl);
+
+  if (shiftsResult.success && Array.isArray(shiftsResult.data) && shiftsResult.data.length > 0) {
+    const activeShifts = shiftsResult.data.filter((s: any) => s.isActive !== false);
+    const starts = activeShifts.map((s: any) => (s.startTime || '').slice(0, 5)).filter(Boolean).sort();
+    const ends = activeShifts.map((s: any) => (s.endTime || '').slice(0, 5)).filter(Boolean).sort();
+
+    const start = starts[0] || '06:30';
+    const end = ends[ends.length - 1] || '21:00';
+
+    return {
+      success: true,
+      data: {
+        schedule: [
+          { days: 'Thứ Hai - Thứ Sáu (Monday - Friday)', hours: `${start} - ${end}` },
+          { days: 'Thứ Bảy - Chủ Nhật (Saturday - Sunday)', hours: '08:00 - 19:30' },
+        ],
+        shifts: activeShifts.map((s: any) => ({
+          name: s.name,
+          hours: `${(s.startTime || '').slice(0, 5)} - ${(s.endTime || '').slice(0, 5)}`,
+        })),
+        note: 'Giờ mở cửa có thể thay đổi vào ngày lễ và kỳ nghỉ đặc biệt',
+        formatted_text: `Thứ Hai - Thứ Sáu: ${start} - ${end}\nThứ Bảy - Chủ Nhật: 08:00 - 19:30\n(Lưu ý: Giờ mở cửa có thể thay đổi vào ngày lễ và kỳ nghỉ đặc biệt)`,
+      },
+    };
+  }
+
+  // Graceful fallback with standard hours if schedule-service is offline/unreachable
   return {
     success: true,
     data: {
@@ -125,4 +162,53 @@ export async function getScheduleToday(staffId?: string): Promise<ToolResult> {
   }
 
   return result;
+}
+
+export async function recommendBooks(userId: string): Promise<ToolResult> {
+  const url = `${config.borrowServiceUrl}/borrow/internal/patrons/id/${encodeURIComponent(userId)}/history`;
+  const historyRes = await safeGet<any[]>(url);
+  const history = historyRes.success && Array.isArray(historyRes.data) ? historyRes.data : [];
+
+  const categories = new Set<string>();
+  for (const item of history) {
+    if (item.book?.category) categories.add(item.book.category);
+    else if (item.category) categories.add(item.category);
+    if (item.book?.author) categories.add(item.book.author);
+  }
+  const sampleKeyword = Array.from(categories)[0] || 'giáo trình';
+  const booksUrl = `${config.borrowServiceUrl}/borrow/internal/books/search?query=${encodeURIComponent(sampleKeyword)}`;
+  const booksRes = await safeGet<any>(booksUrl);
+
+  return {
+    success: true,
+    data: {
+      borrow_count: history.length,
+      favorite_topics: Array.from(categories).slice(0, 5),
+      recommended_books: booksRes.data?.items || booksRes.data || [],
+    },
+  };
+}
+
+export async function getOperationsSummary(): Promise<ToolResult> {
+  try {
+    const accessStatsUrl = `${config.accessServiceUrl}/access/stats`;
+    const overdueUrl = `${config.borrowServiceUrl}/borrow/internal/overdue`;
+    const [statsRes, overdueRes] = await Promise.all([
+      safeGet<any>(accessStatsUrl),
+      safeGet<any>(overdueUrl),
+    ]);
+    const overdueCount = overdueRes.success && Array.isArray(overdueRes.data) ? overdueRes.data.length : 0;
+    return {
+      success: true,
+      data: {
+        patrons_inside: statsRes.data?.active_inside ?? 0,
+        today_entries: statsRes.data?.today_entries ?? 0,
+        today_exits: statsRes.data?.today_exits ?? 0,
+        total_overdue_borrows: overdueCount,
+        report_time: new Date().toISOString(),
+      },
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to get operations summary' };
+  }
 }

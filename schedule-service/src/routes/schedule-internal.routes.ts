@@ -54,6 +54,61 @@ router.get('/upcoming', internalAuth, async (req: Request, res: Response) => {
   }
 });
 
+router.get('/library-hours', async (_req: Request, res: Response) => {
+  try {
+    const shifts = await scheduleService.listShifts();
+    const activeShifts = (shifts || []).filter((s: any) => s.isActive !== false);
+
+    let weekdayStart = '06:30';
+    let weekdayEnd = '21:00';
+    let weekendStart = '08:00';
+    let weekendEnd = '19:30';
+
+    if (activeShifts.length > 0) {
+      const starts = activeShifts.map((s: any) => (s.startTime || '').slice(0, 5)).filter(Boolean).sort();
+      const ends = activeShifts.map((s: any) => (s.endTime || '').slice(0, 5)).filter(Boolean).sort();
+      if (starts.length > 0) weekdayStart = starts[0];
+      if (ends.length > 0) weekdayEnd = ends[ends.length - 1];
+    }
+
+    const schedule = [
+      {
+        days: 'Thứ Hai - Thứ Sáu (Monday - Friday)',
+        hours: `${weekdayStart} - ${weekdayEnd}`,
+      },
+      {
+        days: 'Thứ Bảy - Chủ Nhật (Saturday - Sunday)',
+        hours: `${weekendStart} - ${weekendEnd}`,
+      },
+    ];
+
+    const formatted_text = `Thứ Hai - Thứ Sáu: ${weekdayStart} - ${weekdayEnd}\nThứ Bảy - Chủ Nhật: ${weekendStart} - ${weekendEnd}\n(Lưu ý: Giờ mở cửa có thể thay đổi vào ngày lễ và kỳ nghỉ đặc biệt)`;
+
+    res.json({
+      schedule,
+      shifts: activeShifts.map((s: any) => ({
+        name: s.name,
+        hours: `${(s.startTime || '').slice(0, 5)} - ${(s.endTime || '').slice(0, 5)}`,
+      })),
+      note: 'Giờ mở cửa có thể thay đổi vào ngày lễ và kỳ nghỉ đặc biệt',
+      formatted_text,
+    });
+  } catch (error) {
+    console.error('Error fetching library hours:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/shifts', async (_req: Request, res: Response) => {
+  try {
+    const shifts = await scheduleService.listShifts();
+    res.json(shifts);
+  } catch (error) {
+    console.error('Error fetching internal shifts:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/auto-checkout', internalAuth, async (req: Request, res: Response) => {
   try {
     const result = await scheduleService.autoCheckoutStaleAssignments();

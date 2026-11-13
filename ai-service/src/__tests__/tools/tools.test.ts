@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { patronToolDefs, staffToolDefs, adminToolDefs, getToolDefsForRole } from '../../tools/registry';
-import { getScheduleToday, searchBooks, getOverdueBorrows, getMyPatronInfo, getPatronInfoById } from '../../tools/tools';
+import { getScheduleToday, searchBooks, getOverdueBorrows, getMyPatronInfo, getPatronInfoById, recommendBooks, getOperationsSummary, getLibraryHours } from '../../tools/tools';
 
 jest.mock('../../config', () => ({
   config: {
@@ -29,6 +29,8 @@ describe('AI Tools - RBAC Security', () => {
       expect(patronBorrows?.injectUserId).toBe(true);
       const patronHistory = tools.find(t => t.name === 'get_patron_history');
       expect(patronHistory?.injectUserId).toBe(true);
+      const recommendBooksTool = tools.find(t => t.name === 'recommend_books');
+      expect(recommendBooksTool?.injectUserId).toBe(true);
 
       // Patrons should NOT have admin tools
       expect(tools.find(t => t.name === 'get_overdue_borrows')).toBeUndefined();
@@ -44,11 +46,12 @@ describe('AI Tools - RBAC Security', () => {
       expect(scheduleToday?.injectUserId).toBe(true);
     });
 
-    it('should provide admin tools for admin role (staff tools plus get_all_schedules)', () => {
+    it('should provide admin tools for admin role (staff tools plus get_all_schedules & get_operations_summary)', () => {
       const adminTools = getToolDefsForRole('admin');
       const staffTools = getToolDefsForRole('staff');
-      expect(adminTools.length).toBe(staffTools.length + 1);
+      expect(adminTools.length).toBe(staffTools.length + 2);
       expect(adminTools.find(t => t.name === 'get_all_schedules')).toBeDefined();
+      expect(adminTools.find(t => t.name === 'get_operations_summary')).toBeDefined();
     });
 
     it('should default to patron tools for unknown role', () => {
@@ -198,6 +201,73 @@ describe('AI Tools - RBAC Security', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
+    });
+  });
+
+  describe('recommendBooks', () => {
+    it('should return recommended books based on history categories', async () => {
+      (axios.get as jest.Mock)
+        .mockResolvedValueOnce({
+          data: [{ book: { category: 'Computer Science', author: 'Robert Martin' } }],
+        })
+        .mockResolvedValueOnce({
+          data: { items: [{ id: 'b1', title: 'Clean Architecture' }] },
+        });
+
+      const result = await recommendBooks('user-123');
+      expect(result.success).toBe(true);
+      expect(result.data.borrow_count).toBe(1);
+      expect(result.data.recommended_books).toHaveLength(1);
+    });
+  });
+
+  describe('getOperationsSummary', () => {
+    it('should return operational metrics from access and borrow services', async () => {
+      (axios.get as jest.Mock)
+        .mockResolvedValueOnce({
+          data: { active_inside: 42, today_entries: 150, today_exits: 108 },
+        })
+        .mockResolvedValueOnce({
+          data: [{ id: 'overdue-1' }, { id: 'overdue-2' }],
+        });
+
+      const result = await getOperationsSummary();
+      expect(result.success).toBe(true);
+      expect(result.data.patrons_inside).toBe(42);
+      expect(result.data.total_overdue_borrows).toBe(2);
+    });
+  });
+
+  describe('getLibraryHours', () => {
+    it('should fetch dynamic library hours from schedule-service', async () => {
+      (axios.get as jest.Mock).mockResolvedValueOnce({
+        data: {
+          schedule: [
+            { days: 'Thứ Hai - Thứ Sáu (Monday - Friday)', hours: '07:00 - 21:00' },
+            { days: 'Thứ Bảy - Chủ Nhật (Saturday - Sunday)', hours: '08:00 - 19:30' },
+          ],
+          note: 'Thông báo điều chỉnh giờ phục vụ hè',
+          formatted_text: 'Thứ Hai - Thứ Sáu: 07:00 - 21:00\nThứ Bảy - Chủ Nhật: 08:00 - 19:30',
+        },
+      });
+
+      const result = await getLibraryHours();
+      expect(result.success).toBe(true);
+      expect(result.data.schedule[0].hours).toBe('07:00 - 21:00');
+      expect(result.data.note).toBe('Thông báo điều chỉnh giờ phục vụ hè');
+      expect(axios.get).toHaveBeenCalledWith(
+        'http://schedule-service:3002/schedules/internal/library-hours',
+        expect.anything()
+      );
+    });
+
+    it('should fallback to default hours when schedule-service request fails', async () => {
+      (axios.get as jest.Mock).mockRejectedValue(new Error('Connection refused'));
+
+      const result = await getLibraryHours();
+      expect(result.success).toBe(true);
+      expect(result.data.schedule).toBeDefined();
+      expect(result.data.schedule.length).toBeGreaterThan(0);
     });
   });
 });

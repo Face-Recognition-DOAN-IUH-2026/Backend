@@ -95,7 +95,7 @@ HKTT: 123 Nguyễn Trãi, P.5, Q.5, TP.HCM`;
     expect(response.body.date_of_birth).toBe('15/03/2003');
   });
 
-  it('returns all-null fields when LLM returns non-JSON text', async () => {
+  it('falls back to regex parsing when LLM returns non-JSON text', async () => {
     globalThis.fetch = async () => {
       return new Response(
         JSON.stringify({ choices: [{ message: { content: 'Sorry I cannot parse that' } }] }),
@@ -105,18 +105,19 @@ HKTT: 123 Nguyễn Trãi, P.5, Q.5, TP.HCM`;
 
     const response = await request(buildApp()).post('/ai/parse-card-text').send({ raw_text: RAW_TEXT });
     expect(response.status).toBe(200);
-    expect(response.body.student_code).toBeNull();
-    expect(response.body.full_name).toBeNull();
+    expect(response.body.student_code).toBe('20520001');
+    expect(response.body.full_name).toBe('Nguyễn Văn A');
   });
 
-  it('returns 500 when OpenRouter returns 500', async () => {
+  it('returns 200 with regex fallback when OpenRouter returns 500', async () => {
     globalThis.fetch = async () => {
       return new Response('Server Error', { status: 500 }) as any;
     };
 
     const response = await request(buildApp()).post('/ai/parse-card-text').send({ raw_text: RAW_TEXT });
-    expect(response.status).toBe(500);
-    expect(response.body.error).toContain('Card parsing failed');
+    expect(response.status).toBe(200);
+    expect(response.body.student_code).toBe('20520001');
+    expect(response.body.full_name).toBe('Nguyễn Văn A');
   });
 
   it('does not throw when LLM returns empty content', async () => {
