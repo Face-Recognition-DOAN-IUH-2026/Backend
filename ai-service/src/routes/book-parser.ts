@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { config } from '../config';
 import { extractJson } from '../utils/extractJson';
+import { requireRole } from '../../../shared/auth';
 
 const router = Router();
 
@@ -127,7 +128,9 @@ Rules:
 3. Clean and normalize ISBN digits.`;
 
 // POST /ai/parse-book-text - Parse raw OCR / catalog text into structured book metadata
-router.post('/parse-book-text', async (req: Request, res: Response) => {
+// Role guard lives on the route (not on the /ai mount): a requireRole mounted on
+// the whole /ai prefix would also terminate unrelated /ai requests for patrons.
+router.post('/parse-book-text', requireRole(['admin', 'staff']), async (req: Request, res: Response) => {
   try {
     const { raw_text } = req.body as ParseBookTextRequest;
 
