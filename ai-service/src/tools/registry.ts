@@ -1,4 +1,4 @@
-import { ToolResult, searchBooks, getShelfLocation, lookupBook, getLibraryHours as getHoursFn, getMyPatronInfo, getMyBorrows, getMyHistory, getPatronInfoById, getPatronBorrowsById, getPatronHistoryById, getOverdueBorrows, getScheduleToday } from './tools';
+import { ToolResult, searchBooks, getShelfLocation, lookupBook, getLibraryHours as getHoursFn, getMyPatronInfo, getMyBorrows, getMyHistory, getPatronInfoById, getPatronBorrowsById, getPatronHistoryById, getOverdueBorrows, getScheduleToday, recommendBooks, getOperationsSummary } from './tools';
 
 export interface ToolParameterProperty {
   type: string;
@@ -84,6 +84,7 @@ export const patronToolDefs: ToolDef[] = [
   { name: 'get_patron_info', description: 'Khong can tham so — hien thi thong tin tai khoan the thu vien cua ban.', func: (userId: string) => getMyPatronInfo(userId), injectUserId: true, parameters: NO_ARGS },
   { name: 'get_patron_borrows', description: 'Khong can tham so — hien thi cac sach ban dang muon.', func: (userId: string) => getMyBorrows(userId), injectUserId: true, parameters: NO_ARGS },
   { name: 'get_patron_history', description: 'Khong can tham so — hien thi lich su muon tra cua ban.', func: (userId: string) => getMyHistory(userId), injectUserId: true, parameters: NO_ARGS },
+  { name: 'recommend_books', description: 'Khong can tham so — goi y cac sach nen doc dua tren so thich va lich su muon cua ban.', func: (userId: string) => recommendBooks(userId), injectUserId: true, parameters: NO_ARGS },
 ];
 
 export const staffToolDefs: ToolDef[] = [
@@ -142,6 +143,12 @@ export const adminToolDefs: ToolDef[] = [
     name: 'get_all_schedules',
     description: 'Xem toan bo lich truc cua tat ca nhan vien hom nay trong thu vien (chi danh cho admin). Khong can tham so.',
     func: () => getScheduleToday(),
+    parameters: NO_ARGS,
+  },
+  {
+    name: 'get_operations_summary',
+    description: 'Xem thong ke van hanh tong quan toan thu vien hom nay (doc gia tai cho, luot ra vao, sach qua han). Khong can tham so.',
+    func: getOperationsSummary,
     parameters: NO_ARGS,
   },
 ];

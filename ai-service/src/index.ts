@@ -5,6 +5,7 @@ import { config } from './config';
 import { AppDataSource } from './data-source';
 import aiRoutes from './routes/ai.routes';
 import cardParserRouter from './routes/card-parser';
+import bookParserRouter from './routes/book-parser';
 import patronChatRouter from './routes/chat.patron';
 import staffChatRouter from './routes/chat.staff';
 import adminChatRouter from './routes/chat.admin';
@@ -77,6 +78,7 @@ app.use('/ai/admin/chat', auth, requireRole(['admin']), adminChatRouter);
 // NOTE: Public endpoint — used during registration BEFORE login, so no auth required.
 // Must be registered BEFORE the auth-protected /ai catch-all below.
 app.use('/ai', cardParserRouter);
+app.use('/ai', auth, requireRole(['admin', 'staff']), bookParserRouter);
 
 // AI Command Center routes (admin/staff only) - /ai/command-center/*, /ai/insights/*, /ai/recommendations/*
 app.use('/ai', auth, aiRoutes);
