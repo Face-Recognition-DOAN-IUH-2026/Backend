@@ -8,7 +8,6 @@ import { activateCardAutoFine } from '../clients/UserServiceClient';
 import { publishEvent } from '../utils/eventPublisher';
 import { generatePaymentRef } from '../utils/fineCalculator';
 import { HttpError } from '../../../shared/error-handler';
-import { VietqrClient, generateVietqrOrderId } from './VietqrClient';
 
 export interface CreatePaymentOrderResult {
   id: string;
@@ -43,9 +42,9 @@ export function generateVietQrData(
 export function generateSepayQrData(
   orderCode: string,
   amount: number,
-  bankCode = process.env.SEPAY_BANK_CODE || process.env.VIETQR_BANK_CODE || 'MB',
-  accountNumber = process.env.SEPAY_ACCOUNT_NUMBER || process.env.VIETQR_ACCOUNT_NUMBER || '',
-  accountName = process.env.SEPAY_ACCOUNT_NAME || process.env.VIETQR_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM',
+  bankCode = process.env.SEPAY_BANK_CODE || 'MB',
+  accountNumber = process.env.SEPAY_ACCOUNT_NUMBER || '',
+  accountName = process.env.SEPAY_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM',
 ): { qrUrl: string; qrData: string } {
   // SePay QR service provides clean, instant QR images with Napas 247 compatibility
   const qrUrl = `https://qr.sepay.vn/img?acc=${accountNumber}&bank=${bankCode}&amount=${amount}&des=${encodeURIComponent(orderCode)}&template=compact`;
@@ -199,9 +198,9 @@ export class PaymentService {
     const orderCode = generatePaymentRef();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins timeout
 
-    const bankCode = process.env.SEPAY_BANK_CODE || process.env.VIETQR_BANK_CODE || 'MB';
-    const accountNumber = process.env.SEPAY_ACCOUNT_NUMBER || process.env.VIETQR_ACCOUNT_NUMBER || '';
-    const accountName = process.env.SEPAY_ACCOUNT_NAME || process.env.VIETQR_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM';
+    const bankCode = process.env.SEPAY_BANK_CODE || 'MB';
+    const accountNumber = process.env.SEPAY_ACCOUNT_NUMBER || '';
+    const accountName = process.env.SEPAY_ACCOUNT_NAME || 'THU VIEN DAI HOC CONG NGHIEP TPHCM';
     const bankName = bankCode === 'MB' ? 'MB Bank (Ngân hàng Quân đội)' : bankCode;
 
     // Generate SePay QR with orderCode in the transfer description for automatic webhook reconciliation
@@ -436,103 +435,6 @@ export class PaymentService {
   }
 
   /**
-   * Settle a VietQR transaction-sync callback (automatic bank reconciliation).
-   * Matching priority: VietQR orderId -> exact content (= our VietQR order id)
-   * -> legacy content containing our internal orderCode (static-QR fallback).
-   * Failed validations throw so VietQR retries the callback later.
-   */
-  async processVietqrCallback(input: {
-    transactionid: string;
-    referencenumber?: string;
-    bankaccount?: string;
-    amount: number | string;
-    transType?: string;
-    content?: string;
-    orderId?: string;
-  }): Promise<{ orderCode: string; duplicate: boolean; ignored?: boolean; message?: string }> {
-    const { transactionid, referencenumber, bankaccount, amount, transType, content, orderId } = input;
-    if (!transactionid) {
-      throw new HttpError(400, 'Thiếu transactionid trong callback VietQR');
-    }
-
-    const existing = await this.callbackRepo.findOne({ where: { transactionId: transactionid } });
-    if (existing) {
-      return { orderCode: existing.orderCode ?? '', duplicate: true };
-    }
-
-    if (transType && transType !== 'C') {
-      throw new HttpError(400, `Giao dịch ${transType} không phải khoản thu (ghi có), bỏ qua`);
-    }
-
-    const expectedAccount = process.env.VIETQR_ACCOUNT_NUMBER;
-    if (expectedAccount && bankaccount && bankaccount !== expectedAccount) {
-      throw new HttpError(400, `TK nhận ${bankaccount} không khớp TK thư viện`);
-    }
-
-    let order: PaymentOrder | null = null;
-    if (orderId) {
-      order = await this.orderRepo.findOne({ where: { vietqrOrderId: orderId } });
-    }
-    if (!order && content) {
-      order = await this.orderRepo.findOne({ where: { vietqrOrderId: content } });
-    }
-    if (!order && content) {
-      // Lookup by partial content match: bank descriptions often include prefixes/suffixes
-      // like "VQRed91e7d3f1 LGEIRTFKCX50" or "MBVCB.123456.LGEIRTFKCX50"
-      const candidates = await this.orderRepo.find({
-        order: { createdAt: 'DESC' },
-        take: 100,
-      });
-      const upperContent = content.toUpperCase();
-      const cleanContent = upperContent.replace(/[^A-Z0-9]/g, '');
-      order = candidates.find((o) => {
-        if (o.vietqrOrderId) {
-          const cleanOrderId = o.vietqrOrderId.toUpperCase();
-          if (upperContent.includes(cleanOrderId) || cleanContent.includes(cleanOrderId)) {
-            return true;
-          }
-        }
-        if (o.orderCode) {
-          const cleanCode = o.orderCode.toUpperCase().replace(/[^A-Z0-9]/g, '');
-          if (upperContent.includes(o.orderCode.toUpperCase()) || cleanContent.includes(cleanCode)) {
-            return true;
-          }
-        }
-        return false;
-      }) ?? null;
-    }
-    if (!order) {
-      throw new HttpError(404, `Không tìm thấy đơn hàng cho callback VietQR (orderId=${orderId ?? ''}, content=${content ?? ''})`);
-    }
-
-    if (isTerminalOrderStatus(order.status)) {
-      await this.recordVietqrCallback(transactionid, order.orderCode, amount, input);
-      // A transfer that arrives after the order settled is money the library
-      // holds but has not accounted for: raise it on the reconcile queue
-      // instead of answering "duplicate" and silently keeping it.
-      if (order.status !== 'refunded') {
-        publishEvent('payment.reconcile_needed', {
-          orderCode: order.orderCode,
-          patronId: order.patronId,
-          amount: Number(amount) || 0,
-          reason: 'duplicate_transfer_after_settlement',
-          alreadyPaidRecordIds: order.recordIds ?? [],
-          source: 'vietqr_callback',
-        });
-      }
-      return { orderCode: order.orderCode, duplicate: true };
-    }
-
-    if (Number(amount) < Number(order.amount)) {
-      throw new HttpError(400, `Số tiền ${amount} không đủ cho đơn ${order.amount} (${order.orderCode})`);
-    }
-
-    await this.settleCompletedOrder(order, referencenumber || transactionid, { vietqrCallback: input });
-    await this.recordVietqrCallback(transactionid, order.orderCode, amount, input);
-    return { orderCode: order.orderCode, duplicate: false };
-  }
-
-  /**
    * SePay Webhook callback: handles automatic bank transfer notifications.
    * Matches transfer content / code to an unpaid PaymentOrder and settles the debt.
    */
@@ -566,7 +468,7 @@ export class PaymentService {
       return { orderCode: '', duplicate: true };
     }
 
-    const expectedAccount = process.env.SEPAY_ACCOUNT_NUMBER || process.env.VIETQR_ACCOUNT_NUMBER;
+    const expectedAccount = process.env.SEPAY_ACCOUNT_NUMBER;
     if (expectedAccount && accountNumber && accountNumber !== expectedAccount) {
       console.warn(`[SePay] TK nhận ${accountNumber} không khớp TK cấu hình (${expectedAccount})`);
     }
