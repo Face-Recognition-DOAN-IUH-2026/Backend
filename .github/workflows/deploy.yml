@@ -7,11 +7,65 @@ on:
       - 11-11-26
       - 07-11-26
       - 18-10-26
+  pull_request:
+    branches:
+      - main
   workflow_dispatch: # Cho phép bấm nút "Run workflow" thủ công trên GitHub
 
 jobs:
+  test:
+    name: 🧪 Automated Quality Gate & Unit Testing
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      JWT_SECRET: test-jwt-access-secret-for-ci-testing-purposes-12345
+      JWT_ACCESS_SECRET: test-jwt-access-secret-for-ci-testing-purposes-12345
+      SERVICE_JWT_SECRET: test-service-jwt-secret-for-ci-testing-purposes-12345
+
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: |
+            shared/package.json
+            ai-service/package.json
+            api-gateway/package.json
+
+      - name: 📦 Build Shared Library (@library/shared)
+        run: |
+          echo "== Building shared library =="
+          cd shared
+          npm ci || npm install
+          npm run build
+          cd ..
+
+      - name: 🧪 Run AI Service Unit Tests (130+ tests)
+        run: |
+          echo "== Testing ai-service =="
+          cd ai-service
+          npm ci || npm install
+          npm test -- --ci --maxWorkers=2
+          echo "== Compiling TypeScript for ai-service =="
+          npm run build
+          cd ..
+
+      - name: 🔍 Build & Validate API Gateway
+        run: |
+          echo "== Validating and compiling api-gateway =="
+          cd api-gateway
+          npm ci || npm install
+          npm run build
+          cd ..
+
   deploy:
-    name: Deploy Microservices to AWS EC2
+    name: 🚀 Deploy Microservices to AWS EC2
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
