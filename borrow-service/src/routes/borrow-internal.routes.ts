@@ -6,7 +6,7 @@ import { Book } from '../entities/Book';
 import { BorrowRecord } from '../entities/BorrowRecord';
 import { BorrowRepository } from '../repositories/BorrowRepository';
 import { WaitlistRepository } from '../repositories/WaitlistRepository';
-import { createInternalAuth } from '../../shared/auth';
+import { createInternalAuth } from '../../../shared/auth';
 import { publishEvent } from '../utils/eventPublisher';
 import { fetchGoogleBooks } from '../clients/GoogleBooksClient';
 import { In, IsNull } from 'typeorm';

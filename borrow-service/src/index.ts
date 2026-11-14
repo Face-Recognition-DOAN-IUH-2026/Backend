@@ -52,7 +52,7 @@ async function start() {
   try {
     await AppDataSource.initialize();
     setupProcessErrorHandlers();
-    await amqpClient.connect().catch((e) => console.error('[AMQP] Init failed:', e.message));
+    await amqpClient.connect().catch((e: any) => console.error('[AMQP] Init failed:', e.message));
     const server = app.listen(config.port, '0.0.0.0', () => {
       console.log(`Borrow service running on port ${config.port}`);
     });

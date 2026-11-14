@@ -135,6 +135,11 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
     cooldown = CooldownService()
     await cooldown.close()
+    try:
+        from infra.http_client import close_http_client
+        await close_http_client()
+    except Exception as e:
+        logging.getLogger("uvicorn").error("HTTP client close error: %s", e)
 
 
 def create_app() -> FastAPI:

@@ -19,6 +19,7 @@ from core.schemas import (
 )
 from core.uploads import validate_image_upload
 from infra.cooldown import CooldownService
+from infra.http_client import get_http_client
 from infra.redis_cache import redis_client
 from worker.tasks import (
     _upload_temp_frame,
@@ -401,11 +402,12 @@ async def process_image_sync(
                 "connection_id": request.connection_id,
             }
             
-            async with httpx.AsyncClient(timeout=1.0) as client:
-                await client.post(
-                    f"{settings.access_service_url}/internal/access/face-results-sync",
-                    json=broadcast_payload,
-                )
+            client = get_http_client()
+            await client.post(
+                f"{settings.access_service_url}/internal/access/face-results-sync",
+                json=broadcast_payload,
+                timeout=1.0,
+            )
         except Exception as broadcast_exc:
             # Log but don't fail the request
             print(f"WARNING: SSE broadcast failed: {broadcast_exc}")

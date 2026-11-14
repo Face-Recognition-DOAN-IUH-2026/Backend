@@ -80,6 +80,21 @@ jest.mock('../utils/eventPublisher', () => ({
   publishEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../redis', () => ({
+  RedisCacheService: {
+    del: jest.fn().mockResolvedValue(undefined),
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue(undefined),
+    invalidatePattern: jest.fn().mockResolvedValue(undefined),
+  },
+  redis: {
+    on: jest.fn(),
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue('OK'),
+    del: jest.fn().mockResolvedValue(1),
+  },
+}));
+
 // ─── Imports ────────────────────────────────────────────────────────────────
 
 import { ScheduleService } from '../services/ScheduleService';

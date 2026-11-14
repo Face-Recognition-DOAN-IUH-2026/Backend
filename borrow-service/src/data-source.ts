@@ -39,4 +39,10 @@ export const AppDataSource = new DataSource({
       : 'dist/borrow-service/src/migrations/*.js',
   ],
   logging: process.env.TYPEORM_LOGGING === 'true',
+  extra: {
+    max: parseInt(process.env.DB_POOL_MAX || '25', 10),
+    min: parseInt(process.env.DB_POOL_MIN || '4', 10),
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  },
 });

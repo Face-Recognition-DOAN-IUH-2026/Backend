@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from api.dependencies import get_current_user
 from core.service_token import get_auth_headers
 from infra.config import settings
+from infra.http_client import get_http_client
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -102,14 +103,14 @@ async def list_users(
             detail="Admin access required",
         )
 
-    async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
-        resp = await client.get("/internal/users", headers=_internal_headers())
-        if resp.status_code != 200:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to fetch users from user-service",
-            )
-        users_data = resp.json()
+    client = get_http_client()
+    resp = await client.get(f"{USER_SERVICE_URL}/internal/users", headers=_internal_headers())
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to fetch users from user-service",
+        )
+    users_data = resp.json()
 
     user_ids = [str(u["id"]) for u in users_data if "id" in u]
     face_user_ids = await _get_face_user_ids_batch(user_ids)
@@ -142,15 +143,15 @@ async def delete_user(
             detail="Admin access required",
         )
 
-    async with httpx.AsyncClient(base_url=USER_SERVICE_URL) as client:
-        resp = await client.delete(f"/internal/users/{user_id}", headers=_internal_headers())
-        if resp.status_code == 404:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
-            )
-        if resp.status_code != 200:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Failed to delete user from user-service",
-            )
+    client = get_http_client()
+    resp = await client.delete(f"{USER_SERVICE_URL}/internal/users/{user_id}", headers=_internal_headers())
+    if resp.status_code == 404:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to delete user from user-service",
+        )

@@ -48,8 +48,8 @@ jest.mock('../../../../shared', () => {
     },
   };
 });
-jest.mock('../../../shared/auth', () => {
-  const actual = jest.requireActual('../../../shared/auth');
+jest.mock('../../../../shared/auth', () => {
+  const actual = jest.requireActual('../../../../shared/auth');
   return {
     ...actual,
     createInternalAuth: () => (req: any, res: any, next: any) => {

@@ -32,4 +32,10 @@ export const AppDataSource = new DataSource({
   migrations: process.env.TYPEORM_MIGRATION_RUN === 'true' ? ['migrations/*.{ts,js}'] : [],
   synchronize: process.env.NODE_ENV === 'development',
   logging: process.env.TYPEORM_LOGGING === 'true',
+  extra: {
+    max: parseInt(process.env.DB_POOL_MAX || '20', 10),
+    min: parseInt(process.env.DB_POOL_MIN || '2', 10),
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+  },
 });

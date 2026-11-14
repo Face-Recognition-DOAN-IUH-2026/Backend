@@ -15,6 +15,7 @@ from core.schemas import PatronCreate, PatronPublic, PatronUpdate, PatronLoginRe
 from core.service_token import get_auth_headers
 from core.uploads import validate_image_upload
 from infra.config import settings
+from infra.http_client import get_http_client
 from infra.milvus_client import get_milvus_client
 from infra.patron_repository import PatronRepository
 from pydantic import BaseModel
@@ -62,19 +63,19 @@ def _required_date(value: object, fallback: str = "2099-12-31") -> object:
 
 
 async def _proxy_to_user_service(method: str, path: str, body: dict | None = None) -> dict:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        headers = _internal_headers()
-        resp = await client.request(method, f"{USER_SERVICE}{path}", json=body, headers=headers)
-        if resp.status_code >= 400:
-            try:
-                detail = resp.json().get("error") or resp.json().get("detail") or "Patron operation failed"
-            except Exception:
-                detail = f"User service error (status {resp.status_code}): {resp.text[:200]}"
-            raise HTTPException(status_code=resp.status_code, detail=detail)
+    client = get_http_client()
+    headers = _internal_headers()
+    resp = await client.request(method, f"{USER_SERVICE}{path}", json=body, headers=headers)
+    if resp.status_code >= 400:
         try:
-            return resp.json()
+            detail = resp.json().get("error") or resp.json().get("detail") or "Patron operation failed"
         except Exception:
-            raise HTTPException(status_code=502, detail="Invalid response from user service")
+            detail = f"User service error (status {resp.status_code}): {resp.text[:200]}"
+        raise HTTPException(status_code=resp.status_code, detail=detail)
+    try:
+        return resp.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Invalid response from user service")
 
 
 async def _get_user_summary(user_id: uuid.UUID) -> dict:
