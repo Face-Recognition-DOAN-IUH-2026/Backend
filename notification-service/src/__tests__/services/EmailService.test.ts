@@ -23,7 +23,7 @@ describe('EmailService', () => {
       expect(mockSendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'test@example.com',
-          subject: expect.stringContaining('reset'),
+          subject: expect.stringContaining('khôi phục mật khẩu'),
         })
       );
     });
@@ -43,7 +43,7 @@ describe('EmailService', () => {
       expect(mockSendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'test@example.com',
-          subject: expect.stringContaining('qua han'),
+          subject: expect.stringContaining('Nhắc trả sách'),
         })
       );
     });
@@ -64,7 +64,7 @@ describe('EmailService', () => {
       expect(mockSendMail).toHaveBeenCalledWith(
         expect.objectContaining({
           to: 'test@example.com',
-          subject: expect.stringContaining('Phat'),
+          subject: expect.stringContaining('phí quá hạn'),
         })
       );
     });

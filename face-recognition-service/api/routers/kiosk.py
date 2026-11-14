@@ -18,6 +18,7 @@ from core.schemas import KioskResult, PatronPublic
 from core.service_token import get_auth_headers
 from core.uploads import validate_image_upload
 from infra.config import settings
+from infra.http_client import get_http_client
 from infra.milvus_client import MilvusClient as _MilvusClient
 from infra.minio_client import MinioStorage as _MinioStorage
 from infra.patron_repository import PatronRepository
@@ -71,34 +72,34 @@ async def _proxy_lookup_user(student_code: Optional[str] = None, card_number: Op
         params["student_code"] = student_code
     if card_number:
         params["card_number"] = card_number
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(f"{USER_SERVICE}/internal/patrons/lookup", params=params, headers=_internal_headers())
-        if resp.status_code >= 400:
-            raise HTTPException(status_code=resp.status_code, detail="Failed to lookup patron")
-        data = resp.json()
-        return data.get("patron") if data.get("exists") else None
+    client = get_http_client()
+    resp = await client.get(f"{USER_SERVICE}/internal/patrons/lookup", params=params, headers=_internal_headers())
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail="Failed to lookup patron")
+    data = resp.json()
+    return data.get("patron") if data.get("exists") else None
 
 
 async def _proxy_get_user(user_id: str) -> dict:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(f"{USER_SERVICE}/internal/patrons/{user_id}", headers=_internal_headers())
-        if resp.status_code >= 400:
-            raise HTTPException(status_code=resp.status_code, detail="Patron not found")
-        return resp.json()
+    client = get_http_client()
+    resp = await client.get(f"{USER_SERVICE}/internal/patrons/{user_id}", headers=_internal_headers())
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail="Patron not found")
+    return resp.json()
 
 
 async def _proxy_create_user(body: dict) -> dict:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.post(f"{USER_SERVICE}/internal/patrons", json=body, headers=_internal_headers())
-        if resp.status_code >= 400:
-            detail = resp.json().get("error", "Failed to create patron")
-            raise HTTPException(status_code=resp.status_code, detail=detail)
-        return resp.json()
+    client = get_http_client()
+    resp = await client.post(f"{USER_SERVICE}/internal/patrons", json=body, headers=_internal_headers())
+    if resp.status_code >= 400:
+        detail = resp.json().get("error", "Failed to create patron")
+        raise HTTPException(status_code=resp.status_code, detail=detail)
+    return resp.json()
 
 
 async def _proxy_delete_user(user_id: str) -> None:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        await client.delete(f"{USER_SERVICE}/internal/patrons/{user_id}", headers=_internal_headers())
+    client = get_http_client()
+    await client.delete(f"{USER_SERVICE}/internal/patrons/{user_id}", headers=_internal_headers())
 
 
 async def _patron_to_public(user: dict, repo: PatronRepository) -> PatronPublic:
@@ -195,12 +196,12 @@ async def _record_challenge_spoof(student_code: str | None, patron_id: str | Non
             "student_code": student_code,
             "source": "face-recognition-service",
         }
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(
-                f"{settings.access_service_url}/internal/access/recognition-events",
-                json=payload,
-                headers=_internal_headers(),
-            )
+        client = get_http_client()
+        await client.post(
+            f"{settings.access_service_url}/internal/access/recognition-events",
+            json=payload,
+            headers=_internal_headers(),
+        )
     except Exception as exc:
         logger.warning("Challenge spoof audit failed (best-effort): %s", exc)
 

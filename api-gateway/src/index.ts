@@ -1,5 +1,6 @@
 import express from 'express';
 import http from 'http';
+import crypto from 'crypto';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -19,6 +20,14 @@ import {
 } from '../../shared/jira-client';
 const app = express();
 app.set('trust proxy', 1);
+
+// Correlation tracing: ensure every request carries an X-Request-ID
+app.use((req, res, next) => {
+  const reqId = (req.headers['x-request-id'] as string) || crypto.randomUUID();
+  req.headers['x-request-id'] = reqId;
+  res.setHeader('X-Request-ID', reqId);
+  next();
+});
 
 const isAllowedOrigin = (origin: string | undefined): boolean => {
   if (!origin) return true;
@@ -48,14 +57,39 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'X-Request-ID'],
+  exposedHeaders: ['X-Request-ID'],
 }));
 
-// Global rate limit per IP. In local/dev this is intentionally high because
+// Key generator that prioritizes authenticated user ID over IP to avoid
+// shared campus WiFi / NAT IP blocking issues.
+const userOrIpKeyGenerator = (req: express.Request): string => {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    try {
+      const decoded = jwt.decode(authHeader.split(' ')[1]) as any;
+      if (decoded?.sub || decoded?.id || decoded?.email) {
+        return `user:${decoded.sub || decoded.id || decoded.email}`;
+      }
+    } catch {}
+  } else if (req.cookies?.access_token) {
+    try {
+      const decoded = jwt.decode(req.cookies.access_token) as any;
+      if (decoded?.sub || decoded?.id || decoded?.email) {
+        return `user:${decoded.sub || decoded.id || decoded.email}`;
+      }
+    } catch {}
+  }
+  return req.ip || 'unknown';
+};
+
+// Global rate limit per IP or authenticated user. In local/dev this is intentionally high because
 // dashboards, SSE reconnects, and camera pages can share one browser IP.
 const globalLimiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.max,
+  keyGenerator: userOrIpKeyGenerator,
+  validate: { keyGeneratorIpFallback: false },
   skip: (req) => {
     if (config.nodeEnv === 'production') return false;
     return [
