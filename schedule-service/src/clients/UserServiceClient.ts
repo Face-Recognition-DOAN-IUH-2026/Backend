@@ -95,8 +95,20 @@ export class UserServiceClient {
   }
 
   async listStaff(ids?: string[]): Promise<StaffUser[]> {
+    // If we have cached the full list of staff, serve any ids query directly from cache
+    const fullStaffList = this.getFromCache<StaffUser[]>('/internal/staff');
+    if (fullStaffList && ids?.length) {
+      const idSet = new Set(ids);
+      return fullStaffList.filter((s) => idSet.has(s.id));
+    }
     const query = ids?.length ? `?ids=${encodeURIComponent(ids.join(','))}` : '';
-    return this.getJson<StaffUser[]>(`/internal/staff${query}`);
+    const result = await this.getJson<StaffUser[]>(`/internal/staff${query}`);
+    if (!ids?.length && result) {
+      for (const staff of result) {
+        this.setInCache(`/internal/users/${staff.id}`, staff);
+      }
+    }
+    return result;
   }
 
   async requireActiveStaff(id: string): Promise<StaffUser> {

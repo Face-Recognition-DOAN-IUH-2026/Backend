@@ -112,8 +112,8 @@ export class AssignmentService {
       skip: (page - 1) * limit,
       take: limit,
     });
-    const activeItems = filters.status ? items : await this.filterActiveScheduleTargets(items);
-    const enriched = await this.enrichAssignments(activeItems);
+    const filterActive = !filters.status;
+    const enriched = await this.enrichAssignments(items, filterActive);
     return { items: enriched.items, total, page, limit };
   }
 
@@ -773,7 +773,11 @@ export class AssignmentService {
     return undefined;
   }
 
-  private async enrichAssignments(items: StaffSchedule[]) {
+  private async enrichAssignments(items: StaffSchedule[], filterActive = false) {
+    if (!items.length) {
+      return { items: [], total: 0 };
+    }
+
     const shiftIds = [...new Set(items.map((item) => item.shiftId))];
     const zoneIds = [...new Set(items.map((item) => item.zoneId))];
     const staffIds = [...new Set(items.map((item) => item.staffId))];
@@ -783,15 +787,28 @@ export class AssignmentService {
       items.length ? this.attendance.findBy({ scheduleId: In(items.map((item) => item.id)) }) : [],
       staffIds.length ? this.users.listStaff(staffIds) : [],
     ]);
+
+    let targetItems = items;
+    if (filterActive) {
+      const activeShiftIds = new Set(shifts.filter((s) => s.isActive !== false).map((s) => s.id));
+      const activeZoneIds = new Set(zones.filter((z) => z.isActive !== false).map((z) => z.id));
+      targetItems = items.filter((item) => activeShiftIds.has(item.shiftId) && activeZoneIds.has(item.zoneId));
+    }
+
+    const shiftMap = new Map(shifts.map((s) => [s.id, s]));
+    const zoneMap = new Map(zones.map((z) => [z.id, z]));
+    const attendanceMap = new Map(attendance.map((a) => [a.scheduleId, a]));
+    const staffMap = new Map(staff.map((u) => [u.id, u]));
+
     return {
-      items: items.map((item) => ({
+      items: targetItems.map((item) => ({
         ...item,
-        shift: shifts.find((shift) => shift.id === item.shiftId) ?? null,
-        zone: zones.find((zone) => zone.id === item.zoneId) ?? null,
-        attendance: attendance.find((att) => att.scheduleId === item.id) ?? null,
-        staff: staff.find((user) => user.id === item.staffId) ?? null,
+        shift: shiftMap.get(item.shiftId) ?? null,
+        zone: zoneMap.get(item.zoneId) ?? null,
+        attendance: attendanceMap.get(item.id) ?? null,
+        staff: staffMap.get(item.staffId) ?? null,
       })),
-      total: items.length,
+      total: targetItems.length,
     };
   }
 }
