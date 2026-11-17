@@ -80,6 +80,7 @@ borrow-service/shared/
 # === Build artifacts ===
 *dist-local/
 ai-service/dist/
+ai-service/data/uploaded-kb/
 borrow-service/dist/
 automation-service/dist/
 notification-service/dist/

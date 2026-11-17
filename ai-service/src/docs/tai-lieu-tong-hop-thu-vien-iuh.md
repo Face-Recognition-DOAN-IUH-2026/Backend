@@ -1,3 +1,7 @@
+---
+roles: patron, staff, admin
+---
+
 # SỔ TAY HƯỚNG DẪN & NỘI QUY HOẠT ĐỘNG THƯ VIỆN THÔNG MINH IUH
 **TRƯỜNG ĐẠI HỌC CÔNG NGHIỆP TP. HỒ CHÍ MINH (IUH)**
 *Hệ thống Thư viện Điện tử & Kiểm soát Ra vào Thông minh (Smart Library & Face ID Kiosk)*

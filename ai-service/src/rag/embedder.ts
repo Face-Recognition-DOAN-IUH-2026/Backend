@@ -9,19 +9,101 @@ interface EmbeddingResponse {
   }>;
 }
 
+function splitLongSegment(segment: string, chunkSize: number): string[] {
+  const trimmed = segment.trim();
+  if (!trimmed) return [];
+  if (trimmed.length <= chunkSize) return [trimmed];
+
+  const words = trimmed.split(/\s+/);
+  const parts: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    if (word.length > chunkSize) {
+      if (current) {
+        parts.push(current.trim());
+        current = '';
+      }
+      for (let i = 0; i < word.length; i += chunkSize) {
+        parts.push(word.slice(i, i + chunkSize));
+      }
+      continue;
+    }
+
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= chunkSize) {
+      current = candidate;
+    } else {
+      if (current) parts.push(current.trim());
+      current = word;
+    }
+  }
+
+  if (current.trim()) {
+    parts.push(current.trim());
+  }
+
+  return parts;
+}
+
+function splitBlockToSegments(block: string, chunkSize: number): string[] {
+  const trimmed = block.trim();
+  if (!trimmed) return [];
+  if (trimmed.length <= chunkSize) return [trimmed];
+
+  const segments: string[] = [];
+  const lines = trimmed.split('\n');
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.length <= chunkSize) {
+      segments.push(line);
+      continue;
+    }
+
+    // Split by sentence punctuation while always keeping any trailing text without punctuation.
+    const sentences = line.split(/(?<=[.!?…])\s+/);
+    for (const sentence of sentences) {
+      const s = sentence.trim();
+      if (!s) continue;
+      if (s.length <= chunkSize) {
+        segments.push(s);
+      } else {
+        segments.push(...splitLongSegment(s, chunkSize));
+      }
+    }
+  }
+
+  return segments;
+}
+
 export function chunkText(text: string, chunkSize: number = CHUNK_SIZE): string[] {
+  const normalized = text.replace(/\r\n/g, '\n').trim();
+  if (!normalized) return [];
+
+  const blocks = normalized
+    .split(/\n{2,}|(?=\n#{1,6}\s)/)
+    .map(b => b.trim())
+    .filter(Boolean);
+
+  const segments: string[] = [];
+  for (const block of blocks) {
+    segments.push(...splitBlockToSegments(block, chunkSize));
+  }
+
   const chunks: string[] = [];
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
   let currentChunk = '';
 
-  for (const sentence of sentences) {
-    if ((currentChunk + sentence).length <= chunkSize) {
-      currentChunk += sentence;
+  for (const segment of segments) {
+    const separator = currentChunk ? '\n' : '';
+    if ((currentChunk + separator + segment).length <= chunkSize) {
+      currentChunk = currentChunk + separator + segment;
     } else {
-      if (currentChunk) {
+      if (currentChunk.trim()) {
         chunks.push(currentChunk.trim());
       }
-      currentChunk = sentence;
+      currentChunk = segment;
     }
   }
 

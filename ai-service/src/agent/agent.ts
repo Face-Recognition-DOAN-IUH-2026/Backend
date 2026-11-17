@@ -35,7 +35,7 @@ export function buildSystemPrompt(
   availableTools: ToolDef[] = patronToolDefs,
 ): string {
   const kbContext = contextDocuments.length > 0
-    ? `\n\nKnowledge Base Context:\n${contextDocuments.map(d => `[${d.docTitle}] ${d.content}`).join('\n\n')}`
+    ? `\n\n=== TAI LIEU TRI THUC THU VIEN (Knowledge Base Context) ===\nUu tien so 1: Neu cau hoi cua nguoi dung lien quan den thong tin co trong tai lieu duoi day, BAT BUOC tra loi chinh xac theo noi dung tai lieu nay (khong tu bia hoac dung quy dinh khac) va trich dan ten tai lieu [Ten tai lieu].\n\n${contextDocuments.map(d => `[${d.docTitle}] ${d.content}`).join('\n\n')}`
     : '';
 
   let userContextPrompt = '';
@@ -79,7 +79,7 @@ Nhiem vu chinh:
 
 Nguyen tac quan trong:
 1. LUON tra loi bang tieng Viet, than thi va chuyen nghiep
-2. Su dung ngu canh tu Knowledge Base khi co san
+2. Su dung ngu canh tu Knowledge Base khi co san: Uu tien tuyet doi thong tin, quy dinh, chinh sach, huong dan nam trong tai lieu tri thuc duoc cung cap va trich dan nguon [Ten tai lieu]
 3. Neu can thong tin tu he thong, chi su dung cac cong cu duoc cung cap (KHONG tu invent thong tin)
 4. KHONG BAO GIO thuc hien cac thao tac ghi/xoa/sua (write/delete/update) — AI chi ho tro tra cuu (read-only)
 5. Neu nguoi dung yeu cau them/xoa/sua du lieu, tu choi va huong dan ho thuc hien truc tiep tren giao dien
@@ -324,6 +324,9 @@ export async function processMessage(
         let resultForPrompt = resultStr;
         if (call.name === 'get_library_hours') {
           resultForPrompt = `Thứ Hai - Thứ Sáu: 06:30 - 21:00\nThứ Bảy - Chủ Nhật: 08:00 - 19:30\n(Lưu ý: Giờ mở cửa có thể thay đổi vào ngày lễ và kỳ nghỉ đặc biệt)`;
+          if (contextDocs.length > 0) {
+            resultForPrompt += `\n(Luu y bo sung: Kiem tra Knowledge Base Context de cap nhat neu co lich mo cua dac biet hoac quy dinh moi nhat.)`;
+          }
         }
         messages.push({
           role: 'user',
@@ -568,6 +571,9 @@ export async function* processCompanionMessage(
         let resultForPrompt = resultStr;
         if (call.name === 'get_library_hours') {
           resultForPrompt = `Thứ Hai - Thứ Sáu: 06:30 - 21:00\nThứ Bảy - Chủ Nhật: 08:00 - 19:30\n(Lưu ý: Giờ mở cửa có thể thay đổi vào ngày lễ và kỳ nghỉ đặc biệt)`;
+          if (contextDocs.length > 0) {
+            resultForPrompt += `\n(Luu y bo sung: Kiem tra Knowledge Base Context de cap nhat neu co lich mo cua dac biet hoac quy dinh moi nhat.)`;
+          }
         }
         messages.push({
           role: 'user',

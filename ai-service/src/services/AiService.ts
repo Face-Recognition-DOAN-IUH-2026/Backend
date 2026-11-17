@@ -5,6 +5,7 @@ import { AiRun } from '../entities/AiRun';
 import { config } from '../config';
 import { HttpError } from '../../../shared/error-handler';
 import { OpenRouterClient } from '../clients/OpenRouterClient';
+import { retrieve } from '../rag/retriever';
 import { DataCollector } from './DataCollector';
 import { AiInsightDto, BookRecommendation, BookRecommendationResponse, CommandCenterSummary, InsightExplanation, LibraryOperationsSnapshot } from './types';
 import { getServiceToken } from '../../../shared/auth';
@@ -219,9 +220,12 @@ export class AiService {
 
   async chat(token: string, body: unknown) {
     const { question } = chatSchema.parse(body);
-    const snapshot = await this.collector.collect(token);
+    const [snapshot, kbDocs] = await Promise.all([
+      this.collector.collect(token),
+      retrieve(question, 5, 'admin').catch(() => []),
+    ]);
     const insights = (await insightRepo().find({ where: { status: 'open' }, order: { generatedAt: 'DESC' }, take: 10 })).map(dto);
-    const answer = await this.openRouter.chat(question, snapshot, insights);
+    const answer = await this.openRouter.chat(question, snapshot, insights, kbDocs);
     return { ...answer, generated_at: new Date().toISOString() };
   }
 

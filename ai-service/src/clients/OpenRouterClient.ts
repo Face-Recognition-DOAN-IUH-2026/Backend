@@ -3,6 +3,7 @@ import { config } from '../config';
 import { AiAnalysisResult, LibraryOperationsSnapshot } from '../services/types';
 import { HttpError } from '../../../shared/error-handler';
 import { extractJson } from '../utils/extractJson';
+import type { RetrievedDocument } from '../rag/retriever';
 
 const analysisSchema = z.object({
   headline: z.string().min(1),
@@ -122,14 +123,23 @@ export class OpenRouterClient {
     return { result: parsed, usage: data.usage || null, latencyMs };
   }
 
-  async chat(question: string, snapshot: LibraryOperationsSnapshot, insights: any[]): Promise<{ answer: string; model: string }> {
+  async chat(
+    question: string,
+    snapshot: LibraryOperationsSnapshot,
+    insights: any[],
+    kbDocs: RetrievedDocument[] = [],
+  ): Promise<{ answer: string; model: string }> {
     if (config.ai.mockMode) {
+      const kbSnippet = kbDocs.length > 0
+        ? ` Theo tài liệu [${kbDocs[0].docTitle}]: ${kbDocs[0].content}`
+        : '';
       return {
         model: 'mock',
-        answer: `Dựa trên dữ liệu hiện tại: có ${snapshot.active_patrons} độc giả trong thư viện, ${snapshot.active_borrows} lượt mượn đang mở và ${snapshot.scheduled_staff_today} ca trực hôm nay. Câu hỏi "${question}" nên được xử lý bằng cách ưu tiên các cảnh báo đang mở trong AI Command Center.`,
+        answer: `Dựa trên dữ liệu hiện tại: có ${snapshot.active_patrons} độc giả trong thư viện, ${snapshot.active_borrows} lượt mượn đang mở và ${snapshot.scheduled_staff_today} ca trực hôm nay.${kbSnippet}`,
       };
     }
     if (!config.openRouter.apiKey) throw new HttpError(503, 'OPENROUTER_API_KEY is not configured.');
+    const knowledge_base = kbDocs.map(d => ({ title: d.docTitle, source: d.source, content: d.content }));
     const res = await fetch(`${config.openRouter.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -142,8 +152,11 @@ export class OpenRouterClient {
         model: config.openRouter.model,
         temperature: 0.2,
         messages: [
-          { role: 'system', content: 'Tra loi tieng Viet ngan gon. Chi dua tren snapshot va insights duoc cung cap. Neu thieu du lieu, noi ro thieu du lieu.' },
-          { role: 'user', content: JSON.stringify({ question, snapshot, insights }) },
+          {
+            role: 'system',
+            content: 'Tra loi bang tieng Viet co dau, ngan gon, chinh xac. Chi dua tren snapshot, insights va knowledge_base duoc cung cap. Neu cau hoi lien quan den quy dinh/tai lieu trong knowledge_base, uu tien tra loi dung theo knowledge_base va trich dan [title]. Neu thieu du lieu, noi ro thieu du lieu.',
+          },
+          { role: 'user', content: JSON.stringify({ question, snapshot, insights, knowledge_base }) },
         ],
       }),
     });
