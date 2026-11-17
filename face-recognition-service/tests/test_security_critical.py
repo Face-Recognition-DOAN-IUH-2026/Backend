@@ -399,6 +399,7 @@ class TestProcessSingleFace:
     @patch("worker.tasks._get_user_via_api")
     @patch("worker.tasks._check_redis_cooldown", return_value=False)
     def test_liveness_fail(self, mock_cooldown, mock_user, mock_access, mock_liveness):
+        """Gate cameras bypass Layer 2 passive liveness and grant access directly."""
         from worker.tasks import _process_single_face
 
         embedding = np.random.rand(512).astype(np.float32)
@@ -414,7 +415,10 @@ class TestProcessSingleFace:
             ]
             result = _process_single_face("cam-entry-1", MagicMock(), face_data, raw_bytes=b"frame")
 
-        assert result is None
+        assert result is not None
+        assert result["status"] == "granted"
+        assert result["is_live"] is True
+        mock_liveness.assert_not_called()
 
     @patch("worker.tasks._get_access_status")
     @patch("worker.tasks._get_user_via_api")

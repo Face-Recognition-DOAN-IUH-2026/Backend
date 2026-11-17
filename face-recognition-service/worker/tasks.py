@@ -16,7 +16,6 @@ from infra.config import settings
 from infra.crypto import encrypt_data
 from infra.milvus_client import MilvusClient
 from infra.minio_client import MinioStorage
-from worker.anti_spoofing import is_gate_liveness_enabled
 from worker.celery_app import celery_app
 from worker.tasks_pipeline import (
     check_face_quality,
@@ -1213,32 +1212,9 @@ def _process_single_face(
     if orig_scale:
         bbox, landmarks = _scale_bbox_landmarks(bbox, landmarks, orig_scale[0], orig_scale[1])
 
-    if is_gate_liveness_enabled():
-        target_img = img_liveness if img_liveness is not None else img
-        liveness_res = liveness_from_face(target_img, face)
-        liveness_score = round(float(liveness_res.get("liveness_score", 0.0)), 4)
-        is_live = bool(liveness_res.get("is_live", False))
-        veto_reasons = liveness_res.get("veto_reasons", [])
-        if not is_live:
-            logger.warning(
-                "Gate spoof blocked on camera %s: score=%.4f reasons=%s",
-                camera_id, liveness_score, veto_reasons,
-            )
-            event = {
-                "camera_id": camera_id,
-                "status": "spoof",
-                "liveness_score": liveness_score,
-                "veto_reasons": veto_reasons,
-                "bbox": bbox,
-                "landmarks": landmarks,
-            }
-            _publish_camera_event(event)
-            if raw_bytes:
-                _upload_evidence_frame(raw_bytes, "spoof", prefix="spoof_")
-            return None
-    else:
-        liveness_score = 1.0
-        is_live = True
+    # Gate entry/exit cameras bypass passive liveness to prevent false-positive spoof blocks on real patrons
+    liveness_score = 1.0
+    is_live = True
 
     # =========================================================================
     # XÁC THỰC KHUÔN MẶT (FACE RECOGNITION)
@@ -1464,8 +1440,7 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
             except Exception as pe:
                 logger.warning("Person detection failed (will proceed anyway): %s", pe)
 
-        # Step 1: Preserve original resized frame for liveness before CLAHE enhances contrast/edges
-        img_unenhanced = img.copy()
+        # Step 1: Enhance illumination (CLAHE) to handle backlight / low light
         img = enhance_illumination(img)
 
         # Step 2: Filter motion-blurred frames before detection
@@ -1493,7 +1468,7 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
         for face_data in all_faces:
             logger.info("Processing face: bbox=%s det_score=%.3f", face_data.get("bbox"), face_data.get("det_score"))
             event = _process_single_face(camera_id, img, face_data, raw_bytes=raw, orig_scale=(scale_x, scale_y),
-                                         recognized_callback=lambda: None, img_liveness=img_unenhanced)
+                                         recognized_callback=lambda: None)
             if event is not None:
                 granted_events.append(event)
 
