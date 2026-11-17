@@ -3,6 +3,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { getCollection, resetCollection } from '../clients/chromadb';
 import { chunkText } from './embedder';
+import { ragService } from '../services/RagService';
 
 interface DocMetadata {
   source: string;
@@ -23,14 +24,30 @@ function getDocTitle(filePath: string): string {
     'quy-dinh-nhan-vien': 'Quy Định Nhân Viên',
     'bao-cao-tai-chinh': 'Báo Cáo Tài Chính',
     'noi-quy-thu-vien': 'Nội Quy Thư Viện',
+    'tai-lieu-tong-hop-thu-vien-iuh': 'Sổ Tay Hướng Dẫn & Nội Quy Thư Viện IUH',
   };
   return titles[fileName] || fileName;
 }
 
+function resolveDocsPath(): string | null {
+  const candidates = [
+    path.resolve(__dirname, '..', 'docs'),
+    path.resolve(__dirname, '..', '..', 'src', 'docs'),
+    path.resolve(__dirname, '..', '..', '..', '..', 'src', 'docs'),
+    path.resolve(process.cwd(), 'src', 'docs'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 export function extractFrontmatter(content: string): { metadata: Record<string, string>; body: string } {
-  // Handle both LF and CRLF (Windows) line endings
-  const normalized = content.replace(/\r\n/g, '\n');
-  const frontmatterMatch = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  // Handle optional UTF-8 BOM and both LF and CRLF (Windows) line endings
+  const normalized = content.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  const frontmatterMatch = normalized.match(/^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n([\s\S]*)$/);
   if (frontmatterMatch) {
     const metadata: Record<string, string> = {};
     const frontmatterLines = frontmatterMatch[1].split('\n');
@@ -60,17 +77,13 @@ export function parseRoles(rolesStr: string): string[] {
 export async function indexDocuments(): Promise<void> {
   console.log('Starting document indexing...');
 
-  const docsPath = path.join(__dirname, '..', '..', '..', '..', 'src', 'docs');
-  const files = fs.readdirSync(docsPath).filter(f => f.endsWith('.md'));
-
-  if (files.length === 0) {
-    console.log('No documents found to index');
-    return;
-  }
-
-  console.log(`Found ${files.length} documents to index`);
+  const docsPath = resolveDocsPath();
+  const files = docsPath ? fs.readdirSync(docsPath).filter(f => f.endsWith('.md')) : [];
 
   const roleCollections = ['patron', 'staff', 'admin'];
+
+  // Rescue any Admin-uploaded docs from ChromaDB's persistent volume before resetting collections
+  await ragService.snapshotUploadedDocsFromChroma();
 
   for (const role of roleCollections) {
     await resetCollection(role);
@@ -78,46 +91,58 @@ export async function indexDocuments(): Promise<void> {
 
   let totalChunks = 0;
 
-  for (const file of files) {
-    const filePath = path.join(docsPath, file);
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const { metadata, body } = extractFrontmatter(content);
-    const docTitle = getDocTitle(filePath);
-    const roles = parseRoles(metadata.roles || '');
+  if (!docsPath || files.length === 0) {
+    console.log('No static markdown documents found to index');
+  } else {
+    console.log(`Found ${files.length} documents to index in ${docsPath}`);
 
-    console.log(`Processing "${docTitle}": roles=${roles.join(', ') || 'none'}`);
+    for (const file of files) {
+      const filePath = path.join(docsPath, file);
+      const content = fs.readFileSync(filePath, 'utf-8');
+      const { metadata, body } = extractFrontmatter(content);
+      const docTitle = getDocTitle(filePath);
+      const roles = parseRoles(metadata.roles || '');
 
-    if (roles.length === 0) {
-      console.log(`  => Skipped (no roles assigned)`);
-      continue;
-    }
+      console.log(`Processing "${docTitle}": roles=${roles.join(', ') || 'none'}`);
 
-    const chunks = chunkText(body);
-    console.log(`  => ${chunks.length} chunks`);
+      if (roles.length === 0) {
+        console.log(`  => Skipped (no roles assigned)`);
+        continue;
+      }
 
-    if (chunks.length === 0) continue;
+      const rawChunks = chunkText(body);
+      const chunks = rawChunks.map(c =>
+        c.toLowerCase().includes(docTitle.toLowerCase()) ? c : `[${docTitle}] ${c}`,
+      );
+      console.log(`  => ${chunks.length} chunks`);
 
-    for (const role of roles) {
-      const collection = await getCollection(role);
-      const ids = chunks.map(() => randomUUID());
-      const metadatas: DocMetadata[] = chunks.map(() => ({
-        source: file,
-        doc_title: docTitle,
-        roles: roles.join(', '),
-      }));
+      if (chunks.length === 0) continue;
 
-      await collection.add({
-        ids,
-        documents: chunks,
-        metadatas: metadatas as any,
-      });
+      for (const role of roles) {
+        const collection = await getCollection(role);
+        const ids = chunks.map(() => randomUUID());
+        const metadatas: DocMetadata[] = chunks.map(() => ({
+          source: file,
+          doc_title: docTitle,
+          roles: roles.join(', '),
+        }));
 
-      console.log(`  => Indexed into "${role}_kb": ${chunks.length} chunks`);
-      totalChunks += chunks.length;
+        await collection.add({
+          ids,
+          documents: chunks,
+          metadatas: metadatas as any,
+        });
+
+        console.log(`  => Indexed into "${role}_kb": ${chunks.length} chunks`);
+        totalChunks += chunks.length;
+      }
     }
   }
 
-  console.log(`Indexing complete: ${totalChunks} total chunks indexed across ${roleCollections.length} collections`);
+  // Re-index any Admin-uploaded Knowledge Base documents persisted across restarts
+  await ragService.rehydrateUploadedDocuments();
+
+  console.log(`Indexing complete: ${totalChunks} static chunks indexed across ${roleCollections.length} collections`);
 }
 
 export default { indexDocuments };

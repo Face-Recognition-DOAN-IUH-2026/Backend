@@ -19,6 +19,13 @@ describe('BLF-RAG-01 extractFrontmatter / parseRoles (role isolation)', () => {
       expect(metadata.roles).toBe('staff, admin');
     });
 
+    it('parses frontmatter even when file starts with UTF-8 BOM', () => {
+      const content = '\uFEFF---\r\nroles: patron, staff\r\n---\r\n\r\nNội dung.';
+      const { metadata, body } = extractFrontmatter(content);
+      expect(metadata.roles).toBe('patron, staff');
+      expect(body).toContain('Nội dung.');
+    });
+
     it('does NOT default frontmatter-less documents to roles: patron (fail-open fix)', () => {
       const content = '# Staff-only document\n\nConfidential financial report content.';
       const { metadata, body } = extractFrontmatter(content);
