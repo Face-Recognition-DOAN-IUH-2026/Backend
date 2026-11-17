@@ -16,6 +16,7 @@ from infra.config import settings
 from infra.crypto import encrypt_data
 from infra.milvus_client import MilvusClient
 from infra.minio_client import MinioStorage
+from worker.anti_spoofing import is_gate_liveness_enabled, verify_gate_temporal_liveness
 from worker.celery_app import celery_app
 from worker.tasks_pipeline import (
     check_face_quality,
@@ -1193,6 +1194,7 @@ def _process_single_face(
     raw_bytes: bytes | None = None,
     orig_scale: tuple[float, float] | None = None,
     recognized_callback=None,  # optional hook, currently unused
+    img_liveness=None,  # un-CLAHE'd image for anti-spoofing analysis
 ) -> dict | None:
     """Process one detected face through the full access pipeline.
 
@@ -1211,9 +1213,32 @@ def _process_single_face(
     if orig_scale:
         bbox, landmarks = _scale_bbox_landmarks(bbox, landmarks, orig_scale[0], orig_scale[1])
 
-    # Bỏ kiểm tra liveness / anti-spoofing theo yêu cầu, tập trung xác thực danh tính người dùng
-    liveness_score = 1.0
-    is_live = True
+    if is_gate_liveness_enabled():
+        target_img = img_liveness if img_liveness is not None else img
+        liveness_res = liveness_from_face(target_img, face)
+        liveness_score = round(float(liveness_res.get("liveness_score", 0.0)), 4)
+        is_live = bool(liveness_res.get("is_live", False))
+        veto_reasons = liveness_res.get("veto_reasons", [])
+        if not is_live:
+            logger.warning(
+                "Gate spoof blocked on camera %s: score=%.4f reasons=%s",
+                camera_id, liveness_score, veto_reasons,
+            )
+            event = {
+                "camera_id": camera_id,
+                "status": "spoof",
+                "liveness_score": liveness_score,
+                "veto_reasons": veto_reasons,
+                "bbox": bbox,
+                "landmarks": landmarks,
+            }
+            _publish_camera_event(event)
+            if raw_bytes:
+                _upload_evidence_frame(raw_bytes, "spoof", prefix="spoof_")
+            return None
+    else:
+        liveness_score = 1.0
+        is_live = True
 
     # =========================================================================
     # XÁC THỰC KHUÔN MẶT (FACE RECOGNITION)
@@ -1371,6 +1396,45 @@ def _process_single_face(
                     else:
                         logger.info("Non-strict direction: allowing exit for %s (%s) although status was outside", full_name, student_code)
 
+        if is_gate_liveness_enabled():
+            try:
+                from infra.redis_cache import redis_client as _rc
+            except Exception:
+                _rc = None
+            temporal_res = verify_gate_temporal_liveness(
+                camera_id=camera_id,
+                track_id=patron_id,
+                bbox=bbox,
+                landmarks=landmarks,
+                redis_client=_rc,
+            )
+            if not temporal_res.get("is_live", True):
+                logger.warning(
+                    "Gate temporal spoof blocked on camera %s for %s: %s",
+                    camera_id, patron_id, temporal_res.get("reason"),
+                )
+                event = {
+                    "camera_id": camera_id,
+                    "status": "spoof",
+                    "patron_id": patron_id,
+                    "full_name": full_name,
+                    "student_code": student_code,
+                    "liveness_score": liveness_score,
+                    "veto_reasons": [temporal_res.get("reason", "TEMPORAL_SPOOF")],
+                    "bbox": bbox,
+                    "landmarks": landmarks,
+                }
+                _publish_camera_event(event)
+                if raw_bytes:
+                    _upload_evidence_frame(raw_bytes, patron_id, prefix="spoof_")
+                return None
+            if not temporal_res.get("ready", True):
+                logger.info(
+                    "Gate temporal check awaiting next frame (%d) for %s on %s",
+                    temporal_res.get("frames_seen", 1), patron_id, camera_id,
+                )
+                return None
+
         # =========================================================================
         # BƯỚC 4: TẤT CẢ ĐIỀU KIỆN ĐẠT -> XÁC NHẬN USER ĐÃ VÀO / RA (GRANT ACCESS)
         # =========================================================================
@@ -1439,7 +1503,8 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
             except Exception as pe:
                 logger.warning("Person detection failed (will proceed anyway): %s", pe)
 
-        # Step 1: Lightweight CLAHE on full frame for better detection
+        # Step 1: Preserve original resized frame for liveness before CLAHE enhances contrast/edges
+        img_unenhanced = img.copy()
         img = enhance_illumination(img)
 
         # Step 2: Filter motion-blurred frames before detection
@@ -1467,7 +1532,7 @@ def process_camera_frame(self, camera_id: str, object_key: str) -> dict:
         for face_data in all_faces:
             logger.info("Processing face: bbox=%s det_score=%.3f", face_data.get("bbox"), face_data.get("det_score"))
             event = _process_single_face(camera_id, img, face_data, raw_bytes=raw, orig_scale=(scale_x, scale_y),
-                                         recognized_callback=lambda: None)
+                                         recognized_callback=lambda: None, img_liveness=img_unenhanced)
             if event is not None:
                 granted_events.append(event)
 
