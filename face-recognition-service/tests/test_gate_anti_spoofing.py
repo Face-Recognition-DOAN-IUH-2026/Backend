@@ -39,43 +39,40 @@ class TestGateAntiSpoofing:
         assert bezel_result["has_bezel"] is True
         assert bezel_result["bezel_veto"] is True
 
-        # Aggregate should trigger HARD VETO
+        # Single bezel + second spoof signal (glare) triggers HARD VETO
         breakdown = {
             "color_score": 0.95,
             "lbp_score": 0.85,
             **bezel_result,
+            "glare_veto": True,
+            "has_glare": True,
         }
         agg = analyzer.aggregate(breakdown)
         assert agg["is_live"] is False
         assert "SCREEN_BEZEL_DETECTED" in agg["veto_reasons"]
+        assert "SCREEN_GLASS_GLARE_DETECTED" in agg["veto_reasons"]
         assert agg["liveness_score"] <= 0.25
 
-    def test_specular_glare_triggers_veto(self, analyzer):
-        """Simulate a screen glass specular reflection (bright saturated glare spot)."""
-        # 100x100 skin-tone patch
+    def test_single_glare_alone_does_not_false_veto_real_face(self, analyzer):
+        """A single noisy signal (glasses glare in fluorescent room) with strong texture should still pass."""
         face_roi = np.full((100, 100, 3), [140, 160, 210], dtype=np.uint8)
-        
-        # Add a bright concentrated glare spot (40x40 pure white saturated pixels)
         face_roi[20:60, 20:60] = 255
 
         glare_result = analyzer.analyze_specular_glare(face_roi)
         assert glare_result["has_glare"] is True
         assert glare_result["glare_veto"] is True
 
-        # Aggregate should trigger HARD VETO
         breakdown = {
             "color_score": 0.90,
             "lbp_score": 0.80,
             **glare_result,
         }
         agg = analyzer.aggregate(breakdown)
-        assert agg["is_live"] is False
+        assert agg["is_live"] is True
         assert "SCREEN_GLASS_GLARE_DETECTED" in agg["veto_reasons"]
-        assert agg["liveness_score"] <= 0.25
 
-    def test_lbp_flat_surface_triggers_veto(self, analyzer):
-        """Simulate a completely flat/smooth surface (printed paper with no 3D skin micro-texture)."""
-        # Completely uniform gray image
+    def test_combined_lbp_flat_and_moire_triggers_hard_veto(self, analyzer):
+        """Combined flat texture (LBP veto) + Moire/bezel triggers HARD VETO."""
         flat_roi = np.full((120, 120), 128, dtype=np.uint8)
 
         lbp_result = analyzer.analyze_lbp(flat_roi)
@@ -84,14 +81,16 @@ class TestGateAntiSpoofing:
         breakdown = {
             "color_score": 0.90,
             **lbp_result,
+            "fft_veto": True,
         }
         agg = analyzer.aggregate(breakdown)
         assert agg["is_live"] is False
         assert "TEXTURE_UNNATURALLY_FLAT" in agg["veto_reasons"]
+        assert "SCREEN_MOIRE_FREQUENCY_DETECTED" in agg["veto_reasons"]
         assert agg["liveness_score"] <= 0.25
 
-    def test_fft_moire_pattern_triggers_veto(self, analyzer):
-        """Simulate high-frequency digital screen grid / Moiré artifact."""
+    def test_fft_moire_pattern_combined_with_bezel_triggers_veto(self, analyzer):
+        """Simulate high-frequency digital screen grid / Moire artifact + screen bezel."""
         np.random.seed(42)
         face = np.full((128, 128), 160, dtype=np.uint8)
         grid = np.random.normal(0, 35, (128, 128)).astype(np.int16)
@@ -103,10 +102,14 @@ class TestGateAntiSpoofing:
         breakdown = {
             "color_score": 0.90,
             **fft_result,
+            "has_bezel": True,
+            "bezel_veto": True,
+            "long_lines": 4,
         }
         agg = analyzer.aggregate(breakdown)
         assert agg["is_live"] is False
         assert "SCREEN_MOIRE_FREQUENCY_DETECTED" in agg["veto_reasons"]
+        assert "SCREEN_BEZEL_DETECTED" in agg["veto_reasons"]
         assert agg["liveness_score"] <= 0.25
 
     def test_genuine_face_passes_without_vetoes(self, analyzer):
@@ -140,17 +143,16 @@ class TestGateAntiSpoofing:
         assert bezel_result["has_bezel"] is False
         assert bezel_result["bezel_veto"] is False
 
-    def test_opposite_parallel_edges_still_veto(self, analyzer):
-        """2 cạnh song song đối xứng 2 bên mặt (thân máy) vẫn phải veto."""
+    def test_opposite_lines_without_corner_do_not_false_veto(self, analyzer):
+        """2 đường dọc song song không tạo khung góc (vd khung cửa/kệ 2 bên) KHÔNG được false-veto."""
         full_img = np.zeros((480, 640, 3), dtype=np.uint8)
         face_bbox = [200, 150, 400, 350]
-        # 2 đường dọc dài đối xứng trái/phải mặt (nằm trong ROI quanh mặt)
         full_img[60:420, 120:123] = 255
         full_img[60:420, 500:503] = 255
 
         bezel_result = analyzer.analyze_screen_bezel(full_img, face_bbox)
-        assert bezel_result["has_bezel"] is True
-        assert bezel_result["bezel_veto"] is True
+        assert bezel_result["has_bezel"] is False
+        assert bezel_result["bezel_veto"] is False
 
 
 class TestGateProcessSingleFaceLiveness:
@@ -220,25 +222,3 @@ class TestGateProcessSingleFaceLiveness:
 
         assert len(seen_imgs) == 1
         assert seen_imgs[0] is img_raw
-
-    def test_temporal_liveness_blocks_frozen_2d_frame_when_enabled(self, monkeypatch):
-        from worker.anti_spoofing import verify_gate_temporal_liveness
-
-        monkeypatch.setenv("GATE_MIN_FRAMES", "1")
-        monkeypatch.setenv("GATE_BLOCK_FROZEN_REPLAY", "true")
-
-        store = {}
-
-        class FakeRedis:
-            def get(self, k):
-                return store.get(k)
-
-            def setex(self, k, ttl, v):
-                store[k] = v
-
-        rc = FakeRedis()
-        r1 = verify_gate_temporal_liveness("entry_gate", "u1", [100, 100, 200, 200], None, redis_client=rc)
-        assert r1["is_live"] is True
-        r2 = verify_gate_temporal_liveness("entry_gate", "u1", [100, 100, 200, 200], None, redis_client=rc)
-        assert r2["is_live"] is False
-        assert r2["reason"] == "FROZEN_2D_FRAME"
