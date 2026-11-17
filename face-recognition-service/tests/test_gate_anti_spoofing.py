@@ -156,28 +156,21 @@ class TestGateAntiSpoofing:
 
 
 class TestGateProcessSingleFaceLiveness:
-    def test_spoof_blocks_face_before_milvus_and_publishes_spoof_event(self, monkeypatch):
+    def test_gate_bypasses_passive_liveness_and_proceeds_directly_to_milvus(self, monkeypatch):
         from types import SimpleNamespace
         from unittest.mock import MagicMock
+        from worker.anti_spoofing import is_gate_liveness_enabled
         import worker.tasks as tasks
 
-        monkeypatch.setenv("ENABLE_GATE_LIVENESS", "true")
+        assert is_gate_liveness_enabled() is False
 
         published = []
-        uploaded = []
         milvus_mock = MagicMock()
+        milvus_mock.search.return_value = []
 
-        monkeypatch.setattr(
-            tasks,
-            "liveness_from_face",
-            lambda img, face: {
-                "is_live": False,
-                "liveness_score": 0.15,
-                "veto_reasons": ["SCREEN_BEZEL_DETECTED"],
-            },
-        )
+        liveness_called = []
+        monkeypatch.setattr(tasks, "liveness_from_face", lambda img, face: liveness_called.append(True) or {"is_live": False})
         monkeypatch.setattr(tasks, "_publish_camera_event", lambda ev: published.append(ev))
-        monkeypatch.setattr(tasks, "_upload_evidence_frame", lambda raw, key, prefix="": uploaded.append((key, prefix)))
         monkeypatch.setattr(tasks, "_get_milvus", lambda: milvus_mock)
 
         fake_face = SimpleNamespace(bbox=np.array([10, 10, 110, 110]), kps=None)
@@ -187,38 +180,43 @@ class TestGateProcessSingleFaceLiveness:
         res = tasks._process_single_face("entry_gate", img, face_data, raw_bytes=b"jpgbytes")
 
         assert res is None
-        milvus_mock.search.assert_not_called()
+        assert liveness_called == []
+        milvus_mock.search.assert_called_once()
         assert len(published) == 1
-        assert published[0]["status"] == "spoof"
+        assert published[0]["status"] == "unknown"
         assert published[0]["camera_id"] == "entry_gate"
-        assert published[0]["veto_reasons"] == ["SCREEN_BEZEL_DETECTED"]
-        assert uploaded == [("spoof", "spoof_")]
 
-    def test_process_single_face_uses_unenhanced_img_liveness(self, monkeypatch):
+    def test_gate_ignores_enable_gate_liveness_env_and_never_emits_spoof(self, monkeypatch):
         from types import SimpleNamespace
         from unittest.mock import MagicMock
         import worker.tasks as tasks
 
         monkeypatch.setenv("ENABLE_GATE_LIVENESS", "true")
-        seen_imgs = []
-
-        def fake_liveness(img, face):
-            seen_imgs.append(img)
-            return {"is_live": True, "liveness_score": 0.92, "veto_reasons": []}
-
+        published = []
         milvus_mock = MagicMock()
-        milvus_mock.search.return_value = []
+        milvus_mock.search.return_value = [{"user_id": "patron-1", "score": 0.91}]
 
-        monkeypatch.setattr(tasks, "liveness_from_face", fake_liveness)
-        monkeypatch.setattr(tasks, "_publish_camera_event", lambda ev: None)
+        monkeypatch.setattr(tasks, "_publish_camera_event", lambda ev: published.append(ev))
         monkeypatch.setattr(tasks, "_get_milvus", lambda: milvus_mock)
+        monkeypatch.setattr(tasks, "_get_user_via_api", lambda pid: {
+            "id": pid,
+            "full_name": "Nguyen Van A",
+            "student_code": "20012345",
+            "status": "active",
+        })
+        monkeypatch.setattr(tasks, "_get_access_status", lambda pid: {"current_status": "outside"})
+        monkeypatch.setattr(tasks, "_check_redis_cooldown", lambda pid, at: False)
+        monkeypatch.setattr(tasks, "_upload_evidence_frame", lambda raw, log_id, prefix="": None)
 
-        img_clahe = np.full((120, 120, 3), 200, dtype=np.uint8)
-        img_raw = np.full((120, 120, 3), 50, dtype=np.uint8)
         fake_face = SimpleNamespace(bbox=np.array([10, 10, 90, 90]), kps=None)
         face_data = {"face": fake_face, "embedding": np.ones(512, dtype=np.float32)}
+        img = np.full((120, 120, 3), 128, dtype=np.uint8)
 
-        tasks._process_single_face("entry_gate", img_clahe, face_data, img_liveness=img_raw)
+        event = tasks._process_single_face("entry_gate", img, face_data, raw_bytes=b"jpgbytes")
 
-        assert len(seen_imgs) == 1
-        assert seen_imgs[0] is img_raw
+        milvus_mock.search.assert_called_once()
+        assert event is not None
+        assert event["status"] == "granted"
+        assert event["is_live"] is True
+        assert event["liveness_score"] == 1.0
+        assert all(ev.get("status") != "spoof" for ev in published)

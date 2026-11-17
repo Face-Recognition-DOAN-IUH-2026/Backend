@@ -56,7 +56,7 @@ def is_active_liveness_enabled(default: bool = True) -> bool:
     return raw.strip().lower() not in {"0", "false", "no", "off"}
 
 
-def is_gate_liveness_enabled(default: bool = True) -> bool:
+def is_gate_liveness_enabled(default: bool = False) -> bool:
     """Feature flag for entry/exit gate anti-spoofing, read at call time."""
     raw = os.environ.get("ENABLE_GATE_LIVENESS")
     if raw is None or raw == "":
@@ -122,38 +122,31 @@ def _local_binary_pattern(gray: np.ndarray, radius: int = 1, n_points: int = 8) 
     return lbp
 
 
-def _uniform_patterns(n_points: int = 8) -> dict:
-    mapping = {}
+def _uniform_bin_lookup(n_points: int = 8) -> np.ndarray:
+    """Map each 8-bit LBP code (0..255) to uniform bin 0..57 or non-uniform bin 58."""
+    lut = np.full(1 << n_points, 58, dtype=np.uint8)
+    bin_idx = 0
+    mask = (1 << n_points) - 1
     for i in range(1 << n_points):
-        bits = (i >> 1) | ((i & 1) << (n_points - 1))
+        bits = ((i >> 1) | ((i & 1) << (n_points - 1))) & mask
         xor = i ^ bits
-        n_transitions = 0
-        for j in range(n_points):
-            if (xor >> j) & 1:
-                n_transitions += 1
-        mapping[i] = n_transitions // 2
-    return mapping
+        n_transitions = bin(xor).count("1")
+        if n_transitions <= 2:
+            lut[i] = bin_idx
+            bin_idx += 1
+    return lut
 
 
-_UNIFORM_MAP = _uniform_patterns(8)
+_UNIFORM_LUT = _uniform_bin_lookup(8)
 
 
 class AntiSpoofingAnalyzer:
     def analyze_lbp(self, face_roi: np.ndarray) -> dict:
         gray = face_roi if face_roi.ndim == 2 else cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
         lbp = _local_binary_pattern(gray, radius=1, n_points=8)
-        # Map to uniform patterns (0-58 uniform, 59 non-uniform)
-        h, w = lbp.shape
-        mapped = np.zeros_like(lbp, dtype=np.uint8)
-        for val, n_trans in _UNIFORM_MAP.items():
-            mask = lbp == val
-            if n_trans <= 2:
-                mapped[mask] = val
-            else:
-                mapped[mask] = 59
-        hist = np.zeros(60, dtype=np.float32)
-        for v in range(60):
-            hist[v] = np.count_nonzero(mapped == v)
+        # Map to 59 bins (0-57 uniform patterns, 58 non-uniform)
+        mapped = _UNIFORM_LUT[lbp]
+        hist = np.bincount(mapped.ravel(), minlength=59).astype(np.float32)
         hist /= hist.sum() + 1e-7
         entropy = -np.sum(hist * np.log(hist + 1e-7))
         variance = float(np.var(hist))
