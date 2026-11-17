@@ -1,6 +1,5 @@
 import { Router, Response } from 'express';
-import { createAuth } from '../../../shared/auth';
-import { requireRole } from '../../../shared/auth';
+import { createAuth, requireDynamicPermission } from '../../../shared/auth';
 import { config } from '../config';
 import { permissionService } from '../services/PermissionService';
 import {
@@ -44,9 +43,9 @@ router.get('/me', auth, async (req: AuthRequest, res: Response) => {
 
 /**
  * GET /permissions/matrix
- * Returns all role configs and metadata (Admin only)
+ * Returns all role configs and metadata
  */
-router.get('/matrix', auth, requireRole('admin'), async (_req: AuthRequest, res: Response) => {
+router.get('/matrix', auth, requireDynamicPermission('settings', 'read'), async (_req: AuthRequest, res: Response) => {
   try {
     const roles = await permissionService.getAllRoleConfigs();
     return res.json({
@@ -68,9 +67,9 @@ router.get('/matrix', auth, requireRole('admin'), async (_req: AuthRequest, res:
 
 /**
  * GET /permissions/roles/:role
- * Returns configuration for a specific role (Admin only)
+ * Returns configuration for a specific role
  */
-router.get('/roles/:role', auth, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.get('/roles/:role', auth, requireDynamicPermission('settings', 'read'), async (req: AuthRequest, res: Response) => {
   try {
     const { role } = req.params;
     const config = await permissionService.getRoleConfig(role);
@@ -82,24 +81,38 @@ router.get('/roles/:role', auth, requireRole('admin'), async (req: AuthRequest, 
 
 /**
  * PUT /permissions/roles/:role
- * Updates configuration for a role (Admin only)
+ * Updates configuration for a role
  */
-router.put('/roles/:role', auth, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.put('/roles/:role', auth, requireDynamicPermission('settings', 'update'), async (req: AuthRequest, res: Response) => {
   try {
     const { role } = req.params;
     const updated = await permissionService.updateRoleConfig(role, req.body);
     return res.json({ success: true, data: updated, message: `Cập nhật quyền vai trò ${role} thành công` });
   } catch (err: any) {
     console.error(`[PermissionRoutes] Error updating role ${req.params.role}:`, err);
-    return res.status(500).json({ error: 'InternalServerError', message: err.message });
+    return res.status(err.message?.includes('Admin') ? 400 : 500).json({ error: 'PermissionConfigError', message: err.message });
+  }
+});
+
+/**
+ * DELETE /permissions/roles/:role
+ * Deletes a custom role configuration
+ */
+router.delete('/roles/:role', auth, requireDynamicPermission('settings', 'delete'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { role } = req.params;
+    const result = await permissionService.deleteRoleConfig(role);
+    return res.json({ success: true, data: result, message: `Đã xóa vai trò ${role}` });
+  } catch (err: any) {
+    return res.status(400).json({ error: 'BadRequest', message: err.message });
   }
 });
 
 /**
  * GET /permissions/users/:userId
- * Returns custom overrides for a user (Admin only)
+ * Returns custom overrides for a user
  */
-router.get('/users/:userId', auth, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.get('/users/:userId', auth, requireDynamicPermission('settings', 'read'), async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
     const override = await permissionService.getUserOverride(userId);
@@ -111,9 +124,9 @@ router.get('/users/:userId', auth, requireRole('admin'), async (req: AuthRequest
 
 /**
  * PUT /permissions/users/:userId
- * Updates custom overrides for a specific user (Admin only)
+ * Updates custom overrides for a specific user
  */
-router.put('/users/:userId', auth, requireRole('admin'), async (req: AuthRequest, res: Response) => {
+router.put('/users/:userId', auth, requireDynamicPermission('settings', 'update'), async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
     const updated = await permissionService.updateUserOverride(userId, req.body);

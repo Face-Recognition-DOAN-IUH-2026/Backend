@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { auth, requireRole, AuthRequest } from '../middlewares/auth';
+import { auth, requireDynamicPermission, AuthRequest } from '../middlewares/auth';
 import { ConfigService } from '../services/ConfigService';
 import { HttpError } from '../../../shared/error-handler';
 
@@ -27,7 +27,7 @@ const testEmailSchema = z.object({
 
 router.use(auth);
 
-router.get('/settings', requireRole(['admin']), async (_req, res, next) => {
+router.get('/settings', requireDynamicPermission('settings', 'read'), async (_req, res, next) => {
   try {
     const settings = await configService.getAll();
     res.json(settings);
@@ -36,7 +36,7 @@ router.get('/settings', requireRole(['admin']), async (_req, res, next) => {
   }
 });
 
-router.get('/settings/:category', requireRole(['admin']), async (req, res, next) => {
+router.get('/settings/:category', requireDynamicPermission('settings', 'read'), async (req, res, next) => {
   try {
     if (!VALID_CATEGORIES.includes(req.params.category)) {
       throw new HttpError(400, `Danh mục không hợp lệ. Hỗ trợ: ${VALID_CATEGORIES.join(', ')}`);
@@ -48,7 +48,7 @@ router.get('/settings/:category', requireRole(['admin']), async (req, res, next)
   }
 });
 
-router.put('/settings/:category', requireRole(['admin']), async (req, res, next) => {
+router.put('/settings/:category', requireDynamicPermission('settings', 'update'), async (req, res, next) => {
   try {
     if (!VALID_CATEGORIES.includes(req.params.category)) {
       throw new HttpError(400, `Danh mục không hợp lệ. Hỗ trợ: ${VALID_CATEGORIES.join(', ')}`);
@@ -61,7 +61,7 @@ router.put('/settings/:category', requireRole(['admin']), async (req, res, next)
   }
 });
 
-router.post('/settings/test-email', requireRole(['admin']), async (req, res, next) => {
+router.post('/settings/test-email', requireDynamicPermission('settings', 'update'), async (req, res, next) => {
   try {
     const validated = testEmailSchema.parse(req.body);
     const result = await configService.testEmail(validated);
