@@ -15,6 +15,7 @@ import axios from 'axios';
 import { config } from '../config';
 import { accessServiceClient } from '../clients/AccessServiceClient';
 import { faceServiceClient } from '../clients/FaceServiceClient';
+import { permissionService } from './PermissionService';
 
 const notificationCircuit = new CircuitBreaker(5, 60_000);
 
@@ -110,7 +111,7 @@ export class UserService {
     await queryRunner.startTransaction();
 
     try {
-      if (user.status === 'deleted' || user.role === 'admin' || user.role === 'staff') {
+      if (user.status === 'deleted' || (user.role !== 'patron' && user.role !== 'user')) {
         // Hard delete for already deleted users, or for admin/staff immediately
         await queryRunner.manager.delete(User, id);
         await this.redis.publishUserDeleted(id, user.email);
@@ -177,10 +178,12 @@ export class UserService {
     if (updates.issueDate !== undefined) updateData.issueDate = updates.issueDate || null;
     if (updates.membershipExpiry !== undefined) updateData.membershipExpiry = updates.membershipExpiry || null;
     if (updates.role !== undefined) {
-      if (!['patron', 'staff', 'admin', 'user'].includes(updates.role)) {
+      const normalizedRole = updates.role.trim().toLowerCase();
+      const validRole = await permissionService.isValidRole(normalizedRole);
+      if (!validRole) {
         throw new BadRequestError('Vai trò không hợp lệ');
       }
-      updateData.role = updates.role;
+      updateData.role = normalizedRole;
     }
     if (updates.status !== undefined) {
       if (!['active', 'suspended', 'inactive'].includes(updates.status)) {

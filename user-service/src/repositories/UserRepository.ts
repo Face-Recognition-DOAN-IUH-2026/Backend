@@ -87,7 +87,7 @@ export class UserRepository {
     const qb = this.repo
       .createQueryBuilder('user')
       .select(USER_SELECT_COLUMNS)
-      .where('user.role IN (:...roles)', { roles: ['staff', 'admin'] })
+      .where('user.role NOT IN (:...excludedRoles)', { excludedRoles: ['patron', 'user'] })
       .andWhere('user.status = :status', { status: 'active' });
 
     if (ids?.length) {

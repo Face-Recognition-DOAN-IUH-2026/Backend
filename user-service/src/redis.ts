@@ -4,6 +4,7 @@ import { config } from './config';
 export const redis = new Redis(config.redisUrl, {
   retryStrategy: (times) => Math.min(times * 50, 2000),
   maxRetriesPerRequest: 3,
+  ...(process.env.JEST_WORKER_ID ? { lazyConnect: true } : {}),
 });
 
 redis.on('error', (err) => {

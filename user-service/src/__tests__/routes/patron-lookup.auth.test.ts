@@ -13,6 +13,7 @@ jest.mock('../../config', () => ({
 jest.mock('../../controllers', () => ({
   patronController: {
     lookup: jest.fn((_req: any, res: any) => res.json({ found: true })),
+    create: jest.fn((_req: any, res: any) => res.status(201).json({ id: 'p-new' })),
   },
 }));
 
@@ -62,5 +63,16 @@ describe('GET /patrons/lookup - auth required (#5)', () => {
       .get('/patrons/lookup?card_number=THV-001')
       .set('Authorization', `Bearer ${signToken('admin')}`);
     expect(res.status).toBe(200);
+  });
+
+  it('requires auth (401) before dynamic permission on POST /patrons and allows admin (201)', async () => {
+    const unauthRes = await request(app).post('/patrons').send({});
+    expect(unauthRes.status).toBe(401);
+
+    const adminRes = await request(app)
+      .post('/patrons')
+      .set('Authorization', `Bearer ${signToken('admin')}`)
+      .send({});
+    expect(adminRes.status).toBe(201);
   });
 });

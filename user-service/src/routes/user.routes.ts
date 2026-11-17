@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { userController } from '../controllers';
-import { createAuth } from '../../../shared/auth';
-import { requireRole } from '../../../shared/auth';
+import { createAuth, requireDynamicPermission } from '../../../shared/auth';
 import { config } from '../config';
 
 const auth = createAuth({
@@ -42,7 +41,7 @@ const router = Router();
  *       403:
  *         description: Forbidden
  */
-router.get('/', auth, requireRole('admin'), (req, res) => userController.getAll(req, res));
+router.get('/', auth, requireDynamicPermission('settings', 'read'), (req, res) => userController.getAll(req, res));
 
 /**
  * @swagger
@@ -122,7 +121,7 @@ router.get('/:id', auth, (req, res) => userController.getById(req, res));
  *       404:
  *         description: User not found
  */
-router.put('/:id/access-status', auth, requireRole('admin'), (req, res) => userController.updateAccessStatus(req, res));
+router.put('/:id/access-status', auth, requireDynamicPermission('settings', 'update'), (req, res) => userController.updateAccessStatus(req, res));
 
 /**
  * @swagger
@@ -184,7 +183,7 @@ router.put('/:id/access-status', auth, requireRole('admin'), (req, res) => userC
  *       404:
  *         description: User not found
  */
-router.put('/:id', auth, requireRole('admin'), (req, res) => userController.adminUpdateUser(req, res));
+router.put('/:id', auth, requireDynamicPermission('settings', 'update'), (req, res) => userController.adminUpdateUser(req, res));
 
 /**
  * @swagger
@@ -211,7 +210,7 @@ router.put('/:id', auth, requireRole('admin'), (req, res) => userController.admi
  *       404:
  *         description: User not found
  */
-router.put('/:id/restore', auth, requireRole('admin'), (req, res) => userController.restore(req, res));
+router.put('/:id/restore', auth, requireDynamicPermission('settings', 'update'), (req, res) => userController.restore(req, res));
 
 /**
  * @swagger
@@ -238,7 +237,7 @@ router.put('/:id/restore', auth, requireRole('admin'), (req, res) => userControl
  *       404:
  *         description: User not found
  */
-router.delete('/:id', auth, requireRole('admin'), (req, res) => userController.delete(req, res));
+router.delete('/:id', auth, requireDynamicPermission('settings', 'delete'), (req, res) => userController.delete(req, res));
 
 /**
  * @swagger

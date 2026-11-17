@@ -113,7 +113,7 @@ export class UserServiceClient {
 
   async requireActiveStaff(id: string): Promise<StaffUser> {
     const user = await this.getStaff(id);
-    if (!user || !['staff', 'admin'].includes(user.role) || user.status !== 'active') {
+    if (!user || ['patron', 'user'].includes((user.role || '').toLowerCase()) || user.status !== 'active') {
       throw new NotFoundError('Staff not found or inactive');
     }
     return user;

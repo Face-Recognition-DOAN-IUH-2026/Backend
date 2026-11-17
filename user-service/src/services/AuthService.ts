@@ -18,6 +18,7 @@ import {
 } from '../dto';
 import { UnauthorizedError, ForbiddenError, ConflictError, NotFoundError, BadRequestError } from '../errors';
 import { toUtcDateStr } from '../../../shared/utils/date';
+import { permissionService } from './PermissionService';
 
 const notificationCircuit = new CircuitBreaker(5, 60_000);
 
@@ -73,11 +74,13 @@ export class AuthService {
       throw new BadRequestError('Invalid email format');
     }
 
-    const role = dto.role ?? 'user';
-    if (!REGISTER_ROLES.has(role)) {
+    const role = (dto.role ?? 'user').trim().toLowerCase();
+    const isBuiltIn = REGISTER_ROLES.has(role);
+    const isCustomValid = !isBuiltIn && (await permissionService.isValidRole(role));
+    if (!isBuiltIn && !isCustomValid) {
       throw new BadRequestError('Invalid role');
     }
-    if (role === 'admin' && callerRole !== 'admin') {
+    if ((role === 'admin' || !isBuiltIn) && callerRole !== 'admin') {
       throw new ForbiddenError('Only admin can create admin accounts');
     }
     // skipVerification is a privilege: only admin callers may activate an

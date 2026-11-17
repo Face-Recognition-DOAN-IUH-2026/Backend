@@ -118,4 +118,22 @@ describe('requireDynamicPermission fail-closed behavior', () => {
     expect(nextCalled).toBe(true);
     expect(mockGet).not.toHaveBeenCalled();
   });
+
+  it('includes /knowledge-base in ALL_ROUTES and allows custom staff roles through requireRole(["admin", "staff"])', () => {
+    const { ALL_ROUTES } = loadPermissions();
+    const { requireRole } = require('../auth/requireRole');
+
+    expect(ALL_ROUTES.some((r: any) => r.path === '/knowledge-base')).toBe(true);
+
+    const customRes = mockRes();
+    let customNext = false;
+    requireRole(['admin', 'staff'])(buildReq({ user: { id: 'u2', role: 'cataloger' } }), customRes as Response, () => { customNext = true; });
+    expect(customNext).toBe(true);
+
+    const patronRes = mockRes();
+    let patronNext = false;
+    requireRole(['admin', 'staff'])(buildReq({ user: { id: 'u3', role: 'patron' } }), patronRes as Response, () => { patronNext = true; });
+    expect(patronNext).toBe(false);
+    expect(patronRes.status).toHaveBeenCalledWith(403);
+  });
 });

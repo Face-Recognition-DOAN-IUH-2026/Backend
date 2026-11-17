@@ -330,7 +330,7 @@ router.get('/:id', auth, (req, res) => patronController.getById(req, res));
  *       403:
  *         description: Forbidden
  */
-router.post('/', requireDynamicPermission('patrons', 'create'), (req, res) => patronController.create(req, res));
+router.post('/', auth, requireDynamicPermission('patrons', 'create'), (req, res) => patronController.create(req, res));
 
 /**
  * @swagger
@@ -371,7 +371,7 @@ router.post('/', requireDynamicPermission('patrons', 'create'), (req, res) => pa
  *       404:
  *         description: Patron not found
  */
-router.put('/:id', requireDynamicPermission('patrons', 'update'), (req, res) => patronController.update(req, res));
+router.put('/:id', auth, requireDynamicPermission('patrons', 'update'), (req, res) => patronController.update(req, res));
 
 /**
  * @swagger
@@ -439,7 +439,7 @@ router.put('/:id/password', auth, (req, res) => patronController.changePassword(
  *       404:
  *         description: Patron not found
  */
-router.put('/:id/restore', requireDynamicPermission('patrons', 'update'), (req, res) => patronController.restore(req, res));
+router.put('/:id/restore', auth, requireDynamicPermission('patrons', 'update'), (req, res) => patronController.restore(req, res));
 
 /**
  * @swagger
@@ -474,7 +474,7 @@ router.put('/:id/restore', requireDynamicPermission('patrons', 'update'), (req, 
  *       404:
  *         description: Patron not found
  */
-router.post('/:id/card/suspend', requireDynamicPermission('patrons', 'delete'), (req, res) => patronController.suspendCard(req, res));
+router.post('/:id/card/suspend', auth, requireDynamicPermission('patrons', 'delete'), (req, res) => patronController.suspendCard(req, res));
 
 /**
  * @swagger
@@ -510,7 +510,7 @@ router.post('/:id/card/suspend', requireDynamicPermission('patrons', 'delete'), 
  *       404:
  *         description: Patron not found
  */
-router.post('/:id/card/renew', requireDynamicPermission('patrons', 'update'), (req, res) => patronController.renewCard(req, res));
+router.post('/:id/card/renew', auth, requireDynamicPermission('patrons', 'update'), (req, res) => patronController.renewCard(req, res));
 
 /**
  * @swagger
@@ -562,6 +562,6 @@ router.post('/:id/card/lost', auth, (req, res) => patronController.reportLostCar
  *       404:
  *         description: Patron not found
  */
-router.delete('/:id', requireDynamicPermission('patrons', 'delete'), (req, res) => patronController.delete(req, res));
+router.delete('/:id', auth, requireDynamicPermission('patrons', 'delete'), (req, res) => patronController.delete(req, res));
 
 export default router;
