@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 import math
 import os
-import time
 
 import cv2
 import numpy as np
@@ -64,76 +62,6 @@ def is_gate_liveness_enabled(default: bool = True) -> bool:
     if raw is None or raw == "":
         return default
     return raw.strip().lower() not in {"0", "false", "no", "off"}
-
-
-def verify_gate_temporal_liveness(
-    camera_id: str,
-    track_id: str,
-    bbox: list[float] | None,
-    landmarks: list | None,
-    redis_client=None,
-) -> dict:
-    """Track consecutive gate frames in Redis to confirm natural motion across frames."""
-    min_frames = max(1, int(_env_float("GATE_MIN_FRAMES", 1.0)))
-    block_frozen = os.environ.get("GATE_BLOCK_FROZEN_REPLAY", "false").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-
-    if redis_client is None or not bbox or len(bbox) < 4:
-        return {"ready": True, "is_live": True, "frames_seen": 1}
-
-    cx = (float(bbox[0]) + float(bbox[2])) / 2.0
-    cy = (float(bbox[1]) + float(bbox[3])) / 2.0
-    bw = max(1.0, float(bbox[2]) - float(bbox[0]))
-    bh = max(1.0, float(bbox[3]) - float(bbox[1]))
-
-    entry = {
-        "ts": time.time(),
-        "cx": round(cx, 2),
-        "cy": round(cy, 2),
-        "w": round(bw, 2),
-        "h": round(bh, 2),
-        "kps": landmarks if isinstance(landmarks, list) else None,
-    }
-
-    key = f"gate_liveness_track:{camera_id}:{track_id}"
-    try:
-        raw = redis_client.get(key)
-        history = json.loads(raw) if raw else []
-        if not isinstance(history, list):
-            history = []
-    except Exception:
-        history = []
-
-    history.append(entry)
-    history = history[-4:]
-    try:
-        redis_client.setex(key, 4, json.dumps(history))
-    except Exception:
-        pass
-
-    if len(history) < min_frames:
-        return {"ready": False, "is_live": True, "frames_seen": len(history)}
-
-    if block_frozen and len(history) >= 2:
-        prev = history[-2]
-        dx = abs(entry["cx"] - float(prev.get("cx", entry["cx"]))) / bw
-        dy = abs(entry["cy"] - float(prev.get("cy", entry["cy"]))) / bh
-        dw = abs(entry["w"] - float(prev.get("w", entry["w"]))) / bw
-        displacement = math.hypot(dx, dy) + dw
-        if displacement < 0.002:
-            return {
-                "ready": True,
-                "is_live": False,
-                "reason": "FROZEN_2D_FRAME",
-                "frames_seen": len(history),
-                "displacement": float(displacement),
-            }
-
-    return {"ready": True, "is_live": True, "frames_seen": len(history)}
 
 
 def get_motion_min_displacement() -> float:
@@ -443,11 +371,11 @@ class AntiSpoofingAnalyzer:
         top_edges = [hy for hy, _, _ in horiz_lines if hy < face_cy - margin]
         bottom_edges = [hy for hy, _, _ in horiz_lines if hy > face_cy + margin]
         has_opposite_pair = bool(
-            (left_edges and right_edges) or
-            (top_edges and bottom_edges)
+            (left_edges and right_edges and (top_edges or bottom_edges)) or
+            (top_edges and bottom_edges and (left_edges or right_edges))
         )
 
-        has_bezel = bool(has_corner or has_opposite_pair)
+        has_bezel = bool(has_corner and has_opposite_pair)
         if has_bezel:
             bezel_score = 0.10
         elif vert_lines or horiz_lines or long_line_count >= 1:
@@ -488,7 +416,7 @@ class AntiSpoofingAnalyzer:
 
     def aggregate(self, breakdown: dict, insightface_score: float | None = None) -> dict:
         veto_reasons = []
-        if breakdown.get("has_bezel", False) or breakdown.get("bezel_veto", False):
+        if (breakdown.get("has_bezel", False) or breakdown.get("bezel_veto", False)) and breakdown.get("long_lines", 0) >= 4:
             veto_reasons.append("SCREEN_BEZEL_DETECTED")
         if breakdown.get("fft_veto", False):
             veto_reasons.append("SCREEN_MOIRE_FREQUENCY_DETECTED")
@@ -525,20 +453,24 @@ class AntiSpoofingAnalyzer:
         if active_weights_sum > 0:
             total_score /= active_weights_sum
 
-        # Attack indicator penalties (bezel, glare)
+        # Soft attack indicator penalties so normal lighting/glasses don't cause false positives
         if breakdown.get("has_bezel", False):
-            total_score *= 0.35
-            raw_breakdown["bezel_penalty"] = 0.35
+            total_score *= 0.75
+            raw_breakdown["bezel_penalty"] = 0.75
         if breakdown.get("has_glare", False):
-            total_score *= 0.55
-            raw_breakdown["glare_penalty"] = 0.55
+            total_score *= 0.80
+            raw_breakdown["glare_penalty"] = 0.80
 
         total_score = max(0.0, min(1.0, total_score))
 
         threshold = get_liveness_threshold()
-        if len(veto_reasons) >= 1:
+        # Single heuristic is noisy in room lighting; hard-veto only if >= 2 signals agree
+        if len(veto_reasons) >= 2:
             is_live = False
             total_score = min(total_score, 0.20)
+        elif len(veto_reasons) == 1:
+            total_score *= 0.85
+            is_live = total_score > threshold
         else:
             is_live = total_score > threshold
 

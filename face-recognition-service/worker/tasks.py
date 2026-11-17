@@ -16,7 +16,7 @@ from infra.config import settings
 from infra.crypto import encrypt_data
 from infra.milvus_client import MilvusClient
 from infra.minio_client import MinioStorage
-from worker.anti_spoofing import is_gate_liveness_enabled, verify_gate_temporal_liveness
+from worker.anti_spoofing import is_gate_liveness_enabled
 from worker.celery_app import celery_app
 from worker.tasks_pipeline import (
     check_face_quality,
@@ -1395,45 +1395,6 @@ def _process_single_face(
                         return None
                     else:
                         logger.info("Non-strict direction: allowing exit for %s (%s) although status was outside", full_name, student_code)
-
-        if is_gate_liveness_enabled():
-            try:
-                from infra.redis_cache import redis_client as _rc
-            except Exception:
-                _rc = None
-            temporal_res = verify_gate_temporal_liveness(
-                camera_id=camera_id,
-                track_id=patron_id,
-                bbox=bbox,
-                landmarks=landmarks,
-                redis_client=_rc,
-            )
-            if not temporal_res.get("is_live", True):
-                logger.warning(
-                    "Gate temporal spoof blocked on camera %s for %s: %s",
-                    camera_id, patron_id, temporal_res.get("reason"),
-                )
-                event = {
-                    "camera_id": camera_id,
-                    "status": "spoof",
-                    "patron_id": patron_id,
-                    "full_name": full_name,
-                    "student_code": student_code,
-                    "liveness_score": liveness_score,
-                    "veto_reasons": [temporal_res.get("reason", "TEMPORAL_SPOOF")],
-                    "bbox": bbox,
-                    "landmarks": landmarks,
-                }
-                _publish_camera_event(event)
-                if raw_bytes:
-                    _upload_evidence_frame(raw_bytes, patron_id, prefix="spoof_")
-                return None
-            if not temporal_res.get("ready", True):
-                logger.info(
-                    "Gate temporal check awaiting next frame (%d) for %s on %s",
-                    temporal_res.get("frames_seen", 1), patron_id, camera_id,
-                )
-                return None
 
         # =========================================================================
         # BƯỚC 4: TẤT CẢ ĐIỀU KIỆN ĐẠT -> XÁC NHẬN USER ĐÃ VÀO / RA (GRANT ACCESS)
