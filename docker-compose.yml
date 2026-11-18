@@ -334,6 +334,8 @@ services:
       NVIDIA_EMBED_MODEL: ${NVIDIA_EMBED_MODEL:-nvidia/nv-embedqa-e5-v5}
       CHROMA_DB_URL: http://chromadb:8000
       CHROMA_COLLECTION: library-kb
+    volumes:
+      - ai_uploaded_kb:/app/ai-service/data/uploaded-kb
     deploy:
       resources:
         limits:
@@ -517,6 +519,7 @@ volumes:
   miniodata:
   milvusdata:
   chromadbdata:
+  ai_uploaded_kb:
   insightface_models:
 
 networks:

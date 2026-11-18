@@ -4,9 +4,7 @@ on:
   push:
     branches:
       - main
-      - 11-11-26
-      - 07-11-26
-      - 18-10-26
+      - 13-11-26
   pull_request:
     branches:
       - main
@@ -35,6 +33,7 @@ jobs:
             shared/package.json
             ai-service/package.json
             api-gateway/package.json
+            notification-service/package.json
 
       - name: 📦 Build Shared Library (@library/shared)
         run: |
@@ -59,6 +58,15 @@ jobs:
           echo "== Validating and compiling api-gateway =="
           cd api-gateway
           npm ci || npm install
+          npm run build
+          cd ..
+
+      - name: 🔔 Test & Build Notification Service
+        run: |
+          echo "== Testing & compiling notification-service =="
+          cd notification-service
+          npm ci || npm install
+          npx jest --runInBand --forceExit --ci
           npm run build
           cd ..
 
