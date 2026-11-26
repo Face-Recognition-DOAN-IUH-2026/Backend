@@ -46,11 +46,12 @@ describe('AI Tools - RBAC Security', () => {
       expect(scheduleToday?.injectUserId).toBe(true);
     });
 
-    it('should provide admin tools for admin role (staff tools plus get_all_schedules & get_operations_summary)', () => {
+    it('should provide admin tools for admin role (staff tools plus get_all_schedules)', () => {
       const adminTools = getToolDefsForRole('admin');
       const staffTools = getToolDefsForRole('staff');
-      expect(adminTools.length).toBe(staffTools.length + 2);
+      expect(adminTools.length).toBe(staffTools.length + 1);
       expect(adminTools.find(t => t.name === 'get_all_schedules')).toBeDefined();
+      expect(staffTools.find(t => t.name === 'get_operations_summary')).toBeDefined();
       expect(adminTools.find(t => t.name === 'get_operations_summary')).toBeDefined();
     });
 

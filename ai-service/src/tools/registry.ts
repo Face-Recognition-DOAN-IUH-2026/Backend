@@ -135,6 +135,12 @@ export const staffToolDefs: ToolDef[] = [
     injectUserId: true,
     parameters: NO_ARGS,
   },
+  {
+    name: 'get_operations_summary',
+    description: 'Xem thong ke van hanh tong quan toan thu vien hom nay (so ban doc dang o trong thu vien, luot ra vao, sach qua han). Khong can tham so.',
+    func: getOperationsSummary,
+    parameters: NO_ARGS,
+  },
 ];
 
 export const adminToolDefs: ToolDef[] = [
@@ -143,12 +149,6 @@ export const adminToolDefs: ToolDef[] = [
     name: 'get_all_schedules',
     description: 'Xem toan bo lich truc cua tat ca nhan vien hom nay trong thu vien (chi danh cho admin). Khong can tham so.',
     func: () => getScheduleToday(),
-    parameters: NO_ARGS,
-  },
-  {
-    name: 'get_operations_summary',
-    description: 'Xem thong ke van hanh tong quan toan thu vien hom nay (doc gia tai cho, luot ra vao, sach qua han). Khong can tham so.',
-    func: getOperationsSummary,
     parameters: NO_ARGS,
   },
 ];

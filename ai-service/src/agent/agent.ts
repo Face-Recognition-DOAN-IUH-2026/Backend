@@ -79,9 +79,9 @@ Nhiem vu chinh:
 - Huong dan su dung thu vien
 
 Nguyen tac quan trong:
-1. LUON tra loi bang tieng Viet, than thi va chuyen nghiep
+1. LUON tra loi bang tieng Viet, than thien, tu nhien va chuyen nghiep (KHONG bao gio tra ve raw JSON hay ten ham ky thuat cho nguoi dung)
 2. Su dung ngu canh tu Knowledge Base khi co san: Uu tien tuyet doi thong tin, quy dinh, chinh sach, huong dan nam trong tai lieu tri thuc duoc cung cap va trich dan nguon [Ten tai lieu]
-3. Neu can thong tin tu he thong, chi su dung cac cong cu duoc cung cap (KHONG tu invent thong tin)
+3. Neu can thong tin thuc te tu he thong (so ban doc trong thu vien, sach, muon tra, lich truc, gio mo cua...), BAT BUOC goi tool tuong ung trong danh sach — TUYET DOI KHONG tu choi bang cau "Toi chi la mot mo hinh ngon ngu..." khi da co tool ho tro
 4. KHONG BAO GIO thuc hien cac thao tac ghi/xoa/sua (write/delete/update) — AI chi ho tro tra cuu (read-only)
 5. Neu nguoi dung yeu cau them/xoa/sua du lieu, tu choi va huong dan ho thuc hien truc tiep tren giao dien
 
@@ -368,16 +368,44 @@ export async function processMessage(
   while (maxIterations > 0) {
     maxIterations--;
 
-    const response = await nvidiaClient.createChatCompletion(messages, {
-      temperature: contextDocs.length > 0 ? 0.3 : 0.7,
-      maxTokens: 1024,
-    });
+    let response = '';
+    let nativeToolCalls: NativeToolCall[] = [];
+    let usedNativeStream = false;
 
-    messages.push({ role: 'assistant', content: response });
+    if (typeof (nvidiaClient as any).streamChatCompletion === 'function' && availableTools.length > 0) {
+      const stream = nvidiaClient.streamChatCompletion(messages, {
+        temperature: contextDocs.length > 0 ? 0.3 : 0.7,
+        maxTokens: 1024,
+        tools: toOpenAITools(availableTools),
+      });
+      if (stream && typeof (stream as any)[Symbol.asyncIterator] === 'function') {
+        usedNativeStream = true;
+        for await (const event of stream) {
+          if (event.type === 'done') {
+            response = event.content || '';
+            nativeToolCalls = event.toolCalls || [];
+          }
+        }
+      }
+    }
 
-    const toolCalls = parseToolCalls(response || '');
+    if (!usedNativeStream) {
+      response = await nvidiaClient.createChatCompletion(messages, {
+        temperature: contextDocs.length > 0 ? 0.3 : 0.7,
+        maxTokens: 1024,
+      });
+    }
 
-    if (!response || toolCalls.length === 0) {
+    if (response.trim()) {
+      messages.push({ role: 'assistant', content: response });
+    }
+
+    const toolCalls: Array<{ name: string; args: Record<string, any>; native: boolean }> =
+      nativeToolCalls.length > 0
+        ? nativeToolCalls.map(tc => ({ name: tc.name, args: tc.args, native: true }))
+        : parseToolCalls(response || '').map(tc => ({ name: tc.name, args: tc.args, native: false }));
+
+    if (toolCalls.length === 0) {
       let finalResponse = sanitizeNaturalResponse(response || '');
       if (!finalResponse && toolResults.length > 0) {
         finalResponse = summariseToolResults(toolResults) || 'Đã truy vấn xong thông tin cho bạn.';
@@ -417,6 +445,8 @@ export async function processMessage(
         let result: any;
         if (tool.injectUserId && userContext) {
           result = await fn(userContext.userId);
+        } else if (call.native) {
+          result = await fn(...bindToolArgs(tool, call.args));
         } else {
           const argValues = Object.values(call.args);
           result = await fn(...argValues);
@@ -460,16 +490,23 @@ function summariseToolResults(toolResults: Array<{ name: string; result: any }>)
     .filter(t => t.result?.success && t.result?.data)
     .map(t => {
       const data = t.result.data;
+      if (t.name === 'get_operations_summary' && typeof data === 'object') {
+        const inside = data.patrons_inside ?? 0;
+        const entries = data.today_entries ?? 0;
+        const exits = data.today_exits ?? 0;
+        const overdue = data.total_overdue_borrows ?? 0;
+        return `Hiện có ${inside} bạn đọc đang ở trong thư viện (hôm nay có ${entries} lượt vào, ${exits} lượt ra và ${overdue} phiếu mượn quá hạn).`;
+      }
       if (Array.isArray(data)) {
         return data.length === 0
-          ? `Khong tim thay ket qua tu ${t.name}.`
-          : `Tu ${t.name}: ${data.length} ket qua.`;
+          ? `Không tìm thấy kết quả phù hợp.`
+          : `Tìm thấy ${data.length} kết quả phù hợp.`;
       }
-      return `Ket qua tu ${t.name}.`;
+      return `Đã tra cứu thông tin thành công.`;
     })
     .join('\n');
 
-  return summary || 'Da truy van xong.';
+  return summary || 'Đã tra cứu xong thông tin.';
 }
 
 /** Parse the `:::book_card {…}` block a tool answer may embed, if present. */
