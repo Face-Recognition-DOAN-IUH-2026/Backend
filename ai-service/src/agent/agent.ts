@@ -145,16 +145,120 @@ export function formatScheduleJson(text: string): string {
   return text;
 }
 
+function extractBalancedJsonObjects(text: string): Array<{ raw: string; start: number; end: number }> {
+  const results: Array<{ raw: string; start: number; end: number }> = [];
+  let i = 0;
+
+  while (i < text.length) {
+    if (text[i] === '{') {
+      // Do not treat :::book_card {...} payload as a tool call
+      const prefix = text.slice(Math.max(0, i - 20), i);
+      const isBookCard = /:::book_card\s*$/.test(prefix);
+
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      let j = i;
+
+      while (j < text.length) {
+        const ch = text[j];
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+          } else if (ch === '\\') {
+            escaped = true;
+          } else if (ch === '"') {
+            inString = false;
+          }
+        } else {
+          if (ch === '"') {
+            inString = true;
+          } else if (ch === '{') {
+            depth++;
+          } else if (ch === '}') {
+            depth--;
+            if (depth === 0) {
+              if (!isBookCard) {
+                results.push({ raw: text.slice(i, j + 1), start: i, end: j + 1 });
+              }
+              i = j;
+              break;
+            }
+          }
+        }
+        j++;
+      }
+    }
+    i++;
+  }
+
+  return results;
+}
+
+function normalizeJsonKeys(obj: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[k.trim().toLowerCase()] = v;
+  }
+  return out;
+}
+
+export function sanitizeNaturalResponse(text: string): string {
+  if (!text) return '';
+  let cleaned = text;
+
+  // Remove markdown code fences that only wrap tool-call JSON
+  cleaned = cleaned.replace(/```(?:json)?\s*([\s\S]*?)```/gi, (full, inner: string) => {
+    if (/\{\s*"\s*(?:tool|name)\s*"/i.test(inner) || /functions\.\w+/i.test(inner)) {
+      return '';
+    }
+    return full;
+  });
+
+  // Remove leaked tool-call JSON objects (including spaced keys like {" tool": ...})
+  const objects = extractBalancedJsonObjects(cleaned);
+  for (let idx = objects.length - 1; idx >= 0; idx--) {
+    const item = objects[idx];
+    try {
+      const parsed = JSON.parse(item.raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const norm = normalizeJsonKeys(parsed);
+        if (typeof norm.tool === 'string' || (typeof norm.name === 'string' && norm.arguments !== undefined)) {
+          cleaned = cleaned.slice(0, item.start) + cleaned.slice(item.end);
+        }
+      }
+    } catch {
+      // Ignore non-JSON braces
+    }
+  }
+
+  cleaned = cleaned
+    .replace(/functions\.\w+<\|tool_call_argument_begin\|>[\s\S]*?<\|tool_call_end\|>/g, '')
+    .replace(/<tool_call>[\s\S]*?(?:<\/tool_call>|\})/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return cleaned;
+}
+
 export function parseToolCalls(assistantMessage: string): Array<{ name: string; args: Record<string, any> }> {
   const toolCalls: Array<{ name: string; args: Record<string, any> }> = [];
 
-  const jsonRegex = /\{"tool"\s*:\s*"(\w+)"\s*,\s*"arguments"\s*:\s*(\{[^}]*\})\}/g;
-  let match;
-
-  while ((match = jsonRegex.exec(assistantMessage)) !== null) {
+  for (const item of extractBalancedJsonObjects(assistantMessage)) {
     try {
-      const args = JSON.parse(match[2]);
-      toolCalls.push({ name: match[1], args });
+      const parsed = JSON.parse(item.raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+      const norm = normalizeJsonKeys(parsed);
+      const toolName =
+        typeof norm.tool === 'string'
+          ? norm.tool.trim()
+          : (typeof norm.name === 'string' && norm.arguments !== undefined ? norm.name.trim() : '');
+      if (toolName) {
+        const args = norm.arguments && typeof norm.arguments === 'object' && !Array.isArray(norm.arguments)
+          ? norm.arguments
+          : {};
+        toolCalls.push({ name: toolName, args });
+      }
     } catch (error) {
       console.warn('[Agent] tool-call JSON parse failed:', (error as Error).message);
     }
@@ -162,6 +266,7 @@ export function parseToolCalls(assistantMessage: string): Array<{ name: string; 
 
   if (toolCalls.length > 0) return toolCalls;
 
+  let match: RegExpExecArray | null;
   const nimRegex = /functions\.(\w+)<\|tool_call_argument_begin\|>(\{[^<]*\})<\|tool_call_end\|>/g;
   while ((match = nimRegex.exec(assistantMessage)) !== null) {
     try {
@@ -273,23 +378,12 @@ export async function processMessage(
     const toolCalls = parseToolCalls(response || '');
 
     if (!response || toolCalls.length === 0) {
-      let finalResponse = (response || '').trim();
+      let finalResponse = sanitizeNaturalResponse(response || '');
       if (!finalResponse && toolResults.length > 0) {
-        const toolSummary = toolResults
-          .filter(t => t.result?.success && t.result?.data)
-          .map(t => {
-            const data = t.result.data;
-            if (Array.isArray(data)) {
-              if (data.length === 0) return `Khong tim thay ket qua tu ${t.name}.`;
-              return `Tu ${t.name}: ${data.length} ket qua.`;
-            }
-            return `Ket qua tu ${t.name}.`;
-          })
-          .join('\n');
-        finalResponse = toolSummary || 'Da truy van xong.';
+        finalResponse = summariseToolResults(toolResults) || 'Đã truy vấn xong thông tin cho bạn.';
       }
       if (!finalResponse) {
-        finalResponse = 'Xin loi, toi da gap su co khi xu ly cau hoi cua ban. Vui long thu lai.';
+        finalResponse = 'Xin lỗi, tôi chưa thể diễn giải thông tin này lúc này. Vui lòng thử hỏi lại rõ hơn.';
       }
       finalResponse = formatScheduleJson(finalResponse);
       finalResponse = validateCitations(finalResponse, contextDocs).text;
@@ -501,7 +595,7 @@ export async function* processCompanionMessage(
       if (event.type === 'text_delta') {
         streamedSoFar += event.content;
         if (suppressDeltas) continue;
-        if (streamedSoFar.includes('{"tool"') || streamedSoFar.includes('functions.')) {
+        if (/\{\s*"\s*tool\s*"/i.test(streamedSoFar) || streamedSoFar.includes('functions.') || streamedSoFar.includes('<tool_call>')) {
           suppressDeltas = true;
           continue;
         }
@@ -524,10 +618,11 @@ export async function* processCompanionMessage(
     // A native tool call may legitimately arrive with EMPTY content — so the branch on
     // tool calls only, never on whether text was produced.
     if (toolCalls.length === 0) {
+      const sanitized = sanitizeNaturalResponse(fullText || '');
       const formatted = formatScheduleJson(
-        (fullText || '').trim() ||
+        sanitized ||
           summariseToolResults(toolResults) ||
-          'Xin loi, toi da gap su co khi xu ly cau hoi cua ban. Vui long thu lai.',
+          'Xin lỗi, tôi chưa thể diễn giải thông tin này lúc này. Vui lòng thử lại.',
       );
       const finalResponse = validateCitations(formatted, contextDocs).text;
 
