@@ -191,12 +191,15 @@ export async function recommendBooks(userId: string): Promise<ToolResult> {
 
 export async function getOperationsSummary(): Promise<ToolResult> {
   try {
-    const accessStatsUrl = `${config.accessServiceUrl}/access/stats`;
+    const accessStatsUrl = `${config.accessServiceUrl}/internal/access/stats`;
     const overdueUrl = `${config.borrowServiceUrl}/borrow/internal/overdue`;
     const [statsRes, overdueRes] = await Promise.all([
       safeGet<any>(accessStatsUrl),
       safeGet<any>(overdueUrl),
     ]);
+    if (!statsRes.success && !overdueRes.success) {
+      return { success: false, error: statsRes.error || overdueRes.error || 'Failed to get operations summary' };
+    }
     const overdueCount = overdueRes.success && Array.isArray(overdueRes.data) ? overdueRes.data.length : 0;
     return {
       success: true,
