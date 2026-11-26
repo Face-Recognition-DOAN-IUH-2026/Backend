@@ -31,12 +31,15 @@ const GREETING_PATTERNS = [
 
 const TOOL_INTENT_KEYWORDS = [
   'tim sach',
-  'tra cuu sach',
+  'tim gi',
+  'tra cuu',
   'co sach',
   'muon sach nao',
   'dang muon',
   'lich su muon',
   'thong tin the',
+  'thong tin tai khoan',
+  'thong tin cua toi',
   'han the',
   'no phat',
   'tien phat cua toi',
@@ -55,6 +58,7 @@ const TOOL_INTENT_KEYWORDS = [
 const LIBRARY_DOMAIN_KEYWORDS = [
   'thu vien',
   'sach',
+  'the loai',
   'muon',
   'tra',
   'gia han',
@@ -84,6 +88,11 @@ const LIBRARY_DOMAIN_KEYWORDS = [
 export function isConversationalOrToolIntent(query: string): boolean {
   const trimmed = query.trim();
   if (!trimmed) return true;
+
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length <= 2) {
+    return true;
+  }
 
   const folded = foldVietnamese(trimmed).toLowerCase();
   if (GREETING_PATTERNS.some((re) => re.test(folded))) {
@@ -151,7 +160,30 @@ export function evaluateEvidence(
     : 0;
   const coverage = docs.length > 0 ? computeLexicalCoverage(query, docs) : 0;
 
-  if (docs.length === 0 || topScore < confidenceThreshold) {
+  if (docs.length === 0) {
+    // Allow short or library-domain queries to proceed to tool calling when KB returns no docs;
+    // abstain only on longer clearly out-of-scope knowledge questions.
+    const wordCount = query.trim().split(/\s+/).filter(Boolean).length;
+    if (!inScope && wordCount >= 4) {
+      return {
+        passed: false,
+        verdict: 'OUT_OF_SCOPE',
+        topScore: 0,
+        coverage: 0,
+        reason: 'No retrieved documents and query is outside library domain',
+        abstainMessage: buildAbstainMessage('OUT_OF_SCOPE'),
+      };
+    }
+    return {
+      passed: true,
+      verdict: 'SUFFICIENT',
+      topScore: 0,
+      coverage: 0,
+      reason: 'No KB docs retrieved; delegating to tool-calling agent',
+    };
+  }
+
+  if (topScore < confidenceThreshold) {
     const verdict: EvidenceVerdict = inScope ? 'INSUFFICIENT_CONFIDENCE' : 'OUT_OF_SCOPE';
     return {
       passed: false,
