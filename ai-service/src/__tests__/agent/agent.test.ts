@@ -36,7 +36,7 @@ jest.mock('../../clients/nvidia', () => ({
   },
 }));
 
-import { buildSystemPrompt, processMessage, type UserContext } from '../../agent/agent';
+import { buildSystemPrompt, parseToolCalls, processMessage, sanitizeNaturalResponse, type UserContext } from '../../agent/agent';
 import type { ToolDef } from '../../tools/registry';
 
 const MOCK_TOOLS: ToolDef[] = [
@@ -130,5 +130,29 @@ describe('processMessage', () => {
     expect(result.sessionId).toBe('s1');
     expect(result.response).toBeTruthy();
     expect(typeof result.response).toBe('string');
+  });
+});
+
+describe('parseToolCalls & sanitizeNaturalResponse', () => {
+  it('parses tool calls even when JSON key has leading/trailing spaces like {" tool": ...}', () => {
+    const raw = '{" tool": "get_operations_summary", "arguments": {}}';
+    expect(parseToolCalls(raw)).toEqual([
+      { name: 'get_operations_summary', args: {} },
+    ]);
+  });
+
+  it('parses tool calls wrapped in markdown json fences or missing arguments', () => {
+    const raw = '```json\n{"tool": "get_operations_summary"}\n```';
+    expect(parseToolCalls(raw)).toEqual([
+      { name: 'get_operations_summary', args: {} },
+    ]);
+  });
+
+  it('strips leaked tool JSON while preserving :::book_card blocks', () => {
+    const raw = 'Đây là sách:\n:::book_card {"title": "Clean Code"}\n{" tool": "search_books", "arguments": {"query": "x"}}';
+    const cleaned = sanitizeNaturalResponse(raw);
+    expect(cleaned).toContain('Đây là sách:');
+    expect(cleaned).toContain(':::book_card {"title": "Clean Code"}');
+    expect(cleaned).not.toContain('search_books');
   });
 });
