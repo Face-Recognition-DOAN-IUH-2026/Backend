@@ -31,6 +31,13 @@ export const config = {
     baseUrl: (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/$/, ''),
   },
 
+  // Anthropic-compatible Messages API (e.g. 1gw.gwai.cloud/v1/messages)
+  anthropic: {
+    baseUrl: (process.env.ANTHROPIC_BASE_URL || 'https://1gw.gwai.cloud/v1/messages').replace(/\/$/, ''),
+    apiKey: process.env.ANTHROPIC_API_KEY || '',
+    model: process.env.ANTHROPIC_MODEL || 'gemini-3.8-flash',
+  },
+
   // Primary LLM for Agent Chat (OpenAI-compatible endpoint).
   // LLM_* takes precedence; NVIDIA_* remains as a backward-compatible fallback.
   llm: {

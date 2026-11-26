@@ -260,7 +260,7 @@ interface LLMClient {
 
 class NvidiaNIMClient implements LLMClient {
   private client: AxiosInstance;
-  private maxRetries: number = 3;
+  private maxRetries: number = 2;
   private model: string;
   private providerName: string;
 
@@ -275,7 +275,7 @@ class NvidiaNIMClient implements LLMClient {
         'Authorization': `Bearer ${llm.apiKey}`,
         'Content-Type': 'application/json',
       },
-      timeout: 120000,
+      timeout: 22000,
     });
   }
 
@@ -318,8 +318,8 @@ class NvidiaNIMClient implements LLMClient {
 
         if (status === 429) {
           const backoffMs = retryAfter
-            ? parseInt(retryAfter, 10) * 1000
-            : Math.min(2000 * Math.pow(2, attempt - 1) + Math.random() * 1000, 30000);
+            ? Math.min(parseInt(retryAfter, 10) * 1000, 3000)
+            : Math.min(1000 * Math.pow(2, attempt - 1), 3000);
 
           console.log(`[${this.providerName}] 429 rate limited, attempt ${attempt}/${this.maxRetries}, retrying in ${backoffMs}ms`);
 
@@ -334,7 +334,7 @@ class NvidiaNIMClient implements LLMClient {
         }
 
         if (attempt < this.maxRetries) {
-          const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+          const backoffMs = Math.min(800 * Math.pow(2, attempt - 1), 3000);
           await this.delay(backoffMs);
         }
       }
@@ -369,7 +369,7 @@ class NvidiaNIMClient implements LLMClient {
 
 class OpenRouterClient implements LLMClient {
   private client: AxiosInstance;
-  private maxRetries: number = 3;
+  private maxRetries: number = 2;
 
   constructor() {
     this.client = axios.create({
@@ -380,7 +380,7 @@ class OpenRouterClient implements LLMClient {
         'HTTP-Referer': 'https://library-iuh.edu.vn',
         'X-Title': 'IUH Library AI',
       },
-      timeout: 120000,
+      timeout: 30000,
     });
   }
 
@@ -472,6 +472,201 @@ class OpenRouterClient implements LLMClient {
   }
 }
 
+export function buildAnthropicPayload(
+  messages: ChatMessage[],
+  model: string,
+  options: { temperature?: number; maxTokens?: number; stream?: boolean; tools?: ToolSchema[] } = {}
+): Record<string, any> {
+  const systemParts: string[] = [];
+  const chatMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+
+  for (const m of messages) {
+    if (m.role === 'system') {
+      if (m.content?.trim()) systemParts.push(m.content.trim());
+    } else if (m.role === 'user' || m.role === 'assistant') {
+      chatMessages.push({ role: m.role, content: m.content });
+    }
+  }
+
+  if (chatMessages.length === 0) {
+    chatMessages.push({ role: 'user', content: 'Xin chào' });
+  }
+
+  const payload: Record<string, any> = {
+    model,
+    max_tokens: options.maxTokens ?? 1024,
+    temperature: options.temperature ?? 0.7,
+    messages: chatMessages,
+  };
+
+  if (systemParts.length > 0) {
+    payload.system = systemParts.join('\n\n');
+  }
+  if (options.stream) {
+    payload.stream = true;
+  }
+  if (options.tools && options.tools.length > 0) {
+    payload.tools = options.tools.map((t) => ({
+      name: t.function.name,
+      description: t.function.description,
+      input_schema: t.function.parameters,
+    }));
+  }
+
+  return payload;
+}
+
+export class AnthropicMessagesClient implements LLMClient {
+  private client: AxiosInstance;
+  private maxRetries: number = 2;
+  private endpointUrl: string;
+  private model: string;
+  private providerName: string;
+
+  constructor() {
+    const anthropic = config.anthropic || {
+      baseUrl: 'https://1gw.gwai.cloud/v1/messages',
+      apiKey: '',
+      model: 'gemini-3.8-flash',
+    };
+    this.endpointUrl = anthropic.baseUrl;
+    this.model = anthropic.model;
+    this.providerName = llmProviderName(this.endpointUrl);
+
+    this.client = axios.create({
+      headers: {
+        'x-api-key': anthropic.apiKey,
+        'anthropic-version': '2023-06-01',
+        'Content-Type': 'application/json',
+      },
+      timeout: 22000,
+    });
+  }
+
+  async createChatCompletion(
+    messages: ChatMessage[],
+    options: { temperature?: number; maxTokens?: number } = {}
+  ): Promise<string> {
+    const payload = buildAnthropicPayload(messages, this.model, {
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      stream: false,
+    });
+
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        const response = await this.client.post<any>(this.endpointUrl, payload);
+        const blocks = response.data?.content;
+        if (Array.isArray(blocks)) {
+          const text = blocks
+            .filter((b: any) => b?.type === 'text' && typeof b.text === 'string')
+            .map((b: any) => b.text)
+            .join('');
+          if (text.trim()) return text;
+        }
+        if (typeof response.data?.completion === 'string' && response.data.completion.trim()) {
+          return response.data.completion;
+        }
+        throw new Error(`Empty response content from ${this.providerName}`);
+      } catch (error: any) {
+        lastError = error;
+        const status = error.response?.status;
+        if (status && status >= 400 && status < 500 && status !== 429) {
+          throw new Error(
+            `${this.providerName} client error ${status}: ${error.response?.data?.error?.message || error.message}`
+          );
+        }
+        if (attempt < this.maxRetries) {
+          await delay(Math.min(800 * Math.pow(2, attempt - 1), 3000));
+        }
+      }
+    }
+
+    throw new Error(`${this.providerName} request failed after ${this.maxRetries} attempts: ${lastError?.message}`);
+  }
+
+  async *streamChatCompletion(
+    messages: ChatMessage[],
+    options: StreamChatOptions = {}
+  ): AsyncGenerator<StreamEvent> {
+    const payload = buildAnthropicPayload(messages, this.model, {
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      stream: true,
+      tools: options.tools,
+    });
+
+    const response = await this.client.post(this.endpointUrl, payload, { responseType: 'stream' });
+    const rawStream = response.data;
+    const emitDeltas = Boolean(options.tools && options.tools.length > 0);
+
+    let fullText = '';
+    const toolCallsMap = new Map<number, { id: string; name: string; argsJson: string }>();
+    let buffer = '';
+
+    const processLine = (line: string): StreamEvent[] => {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) return [];
+      const raw = trimmed.slice(5).trim();
+      if (!raw || raw === '[DONE]') return [];
+      let evt: any;
+      try {
+        evt = JSON.parse(raw);
+      } catch {
+        return [];
+      }
+
+      const out: StreamEvent[] = [];
+      if (evt.type === 'content_block_start' && evt.content_block?.type === 'tool_use') {
+        const idx = typeof evt.index === 'number' ? evt.index : 0;
+        toolCallsMap.set(idx, {
+          id: evt.content_block.id || `tc_${idx}`,
+          name: evt.content_block.name || '',
+          argsJson: '',
+        });
+      } else if (evt.type === 'content_block_delta') {
+        if (evt.delta?.type === 'text_delta' && typeof evt.delta.text === 'string') {
+          fullText += evt.delta.text;
+          if (emitDeltas) out.push({ type: 'text_delta', content: evt.delta.text });
+        } else if (evt.delta?.type === 'input_json_delta' && typeof evt.delta.partial_json === 'string') {
+          const idx = typeof evt.index === 'number' ? evt.index : 0;
+          const entry = toolCallsMap.get(idx);
+          if (entry) entry.argsJson += evt.delta.partial_json;
+        }
+      }
+      return out;
+    };
+
+    for await (const chunk of rawStream) {
+      buffer += typeof chunk === 'string' ? chunk : chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        for (const ev of processLine(line)) yield ev;
+      }
+    }
+    if (buffer.trim()) {
+      for (const ev of processLine(buffer)) yield ev;
+    }
+
+    const toolCalls: NativeToolCall[] = [...toolCallsMap.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, entry]) => {
+        let args: Record<string, any> = {};
+        if (entry.argsJson.trim()) {
+          try {
+            args = JSON.parse(entry.argsJson);
+          } catch {}
+        }
+        return { id: entry.id, name: entry.name, args };
+      })
+      .filter((tc) => tc.name);
+
+    yield { type: 'done', content: fullText, toolCalls };
+  }
+}
+
 class MockLLMClient implements LLMClient {
   async createChatCompletion(
     messages: ChatMessage[],
@@ -519,37 +714,44 @@ class MockLLMClient implements LLMClient {
 
 class FallbackLLMClient implements LLMClient {
   private primary: LLMClient;
-  private fallback: LLMClient | null;
+  private fallbacks: Array<{ name: string; client: LLMClient }> = [];
   private primaryName: string;
-  private fallbackName: string;
 
   constructor() {
     if (config.ai.mockMode) {
       this.primary = new MockLLMClient();
       this.primaryName = 'Mock';
-      this.fallback = null;
-      this.fallbackName = '';
       return;
+    }
+
+    const providers: Array<{ name: string; client: LLMClient }> = [];
+    if (config.anthropic?.apiKey) {
+      providers.push({
+        name: llmProviderName(config.anthropic.baseUrl),
+        client: new AnthropicMessagesClient(),
+      });
     }
     const llm = primaryLlm();
     if (llm.apiKey) {
-      this.primary = new NvidiaNIMClient();
-      this.primaryName = llmProviderName(llm.baseUrl);
-      if (config.openRouter.apiKey) {
-        this.fallback = new OpenRouterClient();
-        this.fallbackName = 'OpenRouter';
-      } else {
-        this.fallback = null;
-        this.fallbackName = '';
-      }
-    } else if (config.openRouter.apiKey) {
-      this.primary = new OpenRouterClient();
-      this.primaryName = 'OpenRouter';
-      this.fallback = null;
-      this.fallbackName = '';
-    } else {
-      throw new Error('No LLM API key configured (LLM_API_KEY, NVIDIA_API_KEY or OPENROUTER_API_KEY required)');
+      providers.push({
+        name: llmProviderName(llm.baseUrl),
+        client: new NvidiaNIMClient(),
+      });
     }
+    if (config.openRouter.apiKey) {
+      providers.push({
+        name: 'OpenRouter',
+        client: new OpenRouterClient(),
+      });
+    }
+
+    if (providers.length === 0) {
+      throw new Error('No LLM API key configured (ANTHROPIC_API_KEY, LLM_API_KEY, NVIDIA_API_KEY or OPENROUTER_API_KEY required)');
+    }
+
+    this.primary = providers[0].client;
+    this.primaryName = providers[0].name;
+    this.fallbacks = providers.slice(1);
   }
 
   async createChatCompletion(
@@ -561,16 +763,20 @@ class FallbackLLMClient implements LLMClient {
     } catch (primaryError: any) {
       console.log(`[LLM] Primary (${this.primaryName}) failed: ${primaryError.message}`);
 
-      if (this.fallback) {
-        console.log(`[LLM] Falling back to ${this.fallbackName}`);
+      let lastErr = primaryError;
+      for (const fb of this.fallbacks) {
+        console.log(`[LLM] Falling back to ${fb.name}`);
         try {
-          return await this.fallback.createChatCompletion(messages, options);
+          return await fb.client.createChatCompletion(messages, options);
         } catch (fallbackError: any) {
-          console.log(`[LLM] Fallback (${this.fallbackName}) also failed: ${fallbackError.message}`);
-          throw new Error(`Both LLM providers failed. Primary: ${primaryError.message}. Fallback: ${fallbackError.message}`);
+          console.log(`[LLM] Fallback (${fb.name}) also failed: ${fallbackError.message}`);
+          lastErr = fallbackError;
         }
       }
 
+      if (this.fallbacks.length > 0) {
+        throw new Error(`All LLM providers failed. Primary (${this.primaryName}): ${primaryError.message}. Last fallback: ${lastErr.message}`);
+      }
       throw primaryError;
     }
   }
@@ -604,8 +810,8 @@ class FallbackLLMClient implements LLMClient {
 
     const attempts: Array<{ name: string; client: LLMClient }> = [
       { name: this.primaryName, client: this.primary },
+      ...this.fallbacks,
     ];
-    if (this.fallback) attempts.push({ name: this.fallbackName, client: this.fallback });
 
     let lastError: Error | null = null;
     let toolsRejected = false;

@@ -265,7 +265,7 @@ export async function processMessage(
 
     const response = await nvidiaClient.createChatCompletion(messages, {
       temperature: contextDocs.length > 0 ? 0.3 : 0.7,
-      maxTokens: 2048,
+      maxTokens: 1024,
     });
 
     messages.push({ role: 'assistant', content: response });
