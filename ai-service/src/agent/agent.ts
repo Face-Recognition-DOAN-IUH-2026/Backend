@@ -2,6 +2,7 @@ import { nvidiaClient } from '../clients/nvidia';
 import type { NativeToolCall } from '../clients/nvidia';
 import { ToolDef, patronToolDefs, getToolDefsForRole, toOpenAITools, bindToolArgs } from '../tools/registry';
 import { retrieve, RetrievedDocument } from '../rag/retriever';
+import { evaluateEvidence, validateCitations } from '../rag/evidenceGate';
 import { MemoryService } from '../services/MemoryService';
 import { TTSClient } from '../clients/TTSClient';
 
@@ -232,6 +233,14 @@ export async function processMessage(
     : getToolDefsForRole(role);
 
   const contextDocs = await retrieve(message, 5, role);
+  const evidenceCheck = evaluateEvidence(message, contextDocs);
+  if (!evidenceCheck.passed && evidenceCheck.abstainMessage) {
+    return {
+      response: evidenceCheck.abstainMessage,
+      sessionId,
+    };
+  }
+
   const systemPrompt = buildSystemPrompt(contextDocs, userContext, availableTools);
 
   const messages: Array<{ role: ChatRole; content: string }> = [
@@ -255,7 +264,7 @@ export async function processMessage(
     maxIterations--;
 
     const response = await nvidiaClient.createChatCompletion(messages, {
-      temperature: 0.7,
+      temperature: contextDocs.length > 0 ? 0.3 : 0.7,
       maxTokens: 2048,
     });
 
@@ -283,6 +292,7 @@ export async function processMessage(
         finalResponse = 'Xin loi, toi da gap su co khi xu ly cau hoi cua ban. Vui long thu lai.';
       }
       finalResponse = formatScheduleJson(finalResponse);
+      finalResponse = validateCitations(finalResponse, contextDocs).text;
       return {
         response: finalResponse,
         toolResults: toolResults.length > 0 ? toolResults : undefined,
@@ -433,6 +443,17 @@ export async function* processCompanionMessage(
   const contextDocs = await retrieve(message, 5, input.role);
   const availableTools = getToolDefsForRole(input.role);
 
+  const evidenceCheck = evaluateEvidence(message, contextDocs);
+  if (!evidenceCheck.passed && evidenceCheck.abstainMessage) {
+    const abstainText = evidenceCheck.abstainMessage;
+    const ttsResult = await ttsClient.synthesizeSpeech(abstainText);
+    yield { type: 'text', data: { content: abstainText, final: true } };
+    yield { type: 'audio', data: { audioBase64: ttsResult.audioBase64, durationMs: ttsResult.durationMs } };
+    yield { type: 'viseme', data: { visemes: ttsResult.visemes } };
+    yield { type: 'companion_done', data: { sessionId: input.sessionId } };
+    return;
+  }
+
   let systemPrompt = buildSystemPrompt(contextDocs, {
     userId: input.patronId,
     email: '',
@@ -473,7 +494,7 @@ export async function* processCompanionMessage(
     let suppressDeltas = false;
 
     for await (const event of nvidiaClient.streamChatCompletion(messages, {
-      temperature: 0.7,
+      temperature: contextDocs.length > 0 ? 0.3 : 0.7,
       maxTokens: 2048,
       tools: toOpenAITools(availableTools),
     })) {
@@ -503,11 +524,12 @@ export async function* processCompanionMessage(
     // A native tool call may legitimately arrive with EMPTY content — so the branch on
     // tool calls only, never on whether text was produced.
     if (toolCalls.length === 0) {
-      const finalResponse = formatScheduleJson(
+      const formatted = formatScheduleJson(
         (fullText || '').trim() ||
           summariseToolResults(toolResults) ||
           'Xin loi, toi da gap su co khi xu ly cau hoi cua ban. Vui long thu lai.',
       );
+      const finalResponse = validateCitations(formatted, contextDocs).text;
 
       const ttsResult = await ttsClient.synthesizeSpeech(finalResponse);
 

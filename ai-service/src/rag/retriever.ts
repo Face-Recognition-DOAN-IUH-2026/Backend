@@ -2,12 +2,33 @@ import { getCollection } from '../clients/chromadb';
 import { foldVietnamese, textToEmbedding, tokenizeVietnamese } from '../clients/embedding';
 import { ragService } from '../services/RagService';
 
+export type DocumentAuthority = 'official' | 'uploaded' | 'general';
+
 export interface RetrievedDocument {
   id: string;
   content: string;
   source: string;
   docTitle: string;
   distance?: number;
+  score?: number;
+  authority?: DocumentAuthority;
+}
+
+export function inferAuthority(source: string, uploadedAt?: string): DocumentAuthority {
+  const normalized = (source || '').toLowerCase();
+  if (
+    normalized.includes('quy-dinh') ||
+    normalized.includes('noi-quy') ||
+    normalized.includes('chinh-sach') ||
+    normalized.includes('tai-lieu-tong-hop') ||
+    normalized.includes('tai_lieu_tong_hop')
+  ) {
+    return 'official';
+  }
+  if (uploadedAt) {
+    return 'uploaded';
+  }
+  return 'general';
 }
 
 interface CandidateChunk {
@@ -226,19 +247,25 @@ export async function retrieve(query: string, topK: number = 5, role?: string): 
       queryVec,
       candidate,
     );
+    const authority = inferAuthority(candidate.source, candidate.uploadedAt);
+    const authorityBoost = authority === 'official' ? 0.05 : 0;
+    const finalScore = score + authorityBoost;
     return {
       id: candidate.id,
       content: candidate.content,
       source: candidate.source,
       docTitle: candidate.docTitle,
-      distance: Math.max(0, 1 - Math.min(1, score)),
-      _score: score,
+      distance: Math.max(0, 1 - Math.min(1, finalScore)),
+      score: Math.min(1, Number(finalScore.toFixed(4))),
+      authority,
+      _score: finalScore,
     };
   });
 
   scored.sort((a, b) => b._score - a._score);
 
-  return scored.slice(0, topK).map(({ _score, ...doc }) => doc);
+  const filtered = scored.filter(item => item._score >= 0.12);
+  return filtered.slice(0, topK).map(({ _score, ...doc }) => doc);
 }
 
 export default { retrieve };
